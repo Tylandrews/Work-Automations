@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IT Support Call Logger</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Inline SVG icon set (no external deps) -->
+    <svg class="svg-sprite" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v10m0 0l4-4m-4 4l-4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 15v4h14v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><path d="M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16.5 16.5 21 21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 13a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 13Z" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+        <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.6 10.8c1.6 3.3 3.3 5 6.6 6.6l2.2-2.2a2 2 0 0 1 2.1-.5l3 1.2a2 2 0 0 1 1.2 2.2c-.4 2-2.1 3.5-4.1 3.5C9.8 21.6 2.4 14.2 2.4 5.4c0-2 1.5-3.7 3.5-4.1a2 2 0 0 1 2.2 1.2l1.2 3a2 2 0 0 1-.5 2.1L6.6 10.8Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+        <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21V5a2 2 0 0 1 2-2h6v18" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 21V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M7 7h2M7 11h2M7 15h2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+        <symbol id="i-calendar" viewBox="0 0 24 24"><path d="M7 3v3M17 3v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 7h16v14H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 11h16" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+        <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2 2 0 0 0 0-3L17.5 5a2 2 0 0 0-3 0L4 15.5V20Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6 7l1 14h10l1-14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+        <symbol id="i-stats" viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-empty" viewBox="0 0 24 24"><path d="M7 7h10M7 11h10M7 15h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 3h14a2 2 0 0 1 2 2v14l-4-2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+        <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-device" viewBox="0 0 24 24"><path d="M4 6h16v12H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 20h8M12 18v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    </svg>
+
+    <!-- Custom Titlebar (Electron frameless window) -->
+    <header class="titlebar" id="titlebar">
+        <div class="titlebar-drag-region" id="dragRegion">
+            <div class="titlebar-left">
+                <div class="app-badge" aria-hidden="true">IT</div>
+                <div class="app-title">IT Support Call Logger</div>
+            </div>
+
+            <div class="titlebar-right">
+                <button class="tb-btn" id="toggleHistoryPanel" type="button" title="Call History (Ctrl+F)" aria-label="Toggle Call History" aria-expanded="false">
+                    <svg class="icon" aria-hidden="true"><use href="#i-empty"></use></svg>
+                    <span class="tb-label">History</span>
+                </button>
+                <button class="tb-btn" id="tbNewBtn" type="button" title="New Entry (Ctrl+N)">
+                    <svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>
+                    <span class="tb-label">New</span>
+                </button>
+                <button class="tb-btn" id="tbExportBtn" type="button" title="Export CSV (Ctrl+E)">
+                    <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
+                    <span class="tb-label">Export</span>
+                </button>
+                <button class="tb-btn tb-theme-toggle" id="themeToggleBtn" type="button" title="Toggle dark mode" aria-label="Toggle dark mode">
+                    <svg class="icon theme-icon theme-icon-moon" aria-hidden="true"><use href="#i-moon"></use></svg>
+                    <svg class="icon theme-icon theme-icon-sun" aria-hidden="true"><use href="#i-sun"></use></svg>
+                </button>
+                <button class="win-btn" id="winMinBtn" type="button" title="Minimize" aria-label="Minimize">—</button>
+                <button class="win-btn" id="winMaxBtn" type="button" title="Maximize" aria-label="Maximize">▢</button>
+                <button class="win-btn win-close" id="winCloseBtn" type="button" title="Close" aria-label="Close">✕</button>
+            </div>
+        </div>
+        <div class="titlebar-divider"></div>
+    </header>
+
+    <div class="container">
+        <main>
+            <!-- Form Section -->
+            <div class="form-container">
+                <div class="section-header">
+                    <h2>New Call</h2>
+                </div>
+                <form id="callForm">
+                    <div class="form-group">
+                        <label for="name">
+                            <svg class="icon" aria-hidden="true"><use href="#i-user"></use></svg>
+                            Name *
+                        </label>
+                        <input type="text" id="name" name="name" required autocomplete="name" placeholder="Enter caller's name">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="organization">
+                            <svg class="icon" aria-hidden="true"><use href="#i-building"></use></svg>
+                            Organization *
+                        </label>
+                        <input type="text" id="organization" name="organization" required autocomplete="organization" placeholder="Enter organization name">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="mobile">
+                            <svg class="icon" aria-hidden="true"><use href="#i-phone"></use></svg>
+                            Phone Number *
+                        </label>
+                        <input type="tel" id="mobile" name="mobile" required autocomplete="tel" placeholder="Enter phone number">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="deviceName">
+                            <svg class="icon" aria-hidden="true"><use href="#i-device"></use></svg>
+                            Device name
+                        </label>
+                        <input type="text" id="deviceName" name="deviceName" autocomplete="off" placeholder="e.g. laptop name, PC name">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="supportRequest">
+                            <svg class="icon" aria-hidden="true"><use href="#i-message"></use></svg>
+                            Support Request *
+                        </label>
+                        <span id="supportRequestCopyFeedback" class="copy-feedback" aria-live="polite"></span>
+                        <textarea id="supportRequest" name="supportRequest" rows="4" required placeholder="Describe the support request..." title="Click to copy (device name appended if set)"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="notes">
+                            <svg class="icon" aria-hidden="true"><use href="#i-empty"></use></svg>
+                            Notes
+                        </label>
+                        <textarea id="notes" name="notes" rows="2" placeholder="Optional: follow-ups, corrections..."></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="callDate">
+                            <svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>
+                            Date & Time
+                        </label>
+                        <input type="datetime-local" id="callDate" name="callDate">
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>
+                            <span>Save Call</span>
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="clearBtn">
+                            <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
+                            <span>Clear</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+        </main>
+
+        <div class="panel-backdrop" id="historyPanelBackdrop" aria-hidden="true"></div>
+
+        <aside class="app-panel app-panel-right" id="historyPanel" aria-hidden="true">
+            <div class="panel-header">
+                <h2>Call History</h2>
+                <button type="button" class="panel-close" id="closeHistoryPanelBtn" title="Close" aria-label="Close panel">&times;</button>
+            </div>
+            <div class="entries-container">
+                <div class="header-actions-row">
+                    <div class="day-context" id="dayContext">
+                        <button class="day-btn" id="historyPrevDayBtn" type="button" title="Previous day">‹</button>
+                        <div class="day-label" id="historyDayLabel" title="Selected day">Today</div>
+                        <button class="day-btn" id="historyNextDayBtn" type="button" title="Next day">›</button>
+                        <button class="day-btn day-today" id="historyTodayBtn" type="button" title="Jump to today">Today</button>
+                        <button class="day-btn day-calendar" id="historyCalendarBtn" type="button" title="Pick a day" aria-label="Open calendar">
+                            <svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>
+                        </button>
+                    </div>
+                    <div class="search-container" id="searchContainer" style="display: none;">
+                        <input type="text" id="searchInput" placeholder="Search calls..." class="search-input">
+                        <button class="btn-icon-only" id="closeSearch" title="Close search">✕</button>
+                    </div>
+                    <button class="btn-icon-only" id="searchBtn" title="Search (Ctrl+F)">
+                        <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+                    </button>
+                    <button class="btn-icon-only" id="statsBtn" title="View Statistics">
+                        <svg class="icon" aria-hidden="true"><use href="#i-stats"></use></svg>
+                    </button>
+                    <button class="btn-icon-only btn-export" id="exportBtn" title="Export to CSV (Ctrl+E)">
+                        <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
+                    </button>
+                    <button class="btn-icon-only btn-danger" id="clearAllBtn" title="Clear All">
+                        <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
+                    </button>
+                </div>
+                <div class="entries-stats" id="entriesStats"></div>
+                <div id="entriesList" class="entries-list">
+                    <!-- Entries will be dynamically inserted here -->
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Calendar Modal -->
+    <div class="modal" id="calendarModal" aria-hidden="true">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h3>Calendar</h3>
+                <button class="modal-close" id="closeCalendarModal">&times;</button>
+            </div>
+            <div class="calendar">
+                <div class="calendar-header">
+                    <button class="cal-nav" id="calPrevMonth" type="button" title="Previous month">‹</button>
+                    <div class="cal-month" id="calendarMonthLabel">Month YYYY</div>
+                    <button class="cal-nav" id="calNextMonth" type="button" title="Next month">›</button>
+                </div>
+                <div class="calendar-weekdays" aria-hidden="true">
+                    <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+                </div>
+                <div class="calendar-grid" id="calendarGrid" role="grid" aria-label="Month calendar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal (Delete/Clear) -->
+    <div class="modal" id="confirmModal" aria-hidden="true">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h3 id="confirmTitle">Confirm</h3>
+                <button class="modal-close" id="closeConfirmModal">&times;</button>
+            </div>
+            <div class="confirm-body">
+                <div class="confirm-icon" aria-hidden="true">
+                    <svg class="icon"><use href="#i-trash"></use></svg>
+                </div>
+                <div class="confirm-text">
+                    <div class="confirm-message" id="confirmMessage">Are you sure?</div>
+                    <div class="confirm-detail" id="confirmDetail">This action cannot be undone.</div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" id="confirmCancelBtn">Cancel</button>
+                <button type="button" class="btn btn-primary btn-danger-solid" id="confirmOkBtn">
+                    <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
+                    <span id="confirmOkLabel">Delete</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Entry</h3>
+                <button class="modal-close" id="closeModal">&times;</button>
+            </div>
+            <form id="editForm">
+                <input type="hidden" id="editId">
+                <div class="form-group">
+                    <label for="editName">
+                        <svg class="icon" aria-hidden="true"><use href="#i-user"></use></svg>
+                        Name *
+                    </label>
+                    <input type="text" id="editName" required>
+                </div>
+                <div class="form-group">
+                    <label for="editOrganization">
+                        <svg class="icon" aria-hidden="true"><use href="#i-building"></use></svg>
+                        Organization *
+                    </label>
+                    <input type="text" id="editOrganization" required>
+                </div>
+                <div class="form-group">
+                    <label for="editMobile">
+                        <svg class="icon" aria-hidden="true"><use href="#i-phone"></use></svg>
+                        Phone Number *
+                    </label>
+                    <input type="tel" id="editMobile" required>
+                </div>
+                <div class="form-group">
+                    <label for="editDeviceName">
+                        <svg class="icon" aria-hidden="true"><use href="#i-device"></use></svg>
+                        Device name
+                    </label>
+                    <input type="text" id="editDeviceName" autocomplete="off" placeholder="e.g. laptop name, PC name">
+                </div>
+                <div class="form-group">
+                    <label for="editSupportRequest">
+                        <svg class="icon" aria-hidden="true"><use href="#i-message"></use></svg>
+                        Support Request *
+                    </label>
+                    <textarea id="editSupportRequest" rows="4" required></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="editNotes">
+                        <svg class="icon" aria-hidden="true"><use href="#i-empty"></use></svg>
+                        Notes
+                    </label>
+                    <textarea id="editNotes" rows="2" placeholder="Follow-ups, corrections..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="editDate">
+                        <svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>
+                        Date & Time
+                    </label>
+                    <input type="datetime-local" id="editDate">
+                </div>
+                <div class="modal-actions modal-actions-edit" id="editModalActions">
+                    <div class="modal-actions-left">
+                        <button type="submit" class="btn btn-primary">
+                            <svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>
+                            <span>Save Changes</span>
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="cancelEdit">Cancel</button>
+                    </div>
+                    <button type="button" class="btn btn-danger-outline" id="editModalDeleteBtn" title="Delete this entry">
+                        <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
+                        <span>Delete</span>
+                    </button>
+                </div>
+                <div class="edit-modal-delete-confirm" id="editModalDeleteConfirm" aria-hidden="true">
+                    <span class="edit-modal-delete-confirm-text">Delete this entry?</span>
+                    <div class="edit-modal-delete-confirm-btns">
+                        <button type="button" class="btn btn-secondary" id="editModalDeleteCancel">Cancel</button>
+                        <button type="button" class="btn btn-danger-solid" id="editModalDeleteConfirmBtn">
+                            <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
+                            <span>Delete</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stats Modal -->
+    <div class="modal" id="statsModal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h3>Statistics</h3>
+                <button class="modal-close" id="closeStatsModal">&times;</button>
+            </div>
+            <div class="stats-content" id="statsContent"></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
