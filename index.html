@@ -32,14 +32,16 @@
     <header class="titlebar" id="titlebar">
         <div class="titlebar-drag-region" id="dragRegion">
             <div class="titlebar-left">
-                <div class="app-badge" aria-hidden="true">IT</div>
-                <div class="app-title">IT Support Call Logger</div>
+                <div class="app-logo-wrap">
+                    <img src="Images/BigFish_Centered_Logo_Inverted.png" alt="BigFish Technology" class="app-logo" aria-hidden="true">
+                </div>
+
             </div>
 
             <div class="titlebar-right">
-                <button class="tb-btn" id="toggleHistoryPanel" type="button" title="Call History (Ctrl+F)" aria-label="Toggle Call History" aria-expanded="false">
-                    <svg class="icon" aria-hidden="true"><use href="#i-empty"></use></svg>
-                    <span class="tb-label">History</span>
+                <button class="tb-btn" id="focusSearchBtn" type="button" title="Focus Search (Ctrl+F)" aria-label="Focus search in call history">
+                    <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+                    <span class="tb-label">Search</span>
                 </button>
                 <button class="tb-btn" id="tbNewBtn" type="button" title="New Entry (Ctrl+N)">
                     <svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>
@@ -141,12 +143,9 @@
 
         </main>
 
-        <div class="panel-backdrop" id="historyPanelBackdrop" aria-hidden="true"></div>
-
-        <aside class="app-panel app-panel-right" id="historyPanel" aria-hidden="true">
+        <aside class="app-panel" id="historyPanel" aria-hidden="false">
             <div class="panel-header">
                 <h2>Call History</h2>
-                <button type="button" class="panel-close" id="closeHistoryPanelBtn" title="Close" aria-label="Close panel">&times;</button>
             </div>
             <div class="entries-container">
                 <div class="header-actions-row">

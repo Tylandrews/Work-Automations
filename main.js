@@ -3,6 +3,20 @@ const path = require('path');
 const fs = require('fs');
 const db = require('./db.js');
 
+/** Resolve .ico path so taskbar uses it. Packaged: extraResources puts it in resources/. */
+function getAppIconPath() {
+    if (process.platform !== 'win32') return undefined;
+    if (app.isPackaged) {
+        const resIco = path.join(process.resourcesPath, 'icon.ico');
+        if (fs.existsSync(resIco)) return resIco;
+    }
+    const buildIco = path.join(__dirname, 'build', 'icons', 'icon.ico');
+    if (fs.existsSync(buildIco)) return buildIco;
+    const bigFish = path.join(__dirname, 'Images', 'BigFish_Centered_Logo_Inverted.png');
+    if (fs.existsSync(bigFish)) return bigFish;
+    return undefined;
+}
+
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled promise rejection:', reason);
 });
@@ -22,9 +36,7 @@ function createWindow() {
             nodeIntegration: false,
             contextIsolation: true
         },
-        icon: fs.existsSync(path.join(__dirname, 'build', 'icon.png')) 
-            ? path.join(__dirname, 'build', 'icon.png') 
-            : undefined,
+        icon: getAppIconPath(),
         backgroundColor: '#f8fafc',
         show: false
     });
@@ -36,6 +48,8 @@ function createWindow() {
 
     // Show window when ready to prevent visual flash
     mainWindow.once('ready-to-show', () => {
+        const iconPath = getAppIconPath();
+        if (iconPath) mainWindow.setIcon(iconPath);
         mainWindow.show();
     });
 
@@ -172,10 +186,10 @@ ipcMain.handle('import-from-localstorage', (event, entries) => {
 });
 
 // This method will be called when Electron has finished initialization
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     try {
-        const dbInstance = db.init(app.getPath('userData'));
-        if (!dbInstance) console.error('Database init failed (see "Database init error" above). Run: npm run postinstall');
+        const dbInstance = await db.init(app.getPath('userData'));
+        if (!dbInstance) console.error('Database init failed (see "Database init error" above).');
     } catch (err) {
         console.error('Database init failed:', err);
     }

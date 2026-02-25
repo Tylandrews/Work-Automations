@@ -115,10 +115,8 @@ function setupEventListeners() {
     document.getElementById('closeSearch').addEventListener('click', toggleSearch);
     document.getElementById('searchInput').addEventListener('input', handleSearch);
 
-    // History panel toggle and close
-    document.getElementById('toggleHistoryPanel').addEventListener('click', toggleHistoryPanel);
-    document.getElementById('closeHistoryPanelBtn').addEventListener('click', closeHistoryPanel);
-    document.getElementById('historyPanelBackdrop').addEventListener('click', closeHistoryPanel);
+    // Focus search button (Ctrl+F)
+    document.getElementById('focusSearchBtn')?.addEventListener('click', focusSearch);
     
     // Stats button
     document.getElementById('statsBtn').addEventListener('click', showStats);
@@ -387,7 +385,7 @@ function setupKeyboardShortcuts() {
                     break;
                 case 'f':
                     e.preventDefault();
-                    openHistoryPanelAndFocusSearch();
+                    focusSearch();
                     break;
             }
         }
@@ -402,8 +400,6 @@ function setupKeyboardShortcuts() {
                 closeCalendar();
             } else if (document.getElementById('confirmModal')?.classList.contains('show')) {
                 closeConfirm(false);
-            } else if (isHistoryPanelOpen()) {
-                closeHistoryPanel();
             } else if (document.getElementById('searchContainer').style.display !== 'none') {
                 toggleSearch();
             }
@@ -411,47 +407,8 @@ function setupKeyboardShortcuts() {
     });
 }
 
-// History panel (slide-out)
-function isHistoryPanelOpen() {
-    const panel = document.getElementById('historyPanel');
-    return panel?.classList.contains('is-open') ?? false;
-}
-
-function openHistoryPanel() {
-    const panel = document.getElementById('historyPanel');
-    const backdrop = document.getElementById('historyPanelBackdrop');
-    const toggle = document.getElementById('toggleHistoryPanel');
-    if (panel) panel.classList.add('is-open');
-    if (backdrop) backdrop.classList.add('is-visible');
-    if (backdrop) backdrop.setAttribute('aria-hidden', 'false');
-    if (panel) panel.setAttribute('aria-hidden', 'false');
-    if (toggle) {
-        toggle.setAttribute('aria-expanded', 'true');
-        toggle.classList.add('tb-history-active');
-    }
-}
-
-function closeHistoryPanel() {
-    const panel = document.getElementById('historyPanel');
-    const backdrop = document.getElementById('historyPanelBackdrop');
-    const toggle = document.getElementById('toggleHistoryPanel');
-    if (panel) panel.classList.remove('is-open');
-    if (backdrop) backdrop.classList.remove('is-visible');
-    if (backdrop) backdrop.setAttribute('aria-hidden', 'true');
-    if (panel) panel.setAttribute('aria-hidden', 'true');
-    if (toggle) {
-        toggle.setAttribute('aria-expanded', 'false');
-        toggle.classList.remove('tb-history-active');
-    }
-}
-
-function toggleHistoryPanel() {
-    if (isHistoryPanelOpen()) closeHistoryPanel();
-    else openHistoryPanel();
-}
-
-function openHistoryPanelAndFocusSearch() {
-    if (!isHistoryPanelOpen()) openHistoryPanel();
+// Focus search in history panel (Ctrl+F)
+function focusSearch() {
     const container = document.getElementById('searchContainer');
     const input = document.getElementById('searchInput');
     if (container && input) {

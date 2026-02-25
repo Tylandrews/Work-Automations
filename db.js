@@ -1,25 +1,54 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
 const path = require('path');
 const fs = require('fs');
 
 let db = null;
+let dbPath = null;
+let SQL = null;
 
 function getDbPath(userDataPath) {
-    const dir = path.join(userDataPath, 'calllogger.db');
-    return dir;
+    return path.join(userDataPath, 'calllogger.db');
 }
 
-function init(userDataPath) {
+function save() {
+    if (!db || !dbPath) return;
+    try {
+        const data = db.export();
+        const buffer = Buffer.from(data);
+        fs.writeFileSync(dbPath, buffer);
+    } catch (err) {
+        console.error('Database save error:', err.message || err);
+    }
+}
+
+function execToRows(sql, params) {
+    const results = params ? db.exec(sql, params) : db.exec(sql);
+    if (!results.length || !results[0].values.length) return [];
+    const { columns, values } = results[0];
+    return values.map((row) => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+}
+
+function execGetOne(sql, params) {
+    const rows = execToRows(sql, params);
+    return rows[0] || null;
+}
+
+async function init(userDataPath) {
     if (db) return db;
     try {
-        const dbPath = getDbPath(userDataPath);
+        SQL = SQL || (await initSqlJs());
+        dbPath = getDbPath(userDataPath);
         const dir = path.dirname(dbPath);
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
-        db = new Database(dbPath);
+        let buffer = null;
+        if (fs.existsSync(dbPath)) {
+            buffer = fs.readFileSync(dbPath);
+        }
+        db = new SQL.Database(buffer);
 
-        db.exec(`
+        db.run(`
             CREATE TABLE IF NOT EXISTS calls (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -31,26 +60,27 @@ function init(userDataPath) {
                 call_time TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_calls_call_time ON calls(call_time);
+            )
         `);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_calls_call_time ON calls(call_time)`);
 
-        // Migrate existing DBs: rename mobile -> phone (SQLite 3.25.0+)
+        // Migrate: rename mobile -> phone
         try {
-            const cols = db.prepare('PRAGMA table_info(calls)').all();
-            if (cols.some(c => c.name === 'mobile')) {
-                db.exec('ALTER TABLE calls RENAME COLUMN mobile TO phone');
+            const cols = execToRows('PRAGMA table_info(calls)');
+            if (cols.some((c) => c.name === 'mobile')) {
+                db.run('ALTER TABLE calls RENAME COLUMN mobile TO phone');
             }
         } catch (_) {}
 
-        // Migrate: add device_name column if missing
+        // Migrate: add device_name if missing
         try {
-            const cols = db.prepare('PRAGMA table_info(calls)').all();
-            if (!cols.some(c => c.name === 'device_name')) {
-                db.exec('ALTER TABLE calls ADD COLUMN device_name TEXT DEFAULT \'\'');
+            const cols = execToRows('PRAGMA table_info(calls)');
+            if (!cols.some((c) => c.name === 'device_name')) {
+                db.run("ALTER TABLE calls ADD COLUMN device_name TEXT DEFAULT ''");
             }
         } catch (_) {}
 
+        save();
         return db;
     } catch (err) {
         console.error('Database init error:', err.message || err);
@@ -78,7 +108,7 @@ function rowToEntry(row) {
 
 function getEntries() {
     if (!db) return [];
-    const rows = db.prepare('SELECT * FROM calls ORDER BY call_time DESC').all();
+    const rows = execToRows('SELECT * FROM calls ORDER BY call_time DESC');
     return rows.map(rowToEntry);
 }
 
@@ -86,28 +116,31 @@ function createEntry(entry) {
     if (!db) return null;
     const now = new Date().toISOString();
     const callTime = entry.timestamp || entry.callTime || now;
-    const stmt = db.prepare(`
-        INSERT INTO calls (name, phone, organization, device_name, support_request, notes, call_time, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
     const phone = entry.phone != null ? entry.phone : entry.mobile;
-    const result = stmt.run(
-        entry.name || '',
-        phone || '',
-        entry.organization || '',
-        entry.deviceName || '',
-        entry.supportRequest || '',
-        entry.notes || '',
-        callTime,
-        now,
-        now
+    db.run(
+        `INSERT INTO calls (name, phone, organization, device_name, support_request, notes, call_time, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+            entry.name || '',
+            phone || '',
+            entry.organization || '',
+            entry.deviceName || '',
+            entry.supportRequest || '',
+            entry.notes || '',
+            callTime,
+            now,
+            now
+        ]
     );
-    return Number(result.lastInsertRowid);
+    const res = execGetOne('SELECT last_insert_rowid() as id');
+    const id = res ? Number(res.id) : null;
+    save();
+    return id;
 }
 
 function updateEntry(id, fields) {
     if (!db) return false;
-    const row = db.prepare('SELECT * FROM calls WHERE id = ?').get(id);
+    const row = execGetOne('SELECT * FROM calls WHERE id = $id', { $id: id });
     if (!row) return false;
 
     const name = fields.name !== undefined ? fields.name : row.name;
@@ -120,47 +153,53 @@ function updateEntry(id, fields) {
     const call_time = fields.callTime !== undefined ? fields.callTime : row.call_time;
     const updated_at = new Date().toISOString();
 
-    const stmt = db.prepare(`
-        UPDATE calls SET name = ?, phone = ?, organization = ?, device_name = ?, support_request = ?, notes = ?, call_time = ?, updated_at = ?
-        WHERE id = ?
-    `);
-    stmt.run(name, phone, organization, device_name || '', support_request, notes || '', call_time, updated_at, id);
+    db.run(
+        `UPDATE calls SET name = ?, phone = ?, organization = ?, device_name = ?, support_request = ?, notes = ?, call_time = ?, updated_at = ?
+         WHERE id = ?`,
+        [name, phone, organization, device_name || '', support_request, notes || '', call_time, updated_at, id]
+    );
+    save();
     return true;
 }
 
 function deleteEntry(id) {
     if (!db) return false;
-    const result = db.prepare('DELETE FROM calls WHERE id = ?').run(id);
-    return result.changes > 0;
+    db.run('DELETE FROM calls WHERE id = ?', [id]);
+    const res = execGetOne('SELECT changes() as n');
+    const n = res ? Number(res.n) : 0;
+    save();
+    return n > 0;
 }
 
 function clearAll() {
     if (!db) return;
-    db.prepare('DELETE FROM calls').run();
+    db.run('DELETE FROM calls');
+    save();
 }
 
 function importFromLocalStorage(entries) {
     if (!db || !Array.isArray(entries)) return;
     const now = new Date().toISOString();
-    const stmt = db.prepare(`
-        INSERT INTO calls (name, phone, organization, device_name, support_request, notes, call_time, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
     for (const e of entries) {
         const ts = e.timestamp || now;
         const phone = (e.phone != null ? e.phone : e.mobile) || '';
-        stmt.run(
-            e.name || '',
-            phone,
-            e.organization || '',
-            e.deviceName || '',
-            e.supportRequest || '',
-            e.notes || '',
-            ts,
-            ts,
-            ts
+        db.run(
+            `INSERT INTO calls (name, phone, organization, device_name, support_request, notes, call_time, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                e.name || '',
+                phone,
+                e.organization || '',
+                e.deviceName || '',
+                e.supportRequest || '',
+                e.notes || '',
+                ts,
+                ts,
+                ts
+            ]
         );
     }
+    save();
 }
 
 module.exports = {
