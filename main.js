@@ -22,13 +22,89 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 let mainWindow;
+let notificationWindow = null;
+
+const NOTIFICATION_WIDTH = 340;
+const NOTIFICATION_HEIGHT = 90;
+const NOTIFICATION_MARGIN = 12;
+const NOTIFICATION_DURATION_MS = 7000;
+
+function showTrayNotification(title, body) {
+    if (notificationWindow && !notificationWindow.isDestroyed()) {
+        notificationWindow.close();
+        notificationWindow = null;
+    }
+    const preloadPath = path.join(__dirname, 'preload-notification.js');
+    if (!fs.existsSync(preloadPath)) {
+        console.warn('preload-notification.js not found, skipping tray notification');
+        return;
+    }
+    const win = new BrowserWindow({
+        width: NOTIFICATION_WIDTH,
+        height: NOTIFICATION_HEIGHT,
+        frame: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        focusable: true,
+        show: false,
+        webPreferences: {
+            preload: preloadPath,
+            nodeIntegration: false,
+            contextIsolation: true
+        }
+    });
+    win.setMenuBarVisibility(false);
+    const query = { title: title || 'IT Support Call Logger', body: body || '' };
+    win.loadFile('notification.html', { query }).catch((err) => {
+        console.error('notification.html load error:', err);
+        win.destroy();
+        return;
+    });
+    win.once('ready-to-show', () => {
+        const display = screen.getPrimaryDisplay();
+        const { x, y, width, height } = display.workArea;
+        const nx = x + width - NOTIFICATION_WIDTH - NOTIFICATION_MARGIN;
+        const ny = y + height - NOTIFICATION_HEIGHT - NOTIFICATION_MARGIN;
+        win.setPosition(nx, ny);
+        win.show();
+    });
+    const closeNotification = () => {
+        if (win && !win.isDestroyed()) {
+            win.close();
+        }
+        if (notificationWindow === win) notificationWindow = null;
+    };
+    win.on('closed', () => {
+        if (notificationWindow === win) notificationWindow = null;
+    });
+    const timeoutId = setTimeout(closeNotification, NOTIFICATION_DURATION_MS);
+    win.on('closed', () => clearTimeout(timeoutId));
+    notificationWindow = win;
+}
+
+ipcMain.on('notification-clicked', () => {
+    if (notificationWindow && !notificationWindow.isDestroyed()) {
+        notificationWindow.close();
+        notificationWindow = null;
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+    }
+});
 
 function createWindow() {
+    /* Window size: larger default so New Call + Call History fit well; taller not wider */
+    const PREFERRED_WIDTH = 1100;
+    const PREFERRED_HEIGHT = 1000;
+
     mainWindow = new BrowserWindow({
-        width: 1400,
-        height: 900,
-        minWidth: 1000,
-        minHeight: 600,
+        width: PREFERRED_WIDTH,
+        height: PREFERRED_HEIGHT,
+        minWidth: PREFERRED_WIDTH,
+        minHeight: PREFERRED_HEIGHT,
         frame: false,
         autoHideMenuBar: true,
         webPreferences: {
@@ -71,29 +147,6 @@ ipcMain.handle('set-window-height', (event, height) => {
     win.setContentSize(width, clamped);
 });
 
-// Handle file save dialog
-ipcMain.handle('save-file', async (event, content, defaultFilename) => {
-    try {
-        const { filePath } = await dialog.showSaveDialog(mainWindow, {
-            title: 'Save CSV File',
-            defaultPath: defaultFilename,
-            filters: [
-                { name: 'CSV Files', extensions: ['csv'] },
-                { name: 'All Files', extensions: ['*'] }
-            ]
-        });
-
-        if (filePath) {
-            fs.writeFileSync(filePath, content, 'utf8');
-            return true;
-        }
-        return false;
-    } catch (error) {
-        console.error('save-file error:', error);
-        return false;
-    }
-});
-
 // Handle message box
 ipcMain.handle('show-message-box', async (event, options) => {
     try {
@@ -133,7 +186,18 @@ ipcMain.handle('window-close', () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
 });
 
-// Database (SQLite) – wrap so rejections are handled
+ipcMain.handle('focus-app', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+    }
+});
+
+ipcMain.handle('show-tray-notification', (event, { title, body }) => {
+    showTrayNotification(title, body);
+});
+
+// Database (SQLite)
 ipcMain.handle('get-entries', () => {
     try {
         return db.getEntries();

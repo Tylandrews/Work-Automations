@@ -3,14 +3,17 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
-    saveFile: (content, defaultFilename) => {
-        return ipcRenderer.invoke('save-file', content, defaultFilename);
-    },
     showMessageBox: (options) => {
         return ipcRenderer.invoke('show-message-box', options);
     },
     closeApp: () => {
         return ipcRenderer.invoke('close-app');
+    },
+    focusApp: () => {
+        return ipcRenderer.invoke('focus-app');
+    },
+    showTrayNotification: (title, body) => {
+        return ipcRenderer.invoke('show-tray-notification', { title, body });
     },
     windowControls: {
         minimize: () => ipcRenderer.invoke('window-minimize'),

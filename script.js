@@ -4,29 +4,385 @@ let editingEntryId = null;
 let selectedDay = null; // local day key: YYYY-MM-DD
 let calendarMonth = null; // Date representing first day of visible month
 let confirmResolver = null;
+let supabaseClient = null;
+let supabaseRealtimeChannel = null;
+let currentUserProfile = null; // { id, full_name } for logged-in user (Supabase)
+const profileCache = new Map(); // user_id -> full_name
+
+function useSupabase() {
+    const config = window.supabaseConfig || {};
+    const url = (config.SUPABASE_URL || '').trim();
+    const key = (config.SUPABASE_ANON_KEY || '').trim();
+    return url.length > 0 && key.length > 0;
+}
+
+function getSupabase() {
+    if (supabaseClient) return supabaseClient;
+    const config = window.supabaseConfig || {};
+    if (typeof window.supabase !== 'undefined' && config.SUPABASE_URL && config.SUPABASE_ANON_KEY) {
+        supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
+    }
+    return supabaseClient;
+}
+
+function mapRowToEntry(row) {
+    return {
+        id: row.id,
+        name: row.name,
+        phone: row.phone || '',
+        organization: row.organization,
+        deviceName: row.device_name || '',
+        supportRequest: row.support_request || '',
+        notes: row.notes || '',
+        callTime: row.call_time,
+        timestamp: row.call_time,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        user_id: row.user_id
+    };
+}
 
 window.addEventListener('unhandledrejection', (event) => {
     console.error('Unhandled promise rejection (renderer):', event.reason);
 });
 
-// Initialize: Load existing entries and set current date/time
+async function loadCurrentUserProfile() {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            currentUserProfile = null;
+            return;
+        }
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', session.user.id)
+            .single();
+        if (error) {
+            console.error('loadCurrentUserProfile error:', error);
+            currentUserProfile = { id: session.user.id, full_name: session.user.email || 'You' };
+            return;
+        }
+        currentUserProfile = { id: session.user.id, full_name: data.full_name || (session.user.email || 'You') };
+        profileCache.set(session.user.id, currentUserProfile.full_name);
+    } catch (err) {
+        console.error('loadCurrentUserProfile exception:', err);
+    }
+}
+
+async function getProfileNameByUserId(userId) {
+    if (!userId) return null;
+    if (profileCache.has(userId)) return profileCache.get(userId);
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    try {
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', userId)
+            .single();
+        if (error) {
+            console.error('getProfileNameByUserId error:', error);
+            return null;
+        }
+        const name = data.full_name || null;
+        if (name) profileCache.set(userId, name);
+        return name;
+    } catch (err) {
+        console.error('getProfileNameByUserId exception:', err);
+        return null;
+    }
+}
+
+// Initialize: auth gate then app
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         initTheme();
-        await runMigrationIfNeeded();
-        setCurrentDateTime();
-        setupEventListeners();
-        setupKeyboardShortcuts();
-        setupTitlebar();
-        await initializeHistoryDay();
-        await renderCalendar(calendarMonth);
-        await loadEntries();
-        await updateStats();
-        fitWindowToContent();
+        const authScreen = document.getElementById('authScreen');
+        const appShell = document.getElementById('appShell');
+
+        if (useSupabase()) {
+            const supabase = getSupabase();
+            if (!supabase) {
+                showApp(appShell, authScreen);
+                await initApp();
+                return;
+            }
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                await loadCurrentUserProfile();
+                showApp(appShell, authScreen);
+                await initApp();
+                setupLogout();
+                subscribeRealtime();
+            } else {
+                showAuth(authScreen, appShell);
+                setupAuthListeners();
+            }
+        } else {
+            showApp(appShell, authScreen);
+            await initApp();
+        }
     } catch (err) {
         console.error('Startup error:', err);
     }
 });
+
+function showApp(appShell, authScreen) {
+    if (authScreen) {
+        authScreen.classList.add('hidden');
+        authScreen.setAttribute('aria-hidden', 'true');
+    }
+    if (appShell) {
+        appShell.classList.remove('hidden');
+        appShell.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function showAuth(authScreen, appShell) {
+    if (appShell) {
+        appShell.classList.add('hidden');
+        appShell.setAttribute('aria-hidden', 'true');
+    }
+    if (authScreen) {
+        authScreen.classList.remove('hidden');
+        authScreen.setAttribute('aria-hidden', 'false');
+        document.getElementById('authNoConfig')?.classList.add('hidden');
+        document.querySelector('.auth-card')?.classList.remove('hidden');
+    }
+}
+
+function setupAuthListeners() {
+    const form = document.getElementById('authForm');
+    const signUpBtn = document.getElementById('authSignUpBtn');
+    const signInBtn = document.getElementById('authSignInBtn');
+    const authError = document.getElementById('authError');
+    const authScreen = document.getElementById('authScreen');
+    const appShell = document.getElementById('appShell');
+    const nameInput = document.getElementById('authName');
+    const authNameGroup = document.getElementById('authNameGroup');
+    const supabase = getSupabase();
+    if (!supabase || !form) return;
+
+    let authMode = 'login'; // 'login' | 'signup'
+
+    function switchToSignupMode() {
+        authMode = 'signup';
+        if (authNameGroup) authNameGroup.style.display = '';
+        if (nameInput) nameInput.setAttribute('required', '');
+        if (signInBtn) signInBtn.textContent = 'Create account';
+        if (signUpBtn) signUpBtn.textContent = 'Back to Log in';
+        authError.textContent = '';
+    }
+
+    function switchToLoginMode() {
+        authMode = 'login';
+        if (authNameGroup) authNameGroup.style.display = 'none';
+        if (nameInput) nameInput.removeAttribute('required');
+        if (signInBtn) signInBtn.textContent = 'Log in';
+        if (signUpBtn) signUpBtn.textContent = 'Sign up';
+        authError.textContent = '';
+    }
+
+    async function doLogin() {
+        authError.textContent = '';
+        const email = document.getElementById('authEmail').value.trim();
+        const password = document.getElementById('authPassword').value;
+        if (!email || !password) {
+            authError.textContent = 'Please enter email and password.';
+            return;
+        }
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) {
+            authError.textContent = error.message || 'Invalid login';
+            return;
+        }
+        if (data.session) {
+            await loadCurrentUserProfile();
+            showApp(appShell, authScreen);
+            setupLogout();
+            subscribeRealtime();
+            await initApp();
+        }
+    }
+
+    async function doSignUp() {
+        authError.textContent = '';
+        authError.style.color = '';
+        const fullName = nameInput?.value.trim();
+        if (!fullName) {
+            authError.textContent = 'Please enter your name.';
+            return;
+        }
+        const email = document.getElementById('authEmail').value.trim();
+        const password = document.getElementById('authPassword').value;
+        if (!email || !password) {
+            authError.textContent = 'Please enter email and password.';
+            return;
+        }
+        const btn = signInBtn;
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Signing up…';
+        }
+        try {
+            const { data, error } = await supabase.auth.signUp({ email, password });
+            if (error) {
+                authError.textContent = error.message || 'Sign up failed';
+                return;
+            }
+            if (data.user) {
+                try {
+                    const { error: profileError } = await supabase
+                        .from('profiles')
+                        .upsert({ id: data.user.id, full_name: fullName })
+                        .single();
+                    if (profileError) console.error('Profile upsert error:', profileError);
+                } catch (profileErr) {
+                    console.error('Profile upsert exception:', profileErr);
+                }
+            }
+            if (data.user && !data.session) {
+                authError.textContent = 'Check your email to confirm your account.';
+                authError.style.color = 'var(--success)';
+                return;
+            }
+            if (data.session) {
+                await loadCurrentUserProfile();
+                showApp(appShell, authScreen);
+                setupLogout();
+                subscribeRealtime();
+                await initApp();
+            }
+        } catch (err) {
+            authError.textContent = err?.message || 'Sign up failed. Check your connection.';
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Create account';
+            }
+        }
+    }
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (authMode === 'signup') {
+            await doSignUp();
+            return;
+        }
+        if (signInBtn) {
+            signInBtn.disabled = true;
+            const originalText = signInBtn.textContent;
+            signInBtn.textContent = 'Signing in…';
+            try {
+                await doLogin();
+            } catch (err) {
+                authError.textContent = err?.message || 'Login failed. Check your connection.';
+            } finally {
+                signInBtn.disabled = false;
+                signInBtn.textContent = originalText;
+            }
+        }
+    });
+
+    if (signUpBtn) {
+        signUpBtn.addEventListener('click', () => {
+            if (authMode === 'login') {
+                switchToSignupMode();
+                nameInput?.focus();
+            } else {
+                switchToLoginMode();
+            }
+        });
+    }
+
+    // Window controls on auth screen (move, minimize, maximize, close)
+    setupWindowControls(
+        document.getElementById('authWinMinBtn'),
+        document.getElementById('authWinMaxBtn'),
+        document.getElementById('authWinCloseBtn')
+    );
+    if (window.electronAPI?.windowControls) {
+        window.electronAPI.windowControls.isMaximized().then(setMaximizeButtonState).catch(() => {});
+    }
+}
+
+function setupLogout() {
+    const logoutBtn = document.getElementById('logoutBtn');
+    const profileBtn = document.getElementById('profileBtn');
+    if (logoutBtn) logoutBtn.style.display = '';
+    if (profileBtn) profileBtn.style.display = '';
+    const handler = async () => {
+        const supabase = getSupabase();
+        if (supabase) {
+            await supabase.auth.signOut();
+            if (supabaseRealtimeChannel) {
+                supabase.removeChannel(supabaseRealtimeChannel);
+                supabaseRealtimeChannel = null;
+            }
+        }
+        if (logoutBtn) logoutBtn.style.display = 'none';
+        if (profileBtn) profileBtn.style.display = 'none';
+        logoutBtn?.removeEventListener('click', handler);
+        showAuth(document.getElementById('authScreen'), document.getElementById('appShell'));
+    };
+    logoutBtn?.addEventListener('click', handler);
+}
+
+function subscribeRealtime() {
+    const supabase = getSupabase();
+    if (!supabase || supabaseRealtimeChannel) return;
+    const channel = supabase
+        .channel('calls-inserts')
+        .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'calls' },
+            async (payload) => {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!payload.new) return;
+                const callerName = payload.new.name || 'Someone';
+                const org = payload.new.organization || '';
+                const takerId = payload.new.user_id;
+
+                // Always refresh entries when a new call is inserted
+                await loadEntries();
+
+                // Do not show a \"teammate\" notification for your own inserts
+                if (!user || !takerId || takerId === user.id) return;
+
+                const takerName =
+                    (currentUserProfile && currentUserProfile.id === takerId && currentUserProfile.full_name) ||
+                    (await getProfileNameByUserId(takerId)) ||
+                    'Teammate';
+
+                showNotification(`New call from ${takerName}: ${callerName} – ${org}`);
+                showDesktopNotification(
+                    `${takerName} logged a call`,
+                    `with ${callerName}${org ? ' – ' + org : ''}`
+                );
+            }
+        )
+        .subscribe((status, err) => {
+            if (err) console.error('Realtime subscription error:', err);
+            if (status === 'CHANNEL_ERROR') console.warn('Realtime: channel error. Ensure Database → Replication has public.calls enabled.');
+        });
+    supabaseRealtimeChannel = channel;
+}
+
+async function initApp() {
+    await runMigrationIfNeeded();
+    setCurrentDateTime();
+    setupEventListeners();
+    setupKeyboardShortcuts();
+    setupTitlebar();
+    await initializeHistoryDay();
+    await renderCalendar(calendarMonth);
+    await loadEntries();
+    await updateStats();
+    fitWindowToContent();
+}
 
 // Size the main window height to fit the full content (Electron only)
 function fitWindowToContent() {
@@ -104,9 +460,6 @@ function setupEventListeners() {
     // Clear form button
     document.getElementById('clearBtn').addEventListener('click', clearForm);
     
-    // Export button
-    document.getElementById('exportBtn').addEventListener('click', exportToCSV);
-    
     // Clear all button
     document.getElementById('clearAllBtn').addEventListener('click', clearAllEntries);
     
@@ -115,9 +468,6 @@ function setupEventListeners() {
     document.getElementById('closeSearch').addEventListener('click', toggleSearch);
     document.getElementById('searchInput').addEventListener('input', handleSearch);
 
-    // Focus search button (Ctrl+F)
-    document.getElementById('focusSearchBtn')?.addEventListener('click', focusSearch);
-    
     // Stats button
     document.getElementById('statsBtn').addEventListener('click', showStats);
 
@@ -150,6 +500,12 @@ function setupEventListeners() {
     document.getElementById('editModalDeleteConfirmBtn').addEventListener('click', confirmEditModalDelete);
     document.getElementById('closeStatsModal').addEventListener('click', closeStatsModal);
     document.getElementById('editForm').addEventListener('submit', handleEditSubmit);
+
+    // Profile / Account modal (Supabase only)
+    document.getElementById('profileBtn')?.addEventListener('click', openProfileModal);
+    document.getElementById('closeProfileModal')?.addEventListener('click', closeProfileModal);
+    document.getElementById('profileCancelBtn')?.addEventListener('click', closeProfileModal);
+    document.getElementById('profileForm')?.addEventListener('submit', handleProfileSubmit);
     
     // Close modals on outside click
     document.getElementById('editModal').addEventListener('click', (e) => {
@@ -157,6 +513,9 @@ function setupEventListeners() {
     });
     document.getElementById('statsModal').addEventListener('click', (e) => {
         if (e.target.id === 'statsModal') closeStatsModal();
+    });
+    document.getElementById('profileModal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'profileModal') closeProfileModal();
     });
 
     setupEntriesListClick();
@@ -375,10 +734,6 @@ function setupKeyboardShortcuts() {
                     clearForm();
                     document.getElementById('name').focus();
                     break;
-                case 'e':
-                    e.preventDefault();
-                    exportToCSV();
-                    break;
                 case 'l':
                     e.preventDefault();
                     clearForm();
@@ -400,6 +755,8 @@ function setupKeyboardShortcuts() {
                 closeCalendar();
             } else if (document.getElementById('confirmModal')?.classList.contains('show')) {
                 closeConfirm(false);
+            } else if (document.getElementById('profileModal')?.classList.contains('show')) {
+                closeProfileModal();
             } else if (document.getElementById('searchContainer').style.display !== 'none') {
                 toggleSearch();
             }
@@ -418,19 +775,8 @@ function focusSearch() {
 }
 
 // Setup custom titlebar
-function setupTitlebar() {
-    // App action buttons (History, New, Export are in titlebar-right)
-    const tbNewBtn = document.getElementById('tbNewBtn');
-    const tbExportBtn = document.getElementById('tbExportBtn');
-
-    if (tbNewBtn) tbNewBtn.addEventListener('click', () => { clearForm(); document.getElementById('name')?.focus(); });
-    if (tbExportBtn) tbExportBtn.addEventListener('click', exportToCSV);
-
-    // Window controls (Electron)
-    const winMinBtn = document.getElementById('winMinBtn');
-    const winMaxBtn = document.getElementById('winMaxBtn');
-    const winCloseBtn = document.getElementById('winCloseBtn');
-
+function setupWindowControls(winMinBtn, winMaxBtn, winCloseBtn) {
+    if (!winMinBtn && !winMaxBtn && !winCloseBtn) return;
     if (window.electronAPI?.windowControls) {
         winMinBtn?.addEventListener('click', () => window.electronAPI.windowControls.minimize());
         winMaxBtn?.addEventListener('click', async () => {
@@ -438,23 +784,37 @@ function setupTitlebar() {
             setMaximizeButtonState(!!isMax);
         });
         winCloseBtn?.addEventListener('click', () => window.electronAPI.windowControls.close());
-
-        // Initial state
-        window.electronAPI.windowControls.isMaximized().then(setMaximizeButtonState).catch(() => {});
     } else {
-        // Fallback for browser preview
         winMinBtn?.setAttribute('disabled', 'true');
         winMaxBtn?.setAttribute('disabled', 'true');
         winCloseBtn?.addEventListener('click', () => window.close());
     }
 }
 
+function setupTitlebar() {
+    // Window controls (Electron)
+    const winMinBtn = document.getElementById('winMinBtn');
+    const winMaxBtn = document.getElementById('winMaxBtn');
+    const winCloseBtn = document.getElementById('winCloseBtn');
+    setupWindowControls(winMinBtn, winMaxBtn, winCloseBtn);
+
+    if (window.electronAPI?.windowControls) {
+        // Initial state for main titlebar
+        window.electronAPI.windowControls.isMaximized().then(setMaximizeButtonState).catch(() => {});
+    }
+}
+
 function setMaximizeButtonState(isMaximized) {
-    const btn = document.getElementById('winMaxBtn');
-    if (!btn) return;
-    btn.textContent = isMaximized ? '❐' : '▢';
-    btn.setAttribute('aria-label', isMaximized ? 'Restore' : 'Maximize');
-    btn.setAttribute('title', isMaximized ? 'Restore' : 'Maximize');
+    const text = isMaximized ? '❐' : '▢';
+    const label = isMaximized ? 'Restore' : 'Maximize';
+    const mainBtn = document.getElementById('winMaxBtn');
+    const authBtn = document.getElementById('authWinMaxBtn');
+    [mainBtn, authBtn].forEach(btn => {
+        if (!btn) return;
+        btn.textContent = text;
+        btn.setAttribute('aria-label', label);
+        btn.setAttribute('title', label);
+    });
 }
 
 // Set current date and time in the datetime-local input
@@ -489,11 +849,16 @@ async function handleFormSubmit(e) {
 
     try {
         const saved = await saveEntry(formData);
-        if (window.electronAPI?.createEntry && saved == null) {
+        if (saved == null && (window.electronAPI?.createEntry || useSupabase())) {
             showNotification('Failed to save call. Check console for errors.');
             return;
         }
         showNotification('Call logged successfully!');
+        const takerName = currentUserProfile?.full_name || 'You';
+        showDesktopNotification(
+            `${takerName} logged a call`,
+            `with ${formData.name || 'Unknown'}${formData.organization ? ' – ' + formData.organization : ''}`
+        );
         clearForm();
         await setSelectedDay(toLocalDayKey(entryDate));
     } catch (err) {
@@ -502,8 +867,37 @@ async function handleFormSubmit(e) {
     }
 }
 
-// Save entry (SQLite when in Electron, else localStorage). Returns id or null when using Electron.
+// Save entry (Supabase when configured, else SQLite/localStorage). Returns id or null.
 async function saveEntry(entry) {
+    if (useSupabase()) {
+        const supabase = getSupabase();
+        if (!supabase) return null;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return null;
+        const now = new Date().toISOString();
+        const callTime = entry.timestamp || now;
+        const { data, error } = await supabase
+            .from('calls')
+            .insert({
+                user_id: session.user.id,
+                name: entry.name || '',
+                phone: entry.phone || '',
+                organization: entry.organization || '',
+                device_name: entry.deviceName || '',
+                support_request: entry.supportRequest || '',
+                notes: entry.notes || '',
+                call_time: callTime,
+                created_at: now,
+                updated_at: now
+            })
+            .select('id')
+            .single();
+        if (error) {
+            console.error('createEntry Supabase error:', error);
+            return null;
+        }
+        return data ? data.id : null;
+    }
     if (window.electronAPI?.createEntry) {
         return await window.electronAPI.createEntry(entry);
     }
@@ -514,8 +908,21 @@ async function saveEntry(entry) {
     return withId.id;
 }
 
-// Get all entries (SQLite when in Electron, else localStorage)
+// Get all entries (Supabase when configured, else SQLite/localStorage)
 async function getEntries() {
+    if (useSupabase()) {
+        const supabase = getSupabase();
+        if (!supabase) return [];
+        const { data, error } = await supabase
+            .from('calls')
+            .select('*')
+            .order('call_time', { ascending: false });
+        if (error) {
+            console.error('getEntries Supabase error:', error);
+            return [];
+        }
+        return (data || []).map(mapRowToEntry);
+    }
     if (window.electronAPI?.getEntries) {
         return await window.electronAPI.getEntries();
     }
@@ -582,7 +989,7 @@ function createEntryCard(entry) {
     });
     
     return `
-        <div class="entry-card" data-id="${entry.id}" role="button" tabindex="0" title="Click to edit">
+        <div class="entry-card" data-id="${escapeHtmlAttr(String(entry.id))}" role="button" tabindex="0" title="Click to edit">
             <div class="entry-header">
                 <div class="entry-name">${escapeHtml(entry.name)}</div>
                 <span class="entry-date">${formattedDate}</span>
@@ -621,23 +1028,23 @@ function setupEntriesListClick() {
         }
         const card = e.target.closest('.entry-card');
         if (!card) return;
-        const id = parseInt(card.getAttribute('data-id'));
-        if (!Number.isNaN(id)) editEntry(id);
+        const id = card.getAttribute('data-id');
+        if (id) editEntry(id);
     });
     list.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         const card = e.target.closest('.entry-card');
         if (!card) return;
         e.preventDefault();
-        const id = parseInt(card.getAttribute('data-id'));
-        if (!Number.isNaN(id)) editEntry(id);
+        const id = card.getAttribute('data-id');
+        if (id) editEntry(id);
     });
 }
 
-// Edit entry
+// Edit entry (id may be number or uuid string)
 async function editEntry(id) {
     const entries = await getEntries();
-    const entry = entries.find(e => e.id === id);
+    const entry = entries.find(e => String(e.id) === String(id));
     
     if (!entry) return;
     
@@ -669,7 +1076,7 @@ async function editEntry(id) {
 async function handleEditSubmit(e) {
     e.preventDefault();
     
-    const id = parseInt(document.getElementById('editId').value);
+    const id = document.getElementById('editId').value;
     const fields = {
         name: document.getElementById('editName').value.trim(),
         phone: document.getElementById('editMobile').value.trim(),
@@ -681,11 +1088,35 @@ async function handleEditSubmit(e) {
     const editDateVal = document.getElementById('editDate').value;
     if (editDateVal) fields.callTime = new Date(editDateVal).toISOString();
 
-    if (window.electronAPI?.updateEntry) {
+    if (useSupabase()) {
+        const supabase = getSupabase();
+        if (supabase) {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                const { error } = await supabase
+                    .from('calls')
+                    .update({
+                        name: fields.name,
+                        phone: fields.phone,
+                        organization: fields.organization,
+                        device_name: fields.deviceName || '',
+                        support_request: fields.supportRequest,
+                        notes: fields.notes || '',
+                        call_time: fields.callTime || new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', id)
+                    .eq('user_id', session.user.id);
+                if (error) {
+                    console.error('updateEntry Supabase error:', error);
+                }
+            }
+        }
+    } else if (window.electronAPI?.updateEntry) {
         await window.electronAPI.updateEntry(id, fields);
     } else {
         const entries = await getEntries();
-        const idx = entries.findIndex(e => e.id === id);
+        const idx = entries.findIndex(e => String(e.id) === String(id));
         if (idx === -1) return;
         entries[idx] = { ...entries[idx], ...fields, timestamp: fields.callTime || entries[idx].timestamp };
         localStorage.setItem('supportCalls', JSON.stringify(entries));
@@ -716,11 +1147,19 @@ function hideEditModalDeleteConfirm() {
 async function confirmEditModalDelete() {
     const id = editingEntryId;
     if (!id) return;
-    if (window.electronAPI?.deleteEntry) {
+    if (useSupabase()) {
+        const supabase = getSupabase();
+        if (supabase) {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                await supabase.from('calls').delete().eq('id', id).eq('user_id', session.user.id);
+            }
+        }
+    } else if (window.electronAPI?.deleteEntry) {
         await window.electronAPI.deleteEntry(id);
     } else {
         const entries = await getEntries();
-        const filtered = entries.filter(e => e.id !== id);
+        const filtered = entries.filter(e => String(e.id) !== String(id));
         localStorage.setItem('supportCalls', JSON.stringify(filtered));
     }
     closeEditModal();
@@ -734,7 +1173,7 @@ function handleEditModalDelete() {
     showEditModalDeleteConfirm();
 }
 
-// Delete entry
+// Delete entry (id may be number or uuid)
 async function deleteEntry(id) {
     const confirmed = await openConfirm({
         title: 'Delete entry',
@@ -744,11 +1183,19 @@ async function deleteEntry(id) {
     });
     
     if (confirmed) {
-        if (window.electronAPI?.deleteEntry) {
+        if (useSupabase()) {
+            const supabase = getSupabase();
+            if (supabase) {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session) {
+                    await supabase.from('calls').delete().eq('id', id).eq('user_id', session.user.id);
+                }
+            }
+        } else if (window.electronAPI?.deleteEntry) {
             await window.electronAPI.deleteEntry(id);
         } else {
             const entries = await getEntries();
-            const filtered = entries.filter(e => e.id !== id);
+            const filtered = entries.filter(e => String(e.id) !== String(id));
             localStorage.setItem('supportCalls', JSON.stringify(filtered));
         }
         await loadEntries();
@@ -768,6 +1215,95 @@ function closeEditModal() {
 // Close stats modal
 function closeStatsModal() {
     document.getElementById('statsModal').classList.remove('show');
+}
+
+// ---------- Profile / Account modal (Supabase) ----------
+function openProfileModal() {
+    if (!useSupabase() || !currentUserProfile) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const errEl = document.getElementById('profileError');
+    const nameEl = document.getElementById('profileName');
+    const emailEl = document.getElementById('profileEmail');
+    if (!nameEl || !emailEl) return;
+    errEl.textContent = '';
+    nameEl.value = currentUserProfile.full_name || '';
+    supabase.auth.getSession().then(({ data: { session } }) => {
+        emailEl.value = session?.user?.email || '';
+    });
+    document.getElementById('profileModal').classList.add('show');
+    document.getElementById('profileModal').setAttribute('aria-hidden', 'false');
+    setTimeout(() => nameEl.focus(), 0);
+}
+
+function closeProfileModal() {
+    const modal = document.getElementById('profileModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+    document.getElementById('profileError').textContent = '';
+}
+
+async function handleProfileSubmit(e) {
+    e.preventDefault();
+    if (!useSupabase()) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const errEl = document.getElementById('profileError');
+    const nameEl = document.getElementById('profileName');
+    const emailEl = document.getElementById('profileEmail');
+    const saveBtn = document.getElementById('profileSaveBtn');
+    const fullName = nameEl.value.trim();
+    const newEmail = emailEl.value.trim();
+    errEl.textContent = '';
+    if (!fullName) {
+        errEl.textContent = 'Please enter your name.';
+        return;
+    }
+    if (!newEmail) {
+        errEl.textContent = 'Please enter your email.';
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        errEl.textContent = 'Session expired. Please log in again.';
+        return;
+    }
+    const originalText = saveBtn?.textContent;
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving…';
+    }
+    try {
+        const { error: profileError } = await supabase
+            .from('profiles')
+            .upsert(
+                { id: session.user.id, full_name: fullName, updated_at: new Date().toISOString() },
+                { onConflict: 'id' }
+            );
+        if (profileError) {
+            errEl.textContent = profileError.message || 'Failed to update name.';
+            return;
+        }
+        if (newEmail !== (session.user.email || '')) {
+            const { error: authError } = await supabase.auth.updateUser({ email: newEmail });
+            if (authError) {
+                errEl.textContent = authError.message || 'Failed to update email.';
+                return;
+            }
+        }
+        currentUserProfile = { id: session.user.id, full_name: fullName };
+        profileCache.set(session.user.id, fullName);
+        closeProfileModal();
+        showNotification('Account updated.');
+    } catch (err) {
+        errEl.textContent = err?.message || 'Update failed.';
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalText || 'Save';
+        }
+    }
 }
 
 // Toggle search
@@ -887,72 +1423,62 @@ function showNotification(message) {
     notification.className = 'notification';
     notification.textContent = message;
     document.body.appendChild(notification);
-    
+
     setTimeout(() => {
         notification.style.animation = 'slideIn 0.3s ease reverse';
         setTimeout(() => notification.remove(), 300);
     }, 3000);
 }
 
-// Export to CSV
-async function exportToCSV() {
-    const entries = await getEntries();
-    
-    if (entries.length === 0) {
-        showNotification('No entries to export');
+// Show desktop / tray notification when a call is logged (Discord-style near system tray in Electron)
+function showDesktopNotification(title, body) {
+    if (window.electronAPI?.showTrayNotification) {
+        window.electronAPI.showTrayNotification(title || 'IT Support Call Logger', body || '');
         return;
     }
-    
-    const headers = ['Date & Time', 'Name', 'Phone', 'Organization', 'Device name', 'Support Request', 'Notes'];
-    
-    const rows = entries.map(entry => {
-        const date = new Date(entry.timestamp).toLocaleString('en-US');
-        return [
-            date,
-            entry.name,
-            entry.phone || entry.mobile || '',
-            entry.organization,
-            (entry.deviceName || '').replace(/"/g, '""'),
-            (entry.supportRequest || '').replace(/"/g, '""'),
-            (entry.notes || '').replace(/"/g, '""')
-        ].map(field => `"${field}"`).join(',');
-    });
-    
-    const csvContent = [headers.map(h => `"${h}"`).join(','), ...rows].join('\n');
-    
-    if (window.electronAPI) {
-        const defaultFilename = `support_calls_${new Date().toISOString().split('T')[0]}.csv`;
-        const result = await window.electronAPI.saveFile(csvContent, defaultFilename);
-        if (result) {
-            showNotification('CSV exported successfully!');
-        }
-    } else {
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute('href', url);
-        link.setAttribute('download', `support_calls_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        showNotification('CSV exported successfully!');
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission === 'denied') return;
+    if (Notification.permission === 'default') {
+        Notification.requestPermission().then(perm => {
+            if (perm === 'granted') doShowDesktopNotification(title, body);
+        });
+        return;
+    }
+    doShowDesktopNotification(title, body);
+}
+
+function doShowDesktopNotification(title, body) {
+    if (typeof Notification === 'undefined') return;
+    try {
+        const n = new Notification(title, { body, icon: undefined });
+        n.onclick = () => {
+            n.close();
+            if (window.electronAPI?.focusApp) window.electronAPI.focusApp();
+        };
+    } catch (e) {
+        console.warn('Desktop notification failed:', e);
     }
 }
 
-// Clear all entries
+// Clear all entries (Supabase: only current user's; local: all)
 async function clearAllEntries() {
     const confirmed = await openConfirm({
         title: 'Clear all entries',
-        message: 'Delete all call logs?',
-        detail: 'This will remove every saved call log entry. This action cannot be undone.',
+        message: useSupabase() ? 'Delete all your call logs?' : 'Delete all call logs?',
+        detail: useSupabase() ? 'This will remove every call log you created. This action cannot be undone.' : 'This will remove every saved call log entry. This action cannot be undone.',
         okLabel: 'Clear all'
     });
     
     if (confirmed) {
-        if (window.electronAPI?.clearAllEntries) {
+        if (useSupabase()) {
+            const supabase = getSupabase();
+            if (supabase) {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session) {
+                    await supabase.from('calls').delete().eq('user_id', session.user.id);
+                }
+            }
+        } else if (window.electronAPI?.clearAllEntries) {
             await window.electronAPI.clearAllEntries();
         } else {
             localStorage.removeItem('supportCalls');

@@ -8,7 +8,6 @@ A standalone Electron desktop application to quickly capture and log IT support 
 - 📅 **Automatic Timestamping**: Automatically records date and time of each call
 - 💾 **Local Storage**: All data is stored locally (no server required)
 - 📊 **View History**: See all logged calls in an easy-to-read format
-- 📥 **Export to CSV**: Export all entries to a CSV file using native file dialog
 - 🎨 **Modern UI**: Clean, professional interface that's easy to use
 - 🖥️ **Standalone Desktop App**: Runs as a native desktop application
 
@@ -76,12 +75,7 @@ npm run build
    - Most recent calls appear at the top
    - Each entry shows all the captured information
 
-4. **Export Data**
-   - Click "Export to CSV" to save all entries as a CSV file
-   - A native file dialog will appear to choose save location
-   - The file can be opened in Excel, Google Sheets, or any spreadsheet application
-
-5. **Clear Data**
+4. **Clear Data**
    - Click "Clear All" to remove all logged entries (with native confirmation dialog)
    - Use "Clear Form" to reset the form without saving
 
@@ -93,7 +87,7 @@ npm run build
   - **Windows**: `%APPDATA%\it-support-call-logger\`
   - **macOS**: `~/Library/Application Support/it-support-call-logger/`
   - **Linux**: `~/.config/it-support-call-logger/`
-- To backup data, use the "Export to CSV" feature regularly
+- To backup data, ensure your data directory is included in your backup routine.
 
 ## Project Structure
 
@@ -129,6 +123,23 @@ Replace the icon files in the `build/` folder:
 
 You can use online tools like [CloudConvert](https://cloudconvert.com/) to convert between formats.
 
+### Testing multi-user notifications (Supabase)
+
+To see the **"Teammate logged a call"** notification (when someone else logs a call), run two app instances as two different Supabase users:
+
+1. **Start two instances** (each keeps its own login and data):
+   - Terminal 1: `npm run start:1`
+   - Terminal 2: `npm run start:2`
+
+2. **Log in as different users** in each window:
+   - Window 1: sign up or log in as e.g. `user1@example.com`
+   - Window 2: sign up or log in as e.g. `user2@example.com`  
+   Both must use the same Supabase project (your `supabaseConfig.js`).
+
+3. **Test:** In window 1, log a call (fill the form and save). Window 2 should show the tray notification: **"Teammate logged a call – with [name] – [org]"**. Repeat from window 2 to see the notification in window 1.
+
+Ensure **Realtime** is enabled for the `calls` table in Supabase: **Dashboard → Database → Replication** → turn on for `public.calls`.
+
 ## Privacy & Security
 
 - All data is stored locally on your device
@@ -139,11 +150,34 @@ You can use online tools like [CloudConvert](https://cloudconvert.com/) to conve
 
 ## Troubleshooting
 
+### "Cannot find module 'better-sqlite3'" after installing the app
+The app uses **sql.js** for the database, not `better-sqlite3`. This error means the installed build was created from an older version of the project. To fix:
+
+1. **Close** any running instance of "IT Support Call Logger" (and quit from the system tray if it’s there).
+2. In this project folder run:
+   ```bash
+   npm install
+   npm run build-win
+   ```
+3. Install the **new** build from the `dist` folder (e.g. run the NSIS installer in `dist` or use the portable exe).
+4. Launch the newly installed app; it will use sql.js and the error should be gone.
+
+### Build fails with "The process cannot access the file ... app.asar"
+Something is locking the build output (often the installed app or an Electron process). Fix:
+
+1. **Close** "IT Support Call Logger" completely (Task Manager → end any "IT Support Call Logger" or "Electron" processes if needed).
+2. From the project folder run a clean build:
+   ```bash
+   npm run build-win:fresh
+   ```
+   This removes the `dist` folder then builds. If `dist` is locked, the clean step will fail—close the app and try again.
+3. Or manually: delete the `dist` folder, then run `npm run build-win`.
+
 ### Application won't start
 - Ensure Node.js is installed: `node --version`
-- Reinstall dependencies: `rm -rf node_modules && npm install`
+- Reinstall dependencies: `rm -rf node_modules && npm install` (or on Windows: remove `node_modules` and run `npm install`)
 
-### Build fails
+### Build fails (general)
 - Make sure all dependencies are installed: `npm install`
 - Check that electron-builder is installed: `npm list electron-builder`
 
@@ -160,7 +194,7 @@ Potential features that could be added:
 - Integration with ticketing systems
 - Cloud sync (optional)
 - Customizable fields
-- Data import/export in multiple formats
+- Data import in multiple formats
 
 ## License
 
@@ -168,4 +202,4 @@ MIT
 
 ---
 
-**Note**: This application stores data locally. If you uninstall the application, you may lose data unless you've exported it first. Regular CSV exports are recommended for backup purposes.
+**Note**: This application stores data locally. If you uninstall the application, you may lose data unless you have backed up the data directory.

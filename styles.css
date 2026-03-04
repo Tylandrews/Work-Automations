@@ -74,6 +74,128 @@ body {
     flex-direction: column;
 }
 
+.hidden {
+    display: none !important;
+}
+
+/* Auth screen (login/signup) */
+.auth-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+}
+
+.auth-titlebar {
+    flex-shrink: 0;
+}
+
+.auth-screen-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    min-height: 0;
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    box-shadow: 0 4px 24px var(--shadow-lg);
+}
+
+.auth-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+    text-align: center;
+}
+
+.auth-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+    text-align: center;
+}
+
+.auth-error {
+    font-size: 0.85rem;
+    color: var(--danger);
+    margin-bottom: 12px;
+    min-height: 1.2em;
+}
+
+.auth-form .form-group {
+    margin-bottom: 16px;
+}
+
+.auth-form .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.auth-form .form-group input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.auth-form .form-group input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.auth-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.auth-actions .btn {
+    flex: 1;
+}
+
+.auth-no-config {
+    text-align: center;
+    max-width: 320px;
+}
+
+.auth-no-config p {
+    margin-bottom: 16px;
+    color: var(--text-secondary);
+}
+
+.profile-form {
+    margin: 0;
+}
+.profile-form .form-group {
+    margin-bottom: 16px;
+}
+.profile-hint {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    line-height: 1.4;
+}
+.profile-form .modal-actions {
+    margin-top: 8px;
+}
+
 /* Custom Titlebar (Electron) */
 .titlebar {
     position: sticky;
@@ -240,18 +362,21 @@ main {
     overflow: hidden;
     display: flex;
     justify-content: center;
-    align-items: flex-start;
+    align-items: stretch;
 }
 
 main .form-container {
     max-width: 560px;
     width: 100%;
+    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
 }
 
 /* Right side panel (Call History) - always visible */
 .app-panel {
-    flex: 0 0 420px;
-    min-width: 320px;
+    flex: 0 1 420px;
+    min-width: 280px;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -308,6 +433,7 @@ main .form-container {
     border-radius: 0;
     box-shadow: none;
     border: none;
+    overflow: hidden;
 }
 
 .app-panel .header-actions-row {
@@ -316,6 +442,47 @@ main .form-container {
     gap: 8px;
     align-items: center;
     margin-bottom: 16px;
+}
+
+/* Call History list: scrollable, scrollbar hidden */
+#entriesList.entries-list,
+.app-panel .entries-list {
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex: 1 1 0;
+    min-height: 0;
+    padding-right: 4px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+#entriesList.entries-list::-webkit-scrollbar,
+.app-panel .entries-list::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+    background: transparent !important;
+}
+#entriesList.entries-list::-webkit-scrollbar-track,
+#entriesList.entries-list::-webkit-scrollbar-thumb,
+#entriesList.entries-list::-webkit-scrollbar-corner,
+.app-panel .entries-list::-webkit-scrollbar-track,
+.app-panel .entries-list::-webkit-scrollbar-thumb,
+.app-panel .entries-list::-webkit-scrollbar-corner {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+}
+/* Ensure no scrollbar on panel or entries container if they ever scroll */
+.app-panel,
+.app-panel .entries-container {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+.app-panel::-webkit-scrollbar,
+.app-panel .entries-container::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
 }
 
 /* Section Headers */
@@ -552,16 +719,6 @@ main .form-container {
     transform: translateY(-1px);
 }
 
-.btn-icon-only.btn-export {
-    background: var(--success);
-    color: white;
-    border-color: var(--success);
-}
-
-.btn-icon-only.btn-export:hover {
-    background: #059669;
-}
-
 .btn-icon-only.btn-danger {
     background: var(--danger);
     color: white;
@@ -610,7 +767,9 @@ main .form-container {
 
 .entries-list {
     overflow-y: auto;
+    overflow-x: hidden;
     flex: 1;
+    min-height: 0;
     padding-right: 4px;
     scrollbar-width: none;
     -ms-overflow-style: none;

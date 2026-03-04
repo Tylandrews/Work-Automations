@@ -7,6 +7,55 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <!-- Auth screen (shown when Supabase configured and not logged in) -->
+    <div id="authScreen" class="auth-screen hidden" aria-hidden="true">
+        <header class="titlebar auth-titlebar" id="authTitlebar">
+            <div class="titlebar-drag-region">
+                <div class="titlebar-left">
+                    <div class="app-logo-wrap">
+                        <img src="Images/BigFish_Centered_Logo_Inverted.png" alt="BigFish Technology" class="app-logo" aria-hidden="true">
+                    </div>
+                </div>
+                <div class="titlebar-right">
+                    <button class="win-btn" id="authWinMinBtn" type="button" title="Minimize" aria-label="Minimize">—</button>
+                    <button class="win-btn" id="authWinMaxBtn" type="button" title="Maximize" aria-label="Maximize">▢</button>
+                    <button class="win-btn win-close" id="authWinCloseBtn" type="button" title="Close" aria-label="Close">✕</button>
+                </div>
+            </div>
+            <div class="titlebar-divider"></div>
+        </header>
+        <div class="auth-screen-content">
+        <div class="auth-card">
+            <h1 class="auth-title">IT Support Call Logger</h1>
+            <p class="auth-subtitle">Sign in to continue</p>
+            <div id="authError" class="auth-error" role="alert" aria-live="polite"></div>
+            <form id="authForm" class="auth-form">
+                <div class="form-group auth-signup-only" id="authNameGroup" style="display: none;">
+                    <label for="authName">Name</label>
+                    <input type="text" id="authName" name="name" autocomplete="name" placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label for="authEmail">Email</label>
+                    <input type="email" id="authEmail" name="email" autocomplete="email" required placeholder="you@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="authPassword">Password</label>
+                    <input type="password" id="authPassword" name="password" autocomplete="current-password" required placeholder="••••••••">
+                </div>
+                <div class="auth-actions">
+                    <button type="submit" class="btn btn-primary" id="authSignInBtn">Log in</button>
+                    <button type="button" class="btn btn-secondary" id="authSignUpBtn">Sign up</button>
+                </div>
+            </form>
+        </div>
+        <div id="authNoConfig" class="auth-no-config hidden">
+            <p>Supabase is not configured. Using local storage.</p>
+            <button type="button" class="btn btn-primary" id="authUseLocalBtn">Continue with local storage</button>
+        </div>
+        </div>
+    </div>
+
+    <div id="appShell" class="app-shell">
     <!-- Inline SVG icon set (no external deps) -->
     <svg class="svg-sprite" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
         <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
@@ -39,21 +88,16 @@
             </div>
 
             <div class="titlebar-right">
-                <button class="tb-btn" id="focusSearchBtn" type="button" title="Focus Search (Ctrl+F)" aria-label="Focus search in call history">
-                    <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
-                    <span class="tb-label">Search</span>
-                </button>
-                <button class="tb-btn" id="tbNewBtn" type="button" title="New Entry (Ctrl+N)">
-                    <svg class="icon" aria-hidden="true"><use href="#i-plus"></use></svg>
-                    <span class="tb-label">New</span>
-                </button>
-                <button class="tb-btn" id="tbExportBtn" type="button" title="Export CSV (Ctrl+E)">
-                    <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
-                    <span class="tb-label">Export</span>
-                </button>
                 <button class="tb-btn tb-theme-toggle" id="themeToggleBtn" type="button" title="Toggle dark mode" aria-label="Toggle dark mode">
                     <svg class="icon theme-icon theme-icon-moon" aria-hidden="true"><use href="#i-moon"></use></svg>
                     <svg class="icon theme-icon theme-icon-sun" aria-hidden="true"><use href="#i-sun"></use></svg>
+                </button>
+                <button class="tb-btn" id="profileBtn" type="button" title="Account" aria-label="Update account" style="display: none;">
+                    <svg class="icon" aria-hidden="true"><use href="#i-user"></use></svg>
+                    <span class="tb-label">Account</span>
+                </button>
+                <button class="tb-btn" id="logoutBtn" type="button" title="Log out" aria-label="Log out" style="display: none;">
+                    <span class="tb-label">Log out</span>
                 </button>
                 <button class="win-btn" id="winMinBtn" type="button" title="Minimize" aria-label="Minimize">—</button>
                 <button class="win-btn" id="winMaxBtn" type="button" title="Maximize" aria-label="Maximize">▢</button>
@@ -167,9 +211,6 @@
                     </button>
                     <button class="btn-icon-only" id="statsBtn" title="View Statistics">
                         <svg class="icon" aria-hidden="true"><use href="#i-stats"></use></svg>
-                    </button>
-                    <button class="btn-icon-only btn-export" id="exportBtn" title="Export to CSV (Ctrl+E)">
-                        <svg class="icon" aria-hidden="true"><use href="#i-download"></use></svg>
                     </button>
                     <button class="btn-icon-only btn-danger" id="clearAllBtn" title="Clear All">
                         <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
@@ -326,6 +367,37 @@
         </div>
     </div>
 
+    <!-- Profile / Account Modal -->
+    <div class="modal" id="profileModal" aria-hidden="true">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h3>Account</h3>
+                <button class="modal-close" id="closeProfileModal">&times;</button>
+            </div>
+            <form id="profileForm" class="profile-form">
+                <div id="profileError" class="auth-error" role="alert" aria-live="polite"></div>
+                <div class="form-group">
+                    <label for="profileName">Name</label>
+                    <input type="text" id="profileName" name="name" autocomplete="name" required placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label for="profileEmail">Email</label>
+                    <input type="email" id="profileEmail" name="email" autocomplete="email" required placeholder="you@example.com">
+                </div>
+                <p class="profile-hint">Changing email may require you to confirm the new address. Your display name is used in call notifications.</p>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="profileCancelBtn">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="profileSaveBtn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    </div><!-- /#appShell -->
+
+    <script>window.supabaseConfig = window.supabaseConfig || {};</script>
+    <script src="supabaseConfig.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="script.js"></script>
 </body>
 </html>

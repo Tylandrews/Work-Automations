@@ -5,11 +5,18 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "start:1": "electron . --user-data-dir=./.test-userdata/user1",
+    "start:2": "electron . --user-data-dir=./.test-userdata/user2",
+    "start:3": "electron . --user-data-dir=./.test-userdata/user3",
+    "start:4": "electron . --user-data-dir=./.test-userdata/user4",
+    "start:5": "electron . --user-data-dir=./.test-userdata/user5",
     "prebuild": "node scripts/build-icon.js",
     "build": "electron-builder",
-    "build-win": "electron-builder --win",
+    "build-win": "node scripts/clean-dist.js && electron-builder --win",
+    "build-win:fresh": "npm run build-win",
     "build-mac": "electron-builder --mac",
-    "build-linux": "electron-builder --linux"
+    "build-linux": "electron-builder --linux",
+    "clean": "node scripts/clean-dist.js"
   },
   "keywords": [
     "electron",
