@@ -3,5 +3,6 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+# Supabase config - keep local, but will be bundled in production builds
 supabaseConfig.js
 .test-userdata/

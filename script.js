@@ -125,8 +125,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 setupAuthListeners();
             }
         } else {
-            showApp(appShell, authScreen);
-            await initApp();
+            // Supabase is required - show error message
+            showAuth(authScreen, appShell);
+            const noConfigEl = document.getElementById('authNoConfig');
+            if (noConfigEl) {
+                noConfigEl.classList.remove('hidden');
+                noConfigEl.querySelector('.auth-no-config-title').textContent = 'Supabase configuration required';
+                noConfigEl.querySelector('.auth-no-config-body').textContent = 'Please configure Supabase by creating supabaseConfig.js with your project URL and anon key.';
+                const useLocalBtn = noConfigEl.querySelector('#authUseLocalBtn');
+                if (useLocalBtn) {
+                    useLocalBtn.style.display = 'none';
+                }
+            }
         }
     } catch (err) {
         console.error('Startup error:', err);
@@ -708,19 +718,8 @@ function updateThemeToggleTitle() {
 }
 
 async function runMigrationIfNeeded() {
-    if (!window.electronAPI?.getEntries || !window.electronAPI?.importFromLocalStorage) return;
-    try {
-        const entries = await window.electronAPI.getEntries();
-        if (entries.length > 0) return;
-        const raw = localStorage.getItem('supportCalls');
-        if (!raw) return;
-        const arr = JSON.parse(raw);
-        if (!Array.isArray(arr) || arr.length === 0) return;
-        await window.electronAPI.importFromLocalStorage(arr);
-        localStorage.removeItem('supportCalls');
-    } catch (e) {
-        console.error('Migration from localStorage failed', e);
-    }
+    // Migration from local storage removed - using Supabase only
+    // If you need to migrate data, use Supabase's import tools or write a one-time migration script
 }
 
 // Setup all event listeners
@@ -1137,7 +1136,7 @@ async function handleFormSubmit(e) {
 
     try {
         const saved = await saveEntry(formData);
-        if (saved == null && (window.electronAPI?.createEntry || useSupabase())) {
+        if (saved == null) {
             showNotification('Failed to save call. Check console for errors.');
             return;
         }
@@ -1156,67 +1155,67 @@ async function handleFormSubmit(e) {
     }
 }
 
-// Save entry (Supabase when configured, else SQLite/localStorage). Returns id or null.
+// Save entry (Supabase only). Returns id or null.
 async function saveEntry(entry) {
-    if (useSupabase()) {
-        const supabase = getSupabase();
-        if (!supabase) return null;
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return null;
-        const now = new Date().toISOString();
-        const callTime = entry.timestamp || now;
-        const { data, error } = await supabase
-            .from('calls')
-            .insert({
-                user_id: session.user.id,
-                name: entry.name || '',
-                phone: entry.phone || '',
-                organization: entry.organization || '',
-                device_name: entry.deviceName || '',
-                support_request: entry.supportRequest || '',
-                notes: entry.notes || '',
-                call_time: callTime,
-                created_at: now,
-                updated_at: now
-            })
-            .select('id')
-            .single();
-        if (error) {
-            console.error('createEntry Supabase error:', error);
-            return null;
-        }
-        return data ? data.id : null;
+    if (!useSupabase()) {
+        console.error('Supabase is not configured. Cannot save entry.');
+        return null;
     }
-    if (window.electronAPI?.createEntry) {
-        return await window.electronAPI.createEntry(entry);
+    const supabase = getSupabase();
+    if (!supabase) {
+        console.error('Supabase client not available.');
+        return null;
     }
-    const entries = await getEntries();
-    const withId = { ...entry, id: Date.now(), dateTime: entry.timestamp };
-    entries.unshift(withId);
-    localStorage.setItem('supportCalls', JSON.stringify(entries));
-    return withId.id;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        console.error('No active session. Please log in.');
+        return null;
+    }
+    const now = new Date().toISOString();
+    const callTime = entry.timestamp || now;
+    const { data, error } = await supabase
+        .from('calls')
+        .insert({
+            user_id: session.user.id,
+            name: entry.name || '',
+            phone: entry.phone || '',
+            organization: entry.organization || '',
+            device_name: entry.deviceName || '',
+            support_request: entry.supportRequest || '',
+            notes: entry.notes || '',
+            call_time: callTime,
+            created_at: now,
+            updated_at: now
+        })
+        .select('id')
+        .single();
+    if (error) {
+        console.error('createEntry Supabase error:', error);
+        return null;
+    }
+    return data ? data.id : null;
 }
 
-// Get all entries (Supabase when configured, else SQLite/localStorage)
+// Get all entries (Supabase only)
 async function getEntries() {
-    if (useSupabase()) {
-        const supabase = getSupabase();
-        if (!supabase) return [];
-        const { data, error } = await supabase
-            .from('calls')
-            .select('*')
-            .order('call_time', { ascending: false });
-        if (error) {
-            console.error('getEntries Supabase error:', error);
-            return [];
-        }
-        return (data || []).map(mapRowToEntry);
+    if (!useSupabase()) {
+        console.error('Supabase is not configured. Cannot retrieve entries.');
+        return [];
     }
-    if (window.electronAPI?.getEntries) {
-        return await window.electronAPI.getEntries();
+    const supabase = getSupabase();
+    if (!supabase) {
+        console.error('Supabase client not available.');
+        return [];
     }
-    const stored = localStorage.getItem('supportCalls');
-    return stored ? JSON.parse(stored) : [];
+    const { data, error } = await supabase
+        .from('calls')
+        .select('*')
+        .order('call_time', { ascending: false });
+    if (error) {
+        console.error('getEntries Supabase error:', error);
+        return [];
+    }
+    return (data || []).map(mapRowToEntry);
 }
 
 // Load and display entries
@@ -1455,38 +1454,36 @@ async function handleEditSubmit(e) {
     const editDateVal = document.getElementById('editDate').value;
     if (editDateVal) fields.callTime = new Date(editDateVal).toISOString();
 
-    if (useSupabase()) {
-        const supabase = getSupabase();
-        if (supabase) {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                const { error } = await supabase
-                    .from('calls')
-                    .update({
-                        name: fields.name,
-                        phone: fields.phone,
-                        organization: fields.organization,
-                        device_name: fields.deviceName || '',
-                        support_request: fields.supportRequest,
-                        notes: fields.notes || '',
-                        call_time: fields.callTime || new Date().toISOString(),
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', id)
-                    .eq('user_id', session.user.id);
-                if (error) {
-                    console.error('updateEntry Supabase error:', error);
-                }
-            }
-        }
-    } else if (window.electronAPI?.updateEntry) {
-        await window.electronAPI.updateEntry(id, fields);
-    } else {
-        const entries = await getEntries();
-        const idx = entries.findIndex(e => String(e.id) === String(id));
-        if (idx === -1) return;
-        entries[idx] = { ...entries[idx], ...fields, timestamp: fields.callTime || entries[idx].timestamp };
-        localStorage.setItem('supportCalls', JSON.stringify(entries));
+    if (!useSupabase()) {
+        console.error('Supabase is not configured. Cannot update entry.');
+        return;
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+        console.error('Supabase client not available.');
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        console.error('No active session. Please log in.');
+        return;
+    }
+    const { error } = await supabase
+        .from('calls')
+        .update({
+            name: fields.name,
+            phone: fields.phone,
+            organization: fields.organization,
+            device_name: fields.deviceName || '',
+            support_request: fields.supportRequest,
+            notes: fields.notes || '',
+            call_time: fields.callTime || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', id)
+        .eq('user_id', session.user.id);
+    if (error) {
+        console.error('updateEntry Supabase error:', error);
     }
     closeEditModal();
     await loadEntries();
@@ -1515,21 +1512,21 @@ function hideEditModalDeleteConfirm() {
 async function confirmEditModalDelete() {
     const id = editingEntryId;
     if (!id) return;
-    if (useSupabase()) {
-        const supabase = getSupabase();
-        if (supabase) {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
-                await supabase.from('calls').delete().eq('id', id).eq('user_id', session.user.id);
-            }
-        }
-    } else if (window.electronAPI?.deleteEntry) {
-        await window.electronAPI.deleteEntry(id);
-    } else {
-        const entries = await getEntries();
-        const filtered = entries.filter(e => String(e.id) !== String(id));
-        localStorage.setItem('supportCalls', JSON.stringify(filtered));
+    if (!useSupabase()) {
+        console.error('Supabase is not configured. Cannot delete entry.');
+        return;
     }
+    const supabase = getSupabase();
+    if (!supabase) {
+        console.error('Supabase client not available.');
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        console.error('No active session. Please log in.');
+        return;
+    }
+    await supabase.from('calls').delete().eq('id', id).eq('user_id', session.user.id);
     closeEditModal();
     await loadEntries();
     await updateStats();
@@ -1551,21 +1548,21 @@ async function deleteEntry(id) {
     });
     
     if (confirmed) {
-        if (useSupabase()) {
-            const supabase = getSupabase();
-            if (supabase) {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (session) {
-                    await supabase.from('calls').delete().eq('id', id).eq('user_id', session.user.id);
-                }
-            }
-        } else if (window.electronAPI?.deleteEntry) {
-            await window.electronAPI.deleteEntry(id);
-        } else {
-            const entries = await getEntries();
-            const filtered = entries.filter(e => String(e.id) !== String(id));
-            localStorage.setItem('supportCalls', JSON.stringify(filtered));
+        if (!useSupabase()) {
+            console.error('Supabase is not configured. Cannot delete entry.');
+            return;
         }
+        const supabase = getSupabase();
+        if (!supabase) {
+            console.error('Supabase client not available.');
+            return;
+        }
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            console.error('No active session. Please log in.');
+            return;
+        }
+        await supabase.from('calls').delete().eq('id', id).eq('user_id', session.user.id);
         await loadEntries();
         await updateStats();
         showNotification('Entry deleted successfully!');
@@ -2169,19 +2166,21 @@ async function clearAllEntries() {
     });
     
     if (confirmed) {
-        if (useSupabase()) {
-            const supabase = getSupabase();
-            if (supabase) {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (session) {
-                    await supabase.from('calls').delete().eq('user_id', session.user.id);
-                }
-            }
-        } else if (window.electronAPI?.clearAllEntries) {
-            await window.electronAPI.clearAllEntries();
-        } else {
-            localStorage.removeItem('supportCalls');
+        if (!useSupabase()) {
+            console.error('Supabase is not configured. Cannot clear entries.');
+            return;
         }
+        const supabase = getSupabase();
+        if (!supabase) {
+            console.error('Supabase client not available.');
+            return;
+        }
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+            console.error('No active session. Please log in.');
+            return;
+        }
+        await supabase.from('calls').delete().eq('user_id', session.user.id);
         await loadEntries();
         await updateStats();
         showNotification('All entries cleared');

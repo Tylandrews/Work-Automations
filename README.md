@@ -113,6 +113,42 @@ Work Automations/
 └── build/              # Build assets (icons, etc.)
 ```
 
+## Supabase Configuration
+
+This app uses **Supabase** for cloud-based data storage and multi-user support. The Supabase configuration is **automatically bundled** with the app during the build process, so end users don't need to configure anything.
+
+### For Developers
+
+Before building the app, you need to create `supabaseConfig.js` with your Supabase credentials:
+
+1. **Copy the example file:**
+   ```bash
+   cp supabaseConfig.example.js supabaseConfig.js
+   ```
+
+2. **Get your Supabase credentials:**
+   - Go to your Supabase project dashboard
+   - Navigate to **Settings → API**
+   - Copy your **Project URL** and **anon/public key**
+
+3. **Update `supabaseConfig.js`:**
+   ```javascript
+   window.supabaseConfig = {
+     SUPABASE_URL: 'https://your-project-ref.supabase.co',
+     SUPABASE_ANON_KEY: 'your-anon-key-here'
+   };
+   ```
+
+**Important:**
+- `supabaseConfig.js` is in `.gitignore` for security (credentials won't be committed)
+- The config file is **automatically included** in production builds
+- The build process will validate that the config exists and is properly configured
+- The anon key is safe to bundle - it's designed for client-side use and protected by Row Level Security (RLS) policies
+
+### For End Users
+
+End users who install the app **do not need to configure anything**. The Supabase configuration is already bundled in the installer, so the app will work immediately after installation.
+
 ## Development
 
 ### Running in Development Mode
@@ -153,11 +189,12 @@ Ensure **Realtime** is enabled for the `calls` table in Supabase: **Dashboard �
 
 ## Privacy & Security
 
-- All data is stored locally on your device
-- No data is sent to any server
-- No internet connection required
+- All data is stored in your Supabase cloud database
+- Data is protected by Supabase Row Level Security (RLS) policies
+- Each user can only access their own call logs (unless admin)
 - Uses Electron's context isolation for security
-- You have full control over your data
+- Supabase anon key is safe to bundle - protected by RLS policies
+- Internet connection required for data sync
 
 ## Troubleshooting
 

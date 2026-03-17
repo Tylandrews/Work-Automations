@@ -1,7 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const db = require('./db.js');
+// Local SQL database removed - using Supabase only
 
 /** Resolve .ico path so taskbar uses it. Packaged: extraResources puts it in resources/. */
 function getAppIconPath() {
@@ -198,66 +198,12 @@ ipcMain.handle('show-tray-notification', (event, { title, body }) => {
     showTrayNotification(title, body);
 });
 
-// Database (SQLite)
-ipcMain.handle('get-entries', () => {
-    try {
-        return db.getEntries();
-    } catch (err) {
-        console.error('get-entries error:', err);
-        return [];
-    }
-});
-ipcMain.handle('create-entry', (event, entry) => {
-    try {
-        const result = db.createEntry(entry);
-        if (result == null) {
-            console.error('create-entry: returned null (database may not be initialized - check for "Database init error" above)');
-        }
-        return result;
-    } catch (err) {
-        console.error('create-entry error:', err);
-        return null;
-    }
-});
-ipcMain.handle('update-entry', (event, id, fields) => {
-    try {
-        return db.updateEntry(id, fields);
-    } catch (err) {
-        console.error('update-entry error:', err);
-        return false;
-    }
-});
-ipcMain.handle('delete-entry', (event, id) => {
-    try {
-        return db.deleteEntry(id);
-    } catch (err) {
-        console.error('delete-entry error:', err);
-        return false;
-    }
-});
-ipcMain.handle('clear-all-entries', () => {
-    try {
-        db.clearAll();
-    } catch (err) {
-        console.error('clear-all-entries error:', err);
-    }
-});
-ipcMain.handle('import-from-localstorage', (event, entries) => {
-    try {
-        db.importFromLocalStorage(entries);
-    } catch (err) {
-        console.error('import-from-localstorage error:', err);
-    }
-});
+// Local SQL database handlers removed - app now uses Supabase only
+// All database operations are handled client-side via Supabase client
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {
-    try {
-        const dbInstance = await db.init(app.getPath('userData'));
-        if (!dbInstance) console.error('Database init failed (see "Database init error" above).');
-    } catch (err) {
-        console.error('Database init failed:', err);
-    }
+    // Local SQL database initialization removed - using Supabase only
     createWindow();
 
     app.on('activate', () => {

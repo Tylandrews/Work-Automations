@@ -10,7 +10,7 @@
     "start:3": "electron . --user-data-dir=./.test-userdata/user3",
     "start:4": "electron . --user-data-dir=./.test-userdata/user4",
     "start:5": "electron . --user-data-dir=./.test-userdata/user5",
-    "prebuild": "node scripts/build-icon.js",
+    "prebuild": "node scripts/validate-config.js && node scripts/build-icon.js",
     "build": "electron-builder",
     "build-win": "node scripts/clean-dist.js && electron-builder --win",
     "build-win:fresh": "npm run build-win",
@@ -30,8 +30,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "gsap": "^3.14.2",
-    "sql.js": "^1.14.0"
+    "gsap": "^3.14.2"
   },
   "devDependencies": {
     "electron": "^28.0.0",
@@ -48,10 +47,8 @@
       "**/*",
       "node_modules/**",
       "!dist/**/*",
-      "!.git/**/*"
-    ],
-    "asarUnpack": [
-      "**/node_modules/sql.js/**"
+      "!.git/**/*",
+      "supabaseConfig.js"
     ],
     "extraResources": [
       {
