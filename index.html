@@ -1,12 +1,14 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IT Support Call Logger</title>
+
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <canvas id="waterCanvas" class="water-canvas" aria-hidden="true"></canvas>
     <!-- Auth screen (shown when Supabase configured and not logged in) -->
     <div id="authScreen" class="auth-screen hidden" aria-hidden="true">
         <header class="titlebar auth-titlebar" id="authTitlebar">
@@ -25,37 +27,70 @@
             <div class="titlebar-divider"></div>
         </header>
         <div class="auth-screen-content">
-        <div class="auth-card">
-            <h1 class="auth-title">IT Support Call Logger</h1>
-            <p class="auth-subtitle">Sign in to continue</p>
-            <div id="authError" class="auth-error" role="alert" aria-live="polite"></div>
-            <form id="authForm" class="auth-form">
-                <div class="form-group auth-signup-only" id="authNameGroup" style="display: none;">
-                    <label for="authName">Name</label>
-                    <input type="text" id="authName" name="name" autocomplete="name" placeholder="Your name">
+            <div class="auth-layout" role="region" aria-label="Sign in">
+                <section class="auth-brand" id="authBrandCard" role="button" tabindex="0" aria-label="Open sign in">
+                    <div class="auth-brand-inner">
+                        <div class="auth-brand-mark">
+                            <svg class="icon auth-fish" aria-hidden="true"><use href="#i-fish"></use></svg>
+                        </div>
+                        <div class="auth-brand-title">BigFish</div>
+                        <div class="auth-brand-subtitle">IT Support Call Logger</div>
+                        <div class="auth-brand-copy">
+                            Built to capture. Hard-wired history. Did you get a tag?
+                        </div>
+                        <div class="auth-brand-cta" aria-hidden="true">
+                            <span class="auth-brand-cta-label">
+                                <svg class="auth-cta-hook" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+                                    <path d="M36 6c-6 8-6 16 0 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+                                    <path d="M36 30v14c0 10-6 16-14 16-7 0-12-5-12-12 0-6 4-10 10-10" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                <span></span>
+                            </span>
+                            <span class="auth-brand-cta-arrow"></span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="auth-card" id="authFormCard" aria-label="Account access" aria-hidden="true">
+                    <div class="auth-card-header">
+                        <h1 class="auth-title">Sign in</h1>
+                        <p class="auth-subtitle">Use your work email to continue.</p>
+                    </div>
+
+                    <div id="authError" class="auth-error" role="alert" aria-live="polite"></div>
+
+                    <form id="authForm" class="auth-form">
+                        <div class="form-group auth-signup-only" id="authNameGroup" style="display: none;">
+                            <label for="authName">Name</label>
+                            <input type="text" id="authName" name="name" autocomplete="name" placeholder="Your name">
+                        </div>
+                        <div class="form-group">
+                            <label for="authEmail">Email</label>
+                            <input type="email" id="authEmail" name="email" autocomplete="email" required placeholder="you@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="authPassword">Password</label>
+                            <input type="password" id="authPassword" name="password" autocomplete="current-password" required placeholder="••••••••">
+                        </div>
+                        <div class="auth-actions">
+                            <button type="submit" class="btn btn-primary" id="authSignInBtn">Log in</button>
+                            <button type="button" class="btn btn-secondary" id="authSignUpBtn">Sign up</button>
+                        </div>
+                    </form>
+                </section>
+
+                <div id="authNoConfig" class="auth-no-config hidden">
+                    <div class="auth-no-config-card">
+                        <p class="auth-no-config-title">Supabase isn’t configured.</p>
+                        <p class="auth-no-config-body">You can keep using local storage on this device.</p>
+                        <button type="button" class="btn btn-primary" id="authUseLocalBtn">Continue with local storage</button>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label for="authEmail">Email</label>
-                    <input type="email" id="authEmail" name="email" autocomplete="email" required placeholder="you@example.com">
-                </div>
-                <div class="form-group">
-                    <label for="authPassword">Password</label>
-                    <input type="password" id="authPassword" name="password" autocomplete="current-password" required placeholder="••••••••">
-                </div>
-                <div class="auth-actions">
-                    <button type="submit" class="btn btn-primary" id="authSignInBtn">Log in</button>
-                    <button type="button" class="btn btn-secondary" id="authSignUpBtn">Sign up</button>
-                </div>
-            </form>
-        </div>
-        <div id="authNoConfig" class="auth-no-config hidden">
-            <p>Supabase is not configured. Using local storage.</p>
-            <button type="button" class="btn btn-primary" id="authUseLocalBtn">Continue with local storage</button>
-        </div>
+            </div>
         </div>
     </div>
 
-    <div id="appShell" class="app-shell">
+    <div id="appShell" class="app-shell hidden" aria-hidden="true">
     <!-- Inline SVG icon set (no external deps) -->
     <svg class="svg-sprite" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
         <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
@@ -75,6 +110,12 @@
         <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
         <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
         <symbol id="i-device" viewBox="0 0 24 24"><path d="M4 6h16v12H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 20h8M12 18v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-fish" viewBox="0 0 24 24">
+            <path d="M3 12c2.2-3.2 5.6-5.6 9.6-5.6 4.7 0 7.9 2.6 9.4 5.6-1.5 3-4.7 5.6-9.4 5.6C8.6 17.6 5.2 15.2 3 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M3 12l-2.2-2.2M3 12l-2.2 2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M9.2 11.4h.01" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+            <path d="M15.2 9.2c-1 .7-1.6 1.7-1.6 2.8s.6 2.1 1.6 2.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </symbol>
     </svg>
 
     <!-- Custom Titlebar (Electron frameless window) -->
@@ -194,9 +235,9 @@
             <div class="entries-container">
                 <div class="header-actions-row">
                     <div class="day-context" id="dayContext">
-                        <button class="day-btn" id="historyPrevDayBtn" type="button" title="Previous day">‹</button>
+                        <button class="day-btn" id="historyPrevDayBtn" type="button" title="Previous day" aria-label="Previous day">‹</button>
                         <div class="day-label" id="historyDayLabel" title="Selected day">Today</div>
-                        <button class="day-btn" id="historyNextDayBtn" type="button" title="Next day">›</button>
+                        <button class="day-btn" id="historyNextDayBtn" type="button" title="Next day" aria-label="Next day">›</button>
                         <button class="day-btn day-today" id="historyTodayBtn" type="button" title="Jump to today">Today</button>
                         <button class="day-btn day-calendar" id="historyCalendarBtn" type="button" title="Pick a day" aria-label="Open calendar">
                             <svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>
@@ -212,6 +253,9 @@
                     <button class="btn-icon-only" id="statsBtn" title="View Statistics">
                         <svg class="icon" aria-hidden="true"><use href="#i-stats"></use></svg>
                     </button>
+                    <button class="btn-icon-only" id="reportsBtn" title="Reports">
+                        <svg class="icon" aria-hidden="true"><use href="#i-stats"></use></svg>
+                    </button>
                     <button class="btn-icon-only btn-danger" id="clearAllBtn" title="Clear All">
                         <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
                     </button>
@@ -225,17 +269,17 @@
     </div>
 
     <!-- Calendar Modal -->
-    <div class="modal" id="calendarModal" aria-hidden="true">
-        <div class="modal-content modal-small">
+    <div class="modal" id="calendarModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="calendarTitle">
+        <div class="modal-content modal-small" role="document">
             <div class="modal-header">
-                <h3>Calendar</h3>
-                <button class="modal-close" id="closeCalendarModal">&times;</button>
+                <h3 id="calendarTitle">Calendar</h3>
+                <button class="modal-close" id="closeCalendarModal" type="button" aria-label="Close calendar">&times;</button>
             </div>
             <div class="calendar">
                 <div class="calendar-header">
-                    <button class="cal-nav" id="calPrevMonth" type="button" title="Previous month">‹</button>
+                    <button class="cal-nav" id="calPrevMonth" type="button" title="Previous month" aria-label="Previous month">‹</button>
                     <div class="cal-month" id="calendarMonthLabel">Month YYYY</div>
-                    <button class="cal-nav" id="calNextMonth" type="button" title="Next month">›</button>
+                    <button class="cal-nav" id="calNextMonth" type="button" title="Next month" aria-label="Next month">›</button>
                 </div>
                 <div class="calendar-weekdays" aria-hidden="true">
                     <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
@@ -246,11 +290,11 @@
     </div>
 
     <!-- Confirm Modal (Delete/Clear) -->
-    <div class="modal" id="confirmModal" aria-hidden="true">
-        <div class="modal-content modal-small">
+    <div class="modal" id="confirmModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmDetail">
+        <div class="modal-content modal-small" role="document">
             <div class="modal-header">
                 <h3 id="confirmTitle">Confirm</h3>
-                <button class="modal-close" id="closeConfirmModal">&times;</button>
+                <button class="modal-close" id="closeConfirmModal" type="button" aria-label="Close confirmation dialog">&times;</button>
             </div>
             <div class="confirm-body">
                 <div class="confirm-icon" aria-hidden="true">
@@ -272,11 +316,11 @@
     </div>
 
     <!-- Edit Modal -->
-    <div class="modal" id="editModal">
-        <div class="modal-content">
+    <div class="modal" id="editModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+        <div class="modal-content" role="document">
             <div class="modal-header">
-                <h3>Edit Entry</h3>
-                <button class="modal-close" id="closeModal">&times;</button>
+                <h3 id="editTitle">Edit Entry</h3>
+                <button class="modal-close" id="closeModal" type="button" aria-label="Close edit dialog">&times;</button>
             </div>
             <form id="editForm">
                 <input type="hidden" id="editId">
@@ -357,22 +401,45 @@
     </div>
 
     <!-- Stats Modal -->
-    <div class="modal" id="statsModal">
-        <div class="modal-content modal-small">
+    <div class="modal" id="statsModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
+        <div class="modal-content modal-small" role="document">
             <div class="modal-header">
-                <h3>Statistics</h3>
-                <button class="modal-close" id="closeStatsModal">&times;</button>
+                <h3 id="statsTitle">Statistics</h3>
+                <button class="modal-close" id="closeStatsModal" type="button" aria-label="Close statistics dialog">&times;</button>
             </div>
             <div class="stats-content" id="statsContent"></div>
         </div>
     </div>
 
-    <!-- Profile / Account Modal -->
-    <div class="modal" id="profileModal" aria-hidden="true">
-        <div class="modal-content modal-small">
+    <!-- Reports Overlay (fills window) -->
+    <div class="modal reports-modal" id="reportsModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="reportsTitle">
+        <div class="modal-content reports-content" role="document">
             <div class="modal-header">
-                <h3>Account</h3>
-                <button class="modal-close" id="closeProfileModal">&times;</button>
+                <h3 id="reportsTitle">Reports</h3>
+                <button class="modal-close" id="closeReportsModal" type="button" aria-label="Close reports dialog">&times;</button>
+            </div>
+
+            <div id="reportsError" class="auth-error" role="alert" aria-live="polite"></div>
+
+            <div class="reports-grid" id="reportsGrid" aria-live="polite"></div>
+
+            <div class="modal-actions reports-actions">
+                <div class="reports-actions-left">
+                    <button type="button" class="btn btn-secondary" id="reportsRefreshBtn">Refresh</button>
+                </div>
+                <div class="reports-actions-right">
+                    <button type="button" class="btn btn-primary" id="runReportsNowBtn" style="display:none;">Run reports now</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile / Account Modal -->
+    <div class="modal" id="profileModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
+        <div class="modal-content modal-small" role="document">
+            <div class="modal-header">
+                <h3 id="profileTitle">Account</h3>
+                <button class="modal-close" id="closeProfileModal" type="button" aria-label="Close account dialog">&times;</button>
             </div>
             <form id="profileForm" class="profile-form">
                 <div id="profileError" class="auth-error" role="alert" aria-live="polite"></div>
@@ -398,6 +465,8 @@
     <script>window.supabaseConfig = window.supabaseConfig || {};</script>
     <script src="supabaseConfig.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="node_modules/gsap/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

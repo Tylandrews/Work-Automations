@@ -6,7 +6,7 @@ let calendarMonth = null; // Date representing first day of visible month
 let confirmResolver = null;
 let supabaseClient = null;
 let supabaseRealtimeChannel = null;
-let currentUserProfile = null; // { id, full_name } for logged-in user (Supabase)
+let currentUserProfile = null; // { id, full_name, is_admin } for logged-in user (Supabase)
 const profileCache = new Map(); // user_id -> full_name
 
 function useSupabase() {
@@ -57,15 +57,15 @@ async function loadCurrentUserProfile() {
         }
         const { data, error } = await supabase
             .from('profiles')
-            .select('full_name')
+            .select('full_name, is_admin')
             .eq('id', session.user.id)
             .single();
         if (error) {
             console.error('loadCurrentUserProfile error:', error);
-            currentUserProfile = { id: session.user.id, full_name: session.user.email || 'You' };
+            currentUserProfile = { id: session.user.id, full_name: session.user.email || 'You', is_admin: false };
             return;
         }
-        currentUserProfile = { id: session.user.id, full_name: data.full_name || (session.user.email || 'You') };
+        currentUserProfile = { id: session.user.id, full_name: data.full_name || (session.user.email || 'You'), is_admin: !!data.is_admin };
         profileCache.set(session.user.id, currentUserProfile.full_name);
     } catch (err) {
         console.error('loadCurrentUserProfile exception:', err);
@@ -100,10 +100,13 @@ async function getProfileNameByUserId(userId) {
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         initTheme();
+        initWaterCanvasRipples();
         const authScreen = document.getElementById('authScreen');
         const appShell = document.getElementById('appShell');
 
         if (useSupabase()) {
+            // Never show the logged-in UI until we know session state.
+            showAuth(authScreen, appShell);
             const supabase = getSupabase();
             if (!supabase) {
                 showApp(appShell, authScreen);
@@ -130,7 +133,216 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+function initWaterCanvasRipples() {
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const canvas = document.getElementById('waterCanvas');
+    if (!canvas || reduceMotion) return;
+
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return;
+
+    // Low-res sim grid, scaled up. Keeps it subtle and cheap.
+    let simW = 220;
+    let simH = 140;
+    let a = new Float32Array(simW * simH);
+    let b = new Float32Array(simW * simH);
+    let raf = 0;
+
+    const off = document.createElement('canvas');
+    const offCtx = off.getContext('2d', { alpha: true });
+    if (!offCtx) return;
+
+    function resize() {
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const w = Math.max(1, Math.floor(window.innerWidth * dpr));
+        const h = Math.max(1, Math.floor(window.innerHeight * dpr));
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+
+        // Scale simulation with viewport (a bit denser for smoother look), but clamp for stability/perf.
+        simW = Math.max(220, Math.min(360, Math.floor(window.innerWidth / 5.5)));
+        simH = Math.max(150, Math.min(260, Math.floor(window.innerHeight / 5.5)));
+        a = new Float32Array(simW * simH);
+        b = new Float32Array(simW * simH);
+
+        off.width = simW;
+        off.height = simH;
+        off.style.imageRendering = 'auto';
+    }
+
+    function idx(x, y) {
+        return (y * simW + x) | 0;
+    }
+
+    function splash(nx, ny, strength = 0.9, radius = 6) {
+        const x0 = Math.floor(nx * (simW - 1));
+        const y0 = Math.floor(ny * (simH - 1));
+        const r2 = radius * radius;
+        for (let y = -radius; y <= radius; y++) {
+            const yy = y0 + y;
+            if (yy <= 1 || yy >= simH - 2) continue;
+            for (let x = -radius; x <= radius; x++) {
+                const xx = x0 + x;
+                if (xx <= 1 || xx >= simW - 2) continue;
+                const d2 = x * x + y * y;
+                if (d2 > r2) continue;
+                const falloff = 1 - d2 / r2;
+                a[idx(xx, yy)] += strength * falloff;
+            }
+        }
+    }
+
+    function step() {
+        // Simple 2-buffer wave propagation.
+        const damp = 0.985;
+        for (let y = 1; y < simH - 1; y++) {
+            for (let x = 1; x < simW - 1; x++) {
+                const i = idx(x, y);
+                const v =
+                    (a[i - 1] + a[i + 1] + a[i - simW] + a[i + simW]) * 0.5 -
+                    b[i];
+                b[i] = v * damp;
+            }
+        }
+        const tmp = a;
+        a = b;
+        b = tmp;
+    }
+
+    function render(t) {
+        step();
+
+        // Render: caustics/refraction feel (watery, not noisy).
+        const img = offCtx.createImageData(simW, simH);
+        const data = img.data;
+        const time = (t || 0) * 0.001;
+        const drift = time * 0.28;
+        // Keep motion subtle: tiny domain warp for "water" feel, not jitter.
+        const warpX = 0.26 * Math.sin(time * 0.55);
+        const warpY = 0.24 * Math.cos(time * 0.5);
+
+        // Light direction for "water light" shimmer.
+        const lx = -0.35;
+        const ly = -0.2;
+        const lz = 1.0;
+        const lLen = Math.hypot(lx, ly, lz) || 1;
+        const nlx = lx / lLen;
+        const nly = ly / lLen;
+        const nlz = lz / lLen;
+
+        // Small helper for indexing with clamp.
+        const clamp = (v, lo, hi) => (v < lo ? lo : (v > hi ? hi : v));
+        for (let y = 0; y < simH; y++) {
+            for (let x = 0; x < simW; x++) {
+                // Domain warp so the pattern "swims" like water.
+                const wx = x + warpX * Math.sin(y * 0.06 + drift);
+                const wy = y + warpY * Math.cos(x * 0.055 - drift * 0.9);
+                const ix = clamp(wx | 0, 1, simW - 2);
+                const iy = clamp(wy | 0, 1, simH - 2);
+
+                const i = idx(ix, iy);
+                const v = a[i];
+
+                // Surface normal approx from height gradient.
+                const gx = (a[idx(ix + 1, iy)] - a[idx(ix - 1, iy)]) * 0.5;
+                const gy = (a[idx(ix, iy + 1)] - a[idx(ix, iy - 1)]) * 0.5;
+
+                // Normal pointing "out of screen"
+                const nz = 1.0;
+                // Softer "surface" so highlights don't spike.
+                const nx = -gx * 1.6;
+                const ny = -gy * 1.6;
+                const nLen = Math.hypot(nx, ny, nz) || 1;
+                const nnx = nx / nLen;
+                const nny = ny / nLen;
+                const nnz = nz / nLen;
+
+                // Light response: brighter where normal aligns.
+                const ndotl = Math.max(0, nnx * nlx + nny * nly + nnz * nlz);
+
+                // "Caustic intensity": emphasize ridges + spec-ish response.
+                const ridge = Math.min(1, Math.abs(gx) + Math.abs(gy));
+                // Keep the watery character but lower overall contrast/energy.
+                let caustic = ndotl * ndotl * 0.62 + ridge * 0.22;
+                caustic = Math.min(1, Math.max(0, caustic));
+
+                // Gentle breathing so it doesn't look like static lighting.
+                const breathe = 0.92 + 0.08 * Math.sin(drift + (ix * 0.028) + (iy * 0.026));
+                caustic *= breathe;
+
+                // Alpha curve: keep subtle but noticeably watery.
+                let alpha = 5 + 46 * Math.pow(caustic, 1.75) + 7 * Math.min(1, Math.abs(v));
+                alpha = clamp(alpha, 0, 58);
+
+                // Water tint (cool/teal) with slight variation.
+                const tint = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin((ix * 0.04 + iy * 0.037) + drift * 0.85));
+                const r = 202 + 10 * tint;
+                const gch = 220 + 18 * tint;
+                const bch = 236 + 14 * tint;
+
+                const o = (y * simW + x) * 4;
+                data[o + 0] = r;
+                data[o + 1] = gch;
+                data[o + 2] = bch;
+                data[o + 3] = alpha;
+            }
+        }
+
+        offCtx.putImageData(img, 0, 0);
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.globalCompositeOperation = 'source-over';
+
+        // Soft blur by layered draws (cheap faux blur), kept very subtle.
+        ctx.globalAlpha = 0.28;
+        ctx.drawImage(off, -3, -2, canvas.width + 6, canvas.height + 4);
+        ctx.globalAlpha = 0.34;
+        ctx.drawImage(off, 2, 2, canvas.width - 1, canvas.height - 1);
+        ctx.globalAlpha = 0.62;
+        ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+
+        raf = requestAnimationFrame(render);
+    }
+
+    // Pointer interaction: small droplets.
+    let lastSplash = 0;
+    const onPointer = (e) => {
+        const now = performance.now();
+        if (now - lastSplash < 18) return;
+        lastSplash = now;
+        const w = window.innerWidth || 1;
+        const h = window.innerHeight || 1;
+        const nx = Math.max(0, Math.min(1, e.clientX / w));
+        const ny = Math.max(0, Math.min(1, e.clientY / h));
+
+        const shell = document.body?.getAttribute('data-shell') || 'auth';
+        const strength = shell === 'app' ? 0.65 : 0.85;
+        splash(nx, ny, strength, shell === 'app' ? 5 : 6);
+    };
+
+    window.addEventListener('resize', resize, { passive: true });
+    document.addEventListener('pointermove', onPointer, { passive: true });
+    document.addEventListener('pointerdown', (e) => {
+        onPointer(e);
+        // A slightly stronger drop on click/tap.
+        const w = window.innerWidth || 1;
+        const h = window.innerHeight || 1;
+        splash(Math.max(0, Math.min(1, e.clientX / w)), Math.max(0, Math.min(1, e.clientY / h)), 1.3, 9);
+    }, { passive: true });
+    document.addEventListener('mousemove', onPointer, { passive: true });
+
+    resize();
+    // Seed a gentle initial motion so it doesn’t start dead still.
+    splash(0.35, 0.45, 0.7, 10);
+    splash(0.68, 0.52, 0.55, 12);
+    raf = requestAnimationFrame(render);
+}
+
 function showApp(appShell, authScreen) {
+    document.body?.setAttribute('data-shell', 'app');
     if (authScreen) {
         authScreen.classList.add('hidden');
         authScreen.setAttribute('aria-hidden', 'true');
@@ -142,6 +354,7 @@ function showApp(appShell, authScreen) {
 }
 
 function showAuth(authScreen, appShell) {
+    document.body?.setAttribute('data-shell', 'auth');
     if (appShell) {
         appShell.classList.add('hidden');
         appShell.setAttribute('aria-hidden', 'true');
@@ -163,22 +376,50 @@ function setupAuthListeners() {
     const appShell = document.getElementById('appShell');
     const nameInput = document.getElementById('authName');
     const authNameGroup = document.getElementById('authNameGroup');
+    const layout = document.querySelector('.auth-layout');
+    const brandCard = document.getElementById('authBrandCard');
+    const formCard = document.getElementById('authFormCard');
     const supabase = getSupabase();
     if (!supabase || !form) return;
 
     let authMode = 'login'; // 'login' | 'signup'
 
+    function showAuthBrand() {
+        layout?.classList.remove('is-form');
+        formCard?.setAttribute('aria-hidden', 'true');
+        brandCard?.focus?.();
+    }
+
+    function showAuthForm() {
+        layout?.classList.add('is-form');
+        formCard?.setAttribute('aria-hidden', 'false');
+        setTimeout(() => document.getElementById('authEmail')?.focus(), 0);
+    }
+
+    // Default view: brand card centered; click to continue.
+    showAuthBrand();
+
+    brandCard?.addEventListener('click', showAuthForm);
+    brandCard?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            showAuthForm();
+        }
+    });
+
     function switchToSignupMode() {
         authMode = 'signup';
+        showAuthForm();
         if (authNameGroup) authNameGroup.style.display = '';
         if (nameInput) nameInput.setAttribute('required', '');
         if (signInBtn) signInBtn.textContent = 'Create account';
-        if (signUpBtn) signUpBtn.textContent = 'Back to Log in';
+        if (signUpBtn) signUpBtn.textContent = 'Back to log in';
         authError.textContent = '';
     }
 
     function switchToLoginMode() {
         authMode = 'login';
+        showAuthForm();
         if (authNameGroup) authNameGroup.style.display = 'none';
         if (nameInput) nameInput.removeAttribute('required');
         if (signInBtn) signInBtn.textContent = 'Log in';
@@ -377,6 +618,11 @@ async function initApp() {
     setupEventListeners();
     setupKeyboardShortcuts();
     setupTitlebar();
+
+    // Reports are Supabase-only
+    const reportsBtn = document.getElementById('reportsBtn');
+    if (reportsBtn) reportsBtn.style.display = useSupabase() ? '' : 'none';
+
     await initializeHistoryDay();
     await renderCalendar(calendarMonth);
     await loadEntries();
@@ -387,25 +633,56 @@ async function initApp() {
 // Size the main window height to fit the full content (Electron only)
 function fitWindowToContent() {
     if (typeof window.electronAPI?.setWindowHeight !== 'function') return;
-    requestAnimationFrame(() => {
+    // Avoid fighting user resize: only run once, only grow, and never when maximized.
+    const KEY = 'calllogger-window-autosized-v1';
+    try {
+        if (localStorage.getItem(KEY) === '1') return;
+    } catch (e) {}
+
+    // If the window is maximized, do nothing (let the OS/window manager own sizing).
+    if (window.electronAPI?.windowControls?.isMaximized) {
+        window.electronAPI.windowControls.isMaximized().then((isMax) => {
+            if (isMax) return;
+            doFit();
+        }).catch(() => doFit());
+        return;
+    }
+
+    doFit();
+
+    function doFit() {
         requestAnimationFrame(() => {
-            const titlebar = document.querySelector('.titlebar');
-            const formContainer = document.querySelector('.form-container');
-            const titlebarHeight = titlebar ? titlebar.offsetHeight : 45;
-            const containerPadding = 48;
-            const formHeight = formContainer ? formContainer.scrollHeight : 600;
-            const totalHeight = titlebarHeight + containerPadding + formHeight;
-            window.electronAPI.setWindowHeight(totalHeight);
+            requestAnimationFrame(() => {
+                const titlebar = document.querySelector('.titlebar');
+                const formContainer = document.querySelector('.form-container');
+                const titlebarHeight = titlebar ? titlebar.offsetHeight : 45;
+                const containerPadding = 48;
+                const formHeight = formContainer ? formContainer.scrollHeight : 600;
+                const totalHeight = titlebarHeight + containerPadding + formHeight;
+
+                // Only grow the window; never shrink it.
+                const current = window.innerHeight || 0;
+                if (current && totalHeight <= current + 4) {
+                    try { localStorage.setItem(KEY, '1'); } catch (e) {}
+                    return;
+                }
+
+                window.electronAPI.setWindowHeight(totalHeight);
+                try { localStorage.setItem(KEY, '1'); } catch (e) {}
+            });
         });
-    });
+    }
 }
 
 const THEME_KEY = 'calllogger-theme';
 
 function initTheme() {
     const saved = localStorage.getItem(THEME_KEY);
-    const theme = saved === 'dark' ? 'dark' : 'light';
+    // Default to dark unless user explicitly chose light.
+    const theme = saved === 'light' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', theme);
+    // Persist default so the first launch is consistent across reloads.
+    if (!saved) localStorage.setItem(THEME_KEY, theme);
 }
 
 function getTheme() {
@@ -470,6 +747,7 @@ function setupEventListeners() {
 
     // Stats button
     document.getElementById('statsBtn').addEventListener('click', showStats);
+    document.getElementById('reportsBtn')?.addEventListener('click', openReportsModal);
 
     // Day / calendar controls
     document.getElementById('historyPrevDayBtn')?.addEventListener('click', () => shiftSelectedDay(-1));
@@ -499,6 +777,7 @@ function setupEventListeners() {
     document.getElementById('editModalDeleteCancel').addEventListener('click', hideEditModalDeleteConfirm);
     document.getElementById('editModalDeleteConfirmBtn').addEventListener('click', confirmEditModalDelete);
     document.getElementById('closeStatsModal').addEventListener('click', closeStatsModal);
+    document.getElementById('closeReportsModal')?.addEventListener('click', closeReportsModal);
     document.getElementById('editForm').addEventListener('submit', handleEditSubmit);
 
     // Profile / Account modal (Supabase only)
@@ -514,11 +793,18 @@ function setupEventListeners() {
     document.getElementById('statsModal').addEventListener('click', (e) => {
         if (e.target.id === 'statsModal') closeStatsModal();
     });
+    document.getElementById('reportsModal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'reportsModal') closeReportsModal();
+    });
     document.getElementById('profileModal')?.addEventListener('click', (e) => {
         if (e.target.id === 'profileModal') closeProfileModal();
     });
 
     setupEntriesListClick();
+
+    // Reports actions
+    document.getElementById('reportsRefreshBtn')?.addEventListener('click', () => refreshReports());
+    document.getElementById('runReportsNowBtn')?.addEventListener('click', () => runReportsNow());
 }
 
 // ---------- Day helpers ----------
@@ -751,6 +1037,8 @@ function setupKeyboardShortcuts() {
                 closeEditModal();
             } else if (document.getElementById('statsModal').classList.contains('show')) {
                 closeStatsModal();
+            } else if (document.getElementById('reportsModal')?.classList.contains('show')) {
+                closeReportsModal();
             } else if (document.getElementById('calendarModal')?.classList.contains('show')) {
                 closeCalendar();
             } else if (document.getElementById('confirmModal')?.classList.contains('show')) {
@@ -861,6 +1149,7 @@ async function handleFormSubmit(e) {
         );
         clearForm();
         await setSelectedDay(toLocalDayKey(entryDate));
+        flashEntryCard(saved);
     } catch (err) {
         console.error('Save call failed:', err);
         showNotification('Failed to save call.');
@@ -932,8 +1221,15 @@ async function getEntries() {
 
 // Load and display entries
 async function loadEntries() {
-    const entries = await getEntries();
     const entriesList = document.getElementById('entriesList');
+    if (!entriesList) return;
+
+    // Immediate loading state to avoid pop-in
+    setEntriesLoading(true);
+    const loadStartedAt = performance.now();
+
+    const entries = await getEntries();
+    const dynamicMinMs = getDynamicMinLoadingMs(entries.length);
 
     // First filter by selected day (local day boundaries)
     const dayKey = selectedDay || getTodayKey();
@@ -960,7 +1256,7 @@ async function loadEntries() {
                 ? '<svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>'
                 : '<svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>');
 
-        entriesList.innerHTML = `
+        const html = `
             <div class="empty-state">
                 <div class="empty-state-icon">${emptyIcon}</div>
                 <p>${entries.length === 0 ? 'No calls logged yet' : (totalForDay === 0 ? 'No calls for this day' : 'No matching calls found')}</p>
@@ -969,12 +1265,83 @@ async function loadEntries() {
                 </p>
             </div>
         `;
+        await waitForMinLoading(loadStartedAt, dynamicMinMs);
+        entriesList.innerHTML = html;
+        setEntriesLoading(false);
         return;
     }
     
-    entriesList.innerHTML = filteredEntries.map(entry => createEntryCard(entry)).join('');
-    
+    const html = filteredEntries.map(entry => createEntryCard(entry)).join('');
+
     await updateStats();
+    await waitForMinLoading(loadStartedAt, dynamicMinMs);
+    entriesList.innerHTML = html;
+    setEntriesLoading(false);
+}
+
+function getDynamicMinLoadingMs(totalEntries) {
+    const base = 2000;
+    // As the DB grows, keep the transition feeling intentional without becoming slow.
+    // Adds up to +1500ms max, in small steps.
+    const extra = Math.min(1500, Math.floor((Number(totalEntries) || 0) / 200) * 150);
+    return base + extra;
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForMinLoading(startedAt, minMs) {
+    const elapsed = performance.now() - startedAt;
+    const remaining = (minMs || 0) - elapsed;
+    if (remaining > 0) await sleep(remaining);
+}
+
+function setEntriesLoading(isLoading) {
+    const list = document.getElementById('entriesList');
+    if (!list) return;
+    list.classList.toggle('is-loading', !!isLoading);
+    list.classList.toggle('is-loaded', !isLoading);
+    list.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    if (!isLoading) return;
+
+    // Keep this fast and lightweight: 4 cards approximating real layout
+    list.innerHTML = `
+        <div class="loading-header" aria-hidden="true">
+            <span class="loading-fish">
+                <svg class="icon" aria-hidden="true"><use href="#i-fish"></use></svg>
+                <span>Loading calls</span><span class="loading-dots"></span>
+            </span>
+        </div>
+        <div class="skeleton-card" aria-hidden="true">
+            <div class="skeleton-line title"></div>
+            <div class="skeleton-line meta"></div>
+            <div class="skeleton-line wide"></div>
+            <div class="skeleton-line mid"></div>
+            <div class="skeleton-line short"></div>
+        </div>
+        <div class="skeleton-card" aria-hidden="true">
+            <div class="skeleton-line title" style="width: 46%"></div>
+            <div class="skeleton-line meta" style="width: 38%"></div>
+            <div class="skeleton-line wide"></div>
+            <div class="skeleton-line mid" style="width: 66%"></div>
+            <div class="skeleton-line short" style="width: 58%"></div>
+        </div>
+        <div class="skeleton-card" aria-hidden="true">
+            <div class="skeleton-line title" style="width: 62%"></div>
+            <div class="skeleton-line meta" style="width: 30%"></div>
+            <div class="skeleton-line wide"></div>
+            <div class="skeleton-line mid"></div>
+            <div class="skeleton-line short" style="width: 44%"></div>
+        </div>
+        <div class="skeleton-card" aria-hidden="true">
+            <div class="skeleton-line title" style="width: 52%"></div>
+            <div class="skeleton-line meta" style="width: 36%"></div>
+            <div class="skeleton-line wide"></div>
+            <div class="skeleton-line mid" style="width: 70%"></div>
+            <div class="skeleton-line short" style="width: 50%"></div>
+        </div>
+    `;
 }
 
 // Create HTML for an entry card
@@ -1124,6 +1491,7 @@ async function handleEditSubmit(e) {
     closeEditModal();
     await loadEntries();
     await updateStats();
+    flashEntryCard(id);
     showNotification('Entry updated successfully!');
 }
 
@@ -1217,6 +1585,314 @@ function closeStatsModal() {
     document.getElementById('statsModal').classList.remove('show');
 }
 
+// ---------- Reports modal (Supabase) ----------
+function openReportsModal() {
+    if (!useSupabase()) return;
+    const modal = document.getElementById('reportsModal');
+    if (!modal) return;
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    updateReportsAdminUI();
+    refreshReports().catch(() => {});
+}
+
+function closeReportsModal() {
+    const modal = document.getElementById('reportsModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+    const errEl = document.getElementById('reportsError');
+    if (errEl) errEl.textContent = '';
+}
+
+function updateReportsAdminUI() {
+    const runBtn = document.getElementById('runReportsNowBtn');
+    if (!runBtn) return;
+    const isAdmin = !!currentUserProfile?.is_admin;
+    runBtn.style.display = isAdmin ? '' : 'none';
+}
+
+function formatPeriodLabel(periodStart, periodEnd) {
+    if (!periodStart || !periodEnd) return '';
+    return `${periodStart} to ${periodEnd}`;
+}
+
+/** Chart.js instances for report cards; destroyed on refresh */
+let reportCharts = [];
+
+function getReportChartCssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '';
+}
+
+function getReportChartPrimaryColor() {
+    return getReportChartCssVar('--primary') || '#86a3ff';
+}
+
+function formatReportChartDay(dayStr) {
+    if (!dayStr || typeof dayStr !== 'string') return '';
+    return dayStr.slice(5);
+}
+
+function makeReportChartConfig(timeseries) {
+    const labels = timeseries.map(p => formatReportChartDay(p.day || p.date));
+    const data = timeseries.map(p => Number(p.calls ?? p.count ?? 0));
+    const color = getReportChartPrimaryColor();
+    const textSecondary = getReportChartCssVar('--text-secondary') || 'rgba(255,255,255,0.68)';
+    const borderColor = getReportChartCssVar('--border') || 'rgba(255,255,255,0.1)';
+    return {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Calls',
+                data,
+                backgroundColor: color,
+                borderColor: color,
+                borderWidth: 1,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: true }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        maxRotation: 0,
+                        font: { size: 10 },
+                        color: textSecondary
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: borderColor },
+                    ticks: {
+                        font: { size: 10 },
+                        color: textSecondary,
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    };
+}
+
+function renderReportCard({ title, subtitle, callsTotal, orgsUnique, timeseries }, chartIndex) {
+    const chartPlaceholder = `<div class="report-chart" data-chart-id="${chartIndex}" role="img" aria-label="Bar chart"></div>`;
+    return `
+        <div class="report-card">
+            <div class="report-card-header">
+                <div class="report-card-title">${escapeHtml(title)}</div>
+                <div class="report-card-subtitle">${escapeHtml(subtitle || '')}</div>
+            </div>
+            <div class="report-metrics">
+                <div class="report-metric">
+                    <div class="report-metric-value">${Number(callsTotal || 0)}</div>
+                    <div class="report-metric-label">Calls</div>
+                </div>
+                <div class="report-metric">
+                    <div class="report-metric-value">${Number(orgsUnique || 0)}</div>
+                    <div class="report-metric-label">Organizations</div>
+                </div>
+            </div>
+            ${chartPlaceholder}
+        </div>
+    `;
+}
+
+function attachReportCharts(grid, timeseriesList) {
+    if (typeof Chart === 'undefined') return;
+    reportCharts.forEach(c => { try { c.destroy(); } catch (_) {} });
+    reportCharts = [];
+    timeseriesList.forEach((timeseries, i) => {
+        const container = grid.querySelector(`[data-chart-id="${i}"]`);
+        if (!container || !Array.isArray(timeseries) || timeseries.length === 0) return;
+        const canvas = document.createElement('canvas');
+        container.appendChild(canvas);
+        const config = makeReportChartConfig(timeseries);
+        const chart = new Chart(canvas, config);
+        reportCharts.push(chart);
+    });
+}
+
+async function fetchLatestReport({ scope, periodType, userId }) {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    let q = supabase
+        .from('call_reports')
+        .select('period_type, period_start, period_end, scope, user_id, metrics, generated_at')
+        .eq('scope', scope)
+        .eq('period_type', periodType)
+        .order('period_start', { ascending: false })
+        .limit(1);
+    if (scope === 'user') q = q.eq('user_id', userId);
+    if (scope === 'team') q = q.is('user_id', null);
+    const { data, error } = await q;
+    if (error) throw error;
+    return (data && data[0]) ? data[0] : null;
+}
+
+async function refreshReports() {
+    const grid = document.getElementById('reportsGrid');
+    const errEl = document.getElementById('reportsError');
+    if (!grid) return;
+    if (errEl) errEl.textContent = '';
+
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    grid.innerHTML = `
+        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+    `;
+
+    try {
+        const [tw, tm, uw, um] = await Promise.all([
+            fetchLatestReport({ scope: 'team', periodType: 'weekly', userId: null }),
+            fetchLatestReport({ scope: 'team', periodType: 'monthly', userId: null }),
+            fetchLatestReport({ scope: 'user', periodType: 'weekly', userId: session.user.id }),
+            fetchLatestReport({ scope: 'user', periodType: 'monthly', userId: session.user.id })
+        ]);
+
+        const timeseriesList = [
+            tw?.metrics?.daily_timeseries || [],
+            tm?.metrics?.daily_timeseries || [],
+            uw?.metrics?.daily_timeseries || [],
+            um?.metrics?.daily_timeseries || []
+        ];
+        const cards = [];
+        cards.push(renderReportCard({
+            title: 'Team (weekly)',
+            subtitle: tw ? formatPeriodLabel(tw.period_start, tw.period_end) : 'No report yet',
+            callsTotal: tw?.metrics?.calls_total,
+            orgsUnique: tw?.metrics?.orgs_unique,
+            timeseries: timeseriesList[0]
+        }, 0));
+        cards.push(renderReportCard({
+            title: 'Team (monthly)',
+            subtitle: tm ? formatPeriodLabel(tm.period_start, tm.period_end) : 'No report yet',
+            callsTotal: tm?.metrics?.calls_total,
+            orgsUnique: tm?.metrics?.orgs_unique,
+            timeseries: timeseriesList[1]
+        }, 1));
+        cards.push(renderReportCard({
+            title: 'You (weekly)',
+            subtitle: uw ? formatPeriodLabel(uw.period_start, uw.period_end) : 'No report yet',
+            callsTotal: uw?.metrics?.calls_total,
+            orgsUnique: uw?.metrics?.orgs_unique,
+            timeseries: timeseriesList[2]
+        }, 2));
+        cards.push(renderReportCard({
+            title: 'You (monthly)',
+            subtitle: um ? formatPeriodLabel(um.period_start, um.period_end) : 'No report yet',
+            callsTotal: um?.metrics?.calls_total,
+            orgsUnique: um?.metrics?.orgs_unique,
+            timeseries: timeseriesList[3]
+        }, 3));
+
+        grid.innerHTML = cards.join('');
+        attachReportCharts(grid, timeseriesList);
+    } catch (e) {
+        console.error('refreshReports error:', e);
+        if (errEl) errEl.textContent = e?.message || 'Failed to load reports.';
+        grid.innerHTML = '';
+    }
+}
+
+async function runReportsNow() {
+    if (!useSupabase()) return;
+    if (!currentUserProfile?.is_admin) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const errEl = document.getElementById('reportsError');
+    const btn = document.getElementById('runReportsNowBtn');
+    if (errEl) errEl.textContent = '';
+    const originalText = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Running…';
+    }
+    try {
+        const getToken = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.access_token && String(session.access_token).split('.').length === 3) return session.access_token;
+            // Attempt refresh once (covers expired/invalid access token)
+            const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+            if (refreshErr) throw refreshErr;
+            const tok = refreshed?.session?.access_token;
+            if (tok && String(tok).split('.').length === 3) return tok;
+            return null;
+        };
+
+        const accessToken = await getToken();
+        if (!accessToken) throw new Error('Session expired. Please log in again.');
+
+        const url = (window.supabaseConfig?.SUPABASE_URL || '').trim();
+        const anonKey = (window.supabaseConfig?.SUPABASE_ANON_KEY || '').trim();
+        if (!url || !anonKey) throw new Error('Supabase is not configured.');
+
+        const res = await fetch(`${url.replace(/\/+$/, '')}/functions/v1/generate-reports-admin-open`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                apikey: anonKey,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const responseText = await res.text().catch(() => '');
+        const payload = (() => {
+            try { return responseText ? JSON.parse(responseText) : null; } catch { return null; }
+        })();
+        if (!res.ok) {
+            const raw = payload?.error ?? payload?.message ?? payload ?? responseText;
+            const detail = (raw == null)
+                ? ''
+                : (typeof raw === 'string'
+                    ? raw
+                    : (() => {
+                        try { return JSON.stringify(raw); } catch { return ''; }
+                    })());
+            const msg = detail || responseText || `Edge Function returned a non-2xx status code (HTTP ${res.status})`;
+            throw new Error(`${msg} (HTTP ${res.status})`);
+        }
+        if (payload && payload.ok === false) {
+            const raw = payload?.error ?? payload?.message ?? payload;
+            const detail = (raw == null)
+                ? 'Report generation failed.'
+                : (typeof raw === 'string'
+                    ? raw
+                    : (() => { try { return JSON.stringify(raw); } catch { return String(raw); } })());
+            throw new Error(detail);
+        }
+
+        showNotification('Reports generated.');
+        await refreshReports();
+    } catch (e) {
+        console.error('runReportsNow error:', e);
+        const msg = (e && typeof e === 'object' && 'message' in e && typeof e.message === 'string' && e.message)
+            ? e.message
+            : (() => { try { return JSON.stringify(e); } catch { return String(e); } })();
+        if (errEl) errEl.textContent = msg || 'Failed to run reports.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText || 'Run reports now';
+        }
+    }
+}
+
 // ---------- Profile / Account modal (Supabase) ----------
 function openProfileModal() {
     if (!useSupabase() || !currentUserProfile) return;
@@ -1292,7 +1968,7 @@ async function handleProfileSubmit(e) {
                 return;
             }
         }
-        currentUserProfile = { id: session.user.id, full_name: fullName };
+        currentUserProfile = { id: session.user.id, full_name: fullName, is_admin: !!currentUserProfile?.is_admin };
         profileCache.set(session.user.id, fullName);
         closeProfileModal();
         showNotification('Account updated.');
@@ -1425,9 +2101,32 @@ function showNotification(message) {
     document.body.appendChild(notification);
 
     setTimeout(() => {
-        notification.style.animation = 'slideIn 0.3s ease reverse';
-        setTimeout(() => notification.remove(), 300);
+        notification.classList.add('is-exiting');
+        setTimeout(() => notification.remove(), 160);
     }, 3000);
+}
+
+function cssEscapeValue(value) {
+    const v = String(value ?? '');
+    if (typeof window.CSS !== 'undefined' && typeof window.CSS.escape === 'function') {
+        return window.CSS.escape(v);
+    }
+    return v.replace(/["\\]/g, '\\$&');
+}
+
+function flashEntryCard(entryId) {
+    if (entryId == null) return;
+    const id = String(entryId);
+
+    requestAnimationFrame(() => {
+        const el = document.querySelector(`.entry-card[data-id="${cssEscapeValue(id)}"]`);
+        if (!el) return;
+        el.classList.remove('entry-card--flash');
+        // Force restart if called repeatedly
+        void el.offsetWidth;
+        el.classList.add('entry-card--flash');
+        setTimeout(() => el.classList.remove('entry-card--flash'), 800);
+    });
 }
 
 // Show desktop / tray notification when a call is logged (Discord-style near system tray in Electron)

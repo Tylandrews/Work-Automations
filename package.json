@@ -26,8 +26,11 @@
   ],
   "author": "",
   "license": "MIT",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
+    "gsap": "^3.14.2",
     "sql.js": "^1.14.0"
   },
   "devDependencies": {
@@ -51,7 +54,10 @@
       "**/node_modules/sql.js/**"
     ],
     "extraResources": [
-      { "from": "build/icons/icon.ico", "to": "icon.ico" }
+      {
+        "from": "build/icons/icon.ico",
+        "to": "icon.ico"
+      }
     ],
     "win": {
       "target": [

@@ -113,7 +113,8 @@ function createWindow() {
             contextIsolation: true
         },
         icon: getAppIconPath(),
-        backgroundColor: '#f8fafc',
+        // Keep in sync with light theme --bg-primary
+        backgroundColor: '#f6f7fb',
         show: false
     });
 
