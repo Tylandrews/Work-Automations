@@ -109,7 +109,7 @@
             </svg>
         </div>
         <div class="content">
-            <div class="title" id="title">IT Support Call Logger</div>
+            <div class="title" id="title">Call Log</div>
             <div class="body" id="body"></div>
         </div>
     </div>
@@ -122,7 +122,7 @@
             } catch (e) {}
 
             const params = new URLSearchParams(window.location.search);
-            const title = params.get('title') || 'IT Support Call Logger';
+            const title = params.get('title') || 'Call Log';
             const body = params.get('body') || '';
             document.getElementById('title').textContent = title;
             document.getElementById('body').textContent = body;

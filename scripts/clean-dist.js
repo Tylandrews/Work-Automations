@@ -18,7 +18,7 @@ try {
   if (err.code === 'EBUSY' || err.code === 'EPERM' || err.errno === -4082) {
     console.error('');
     console.error('Could not remove dist: a file is in use (often the app is still running).');
-    console.error('  → Close "IT Support Call Logger" completely, then run again:');
+    console.error('  → Close "Call Log" completely, then run again:');
     console.error('    npm run build-win:fresh');
     console.error('');
     process.exit(1);

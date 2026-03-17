@@ -1,7 +1,7 @@
 {
-  "name": "it-support-call-logger",
-  "version": "1.0.0",
-  "description": "IT Support Call Logger - Desktop Application",
+  "name": "call-log",
+  "version": "3.0.0",
+  "description": "Call Log - Desktop Application",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -39,8 +39,8 @@
     "electron-icon-builder": "^2.0.1"
   },
   "build": {
-    "appId": "com.itsupport.calllogger",
-    "productName": "IT Support Call Logger",
+    "appId": "com.calllog.app",
+    "productName": "Call Log",
     "directories": {
       "output": "dist"
     },

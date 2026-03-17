@@ -2132,7 +2132,7 @@ function flashEntryCard(entryId) {
 // Show desktop / tray notification when a call is logged (Discord-style near system tray in Electron)
 function showDesktopNotification(title, body) {
     if (window.electronAPI?.showTrayNotification) {
-        window.electronAPI.showTrayNotification(title || 'IT Support Call Logger', body || '');
+        window.electronAPI.showTrayNotification(title || 'Call Log', body || '');
         return;
     }
     if (typeof Notification === 'undefined') return;

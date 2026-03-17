@@ -56,7 +56,7 @@ function showTrayNotification(title, body) {
         }
     });
     win.setMenuBarVisibility(false);
-    const query = { title: title || 'IT Support Call Logger', body: body || '' };
+    const query = { title: title || 'Call Log', body: body || '' };
     win.loadFile('notification.html', { query }).catch((err) => {
         console.error('notification.html load error:', err);
         win.destroy();

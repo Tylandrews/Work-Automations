@@ -1,4 +1,4 @@
-# IT Support Call Logger - Desktop Application
+# Call Log - Desktop Application
 
 A standalone Electron desktop application to quickly capture and log IT support call information.
 
@@ -13,12 +13,15 @@ A standalone Electron desktop application to quickly capture and log IT support 
 
 ## Installation
 
-### Prerequisites
+### For end users (no Node.js required)
 
-- Node.js (v16 or higher) and npm installed on your system
-- Download from: https://nodejs.org/
+If you are **distributing** the app to users: give them the built installer or portable exe from the `dist` folder (after running `npm run build-win`). The installer includes everything needed; users do not install Node.js or anything else. Run the installer (or the portable exe) on a fresh machine and the app will work.
 
-### Setup Steps
+### For developers (building from source)
+
+**Prerequisites:** Node.js (v18 or higher) and npm. Download from https://nodejs.org/
+
+**Setup steps:**
 
 1. **Install Dependencies**
    ```bash
@@ -32,11 +35,19 @@ A standalone Electron desktop application to quickly capture and log IT support 
 
 ## Building for Distribution
 
+The built installer (or portable exe) is **self-contained**: it includes the Electron runtime (Chromium + Node.js). **End users do not need to install Node.js or any other software**—they only run the installer or portable executable.
+
 ### Build for Windows
 ```bash
 npm run build-win
 ```
-Creates installer and portable executable in the `dist` folder.
+Creates in the `dist` folder:
+- **NSIS installer** (`.exe`) – recommended for deployment; users run it once to install. No prerequisites.
+- **Portable** (`.exe`) – single executable, no install step; copy and run.
+
+Give users one of these files; they can install and run on a fresh Windows machine without installing Node.js.
+
+**For end users (fresh machine):** Run the NSIS installer from `dist/` (e.g. `Call Log Setup 3.0.0.exe`). Choose install location, finish the wizard—no Node.js or other components required. Alternatively, give them the portable exe to run without installing.
 
 ### Build for macOS
 ```bash
@@ -84,9 +95,9 @@ npm run build
 - All data is stored locally in Electron's localStorage
 - Data persists between application sessions
 - Data location varies by operating system:
-  - **Windows**: `%APPDATA%\it-support-call-logger\`
-  - **macOS**: `~/Library/Application Support/it-support-call-logger/`
-  - **Linux**: `~/.config/it-support-call-logger/`
+  - **Windows**: `%APPDATA%\Call Log\`
+  - **macOS**: `~/Library/Application Support/Call Log/`
+  - **Linux**: `~/.config/Call Log/`
 - To backup data, ensure your data directory is included in your backup routine.
 
 ## Project Structure
@@ -153,7 +164,7 @@ Ensure **Realtime** is enabled for the `calls` table in Supabase: **Dashboard �
 ### "Cannot find module 'better-sqlite3'" after installing the app
 The app uses **sql.js** for the database, not `better-sqlite3`. This error means the installed build was created from an older version of the project. To fix:
 
-1. **Close** any running instance of "IT Support Call Logger" (and quit from the system tray if it’s there).
+1. **Close** any running instance of "Call Log" (and quit from the system tray if it’s there).
 2. In this project folder run:
    ```bash
    npm install
@@ -165,7 +176,7 @@ The app uses **sql.js** for the database, not `better-sqlite3`. This error means
 ### Build fails with "The process cannot access the file ... app.asar"
 Something is locking the build output (often the installed app or an Electron process). Fix:
 
-1. **Close** "IT Support Call Logger" completely (Task Manager → end any "IT Support Call Logger" or "Electron" processes if needed).
+1. **Close** "Call Log" completely (Task Manager → end any "Call Log" or "Electron" processes if needed).
 2. From the project folder run a clean build:
    ```bash
    npm run build-win:fresh
