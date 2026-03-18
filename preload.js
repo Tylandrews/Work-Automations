@@ -21,11 +21,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
         isMaximized: () => ipcRenderer.invoke('window-is-maximized'),
         close: () => ipcRenderer.invoke('window-close')
     },
-    setWindowHeight: (height) => ipcRenderer.invoke('set-window-height', height),
-    getEntries: () => ipcRenderer.invoke('get-entries'),
-    createEntry: (entry) => ipcRenderer.invoke('create-entry', entry),
-    updateEntry: (id, fields) => ipcRenderer.invoke('update-entry', id, fields),
-    deleteEntry: (id) => ipcRenderer.invoke('delete-entry', id),
-    clearAllEntries: () => ipcRenderer.invoke('clear-all-entries'),
-    importFromLocalStorage: (entries) => ipcRenderer.invoke('import-from-localstorage', entries)
+    setWindowHeight: (height) => ipcRenderer.invoke('set-window-height', height)
 });

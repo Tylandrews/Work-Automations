@@ -1079,6 +1079,26 @@ main .form-container {
     height: 18px;
 }
 
+.btn-icon-only.btn-stats,
+.btn-icon-only.btn-reports {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.btn-icon-only.btn-stats:hover,
+.btn-icon-only.btn-reports:hover {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+}
+
+.btn-icon-only.btn-stats:active,
+.btn-icon-only.btn-reports:active {
+    background: var(--primary-dark);
+    border-color: var(--primary-dark);
+    opacity: 0.9;
+}
+
 .btn-icon {
     font-size: 16px;
 }

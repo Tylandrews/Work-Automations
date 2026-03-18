@@ -105,6 +105,7 @@
         <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4l10.5-10.5a2 2 0 0 0 0-3L17.5 5a2 2 0 0 0-3 0L4 15.5V20Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
         <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6 7l1 14h10l1-14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
         <symbol id="i-stats" viewBox="0 0 24 24"><path d="M5 19V9M12 19V5M19 19v-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 12h2v6H7zM11 8h2v10h-2zM15 15h2v3h-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
         <symbol id="i-empty" viewBox="0 0 24 24"><path d="M7 7h10M7 11h10M7 15h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M5 3h14a2 2 0 0 1 2 2v14l-4-2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
         <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
         <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -250,14 +251,11 @@
                     <button class="btn-icon-only" id="searchBtn" title="Search (Ctrl+F)">
                         <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
                     </button>
-                    <button class="btn-icon-only" id="statsBtn" title="View Statistics">
+                    <button class="btn-icon-only btn-stats" id="statsBtn" title="View Statistics">
                         <svg class="icon" aria-hidden="true"><use href="#i-stats"></use></svg>
                     </button>
-                    <button class="btn-icon-only" id="reportsBtn" title="Reports">
-                        <svg class="icon" aria-hidden="true"><use href="#i-stats"></use></svg>
-                    </button>
-                    <button class="btn-icon-only btn-danger" id="clearAllBtn" title="Clear All">
-                        <svg class="icon" aria-hidden="true"><use href="#i-trash"></use></svg>
+                    <button class="btn-icon-only btn-reports" id="reportsBtn" title="Reports">
+                        <svg class="icon" aria-hidden="true"><use href="#i-chart"></use></svg>
                     </button>
                 </div>
                 <div class="entries-stats" id="entriesStats"></div>

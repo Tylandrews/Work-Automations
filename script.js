@@ -736,9 +736,6 @@ function setupEventListeners() {
     // Clear form button
     document.getElementById('clearBtn').addEventListener('click', clearForm);
     
-    // Clear all button
-    document.getElementById('clearAllBtn').addEventListener('click', clearAllEntries);
-    
     // Search functionality (inside History panel)
     document.getElementById('searchBtn').addEventListener('click', toggleSearch);
     document.getElementById('closeSearch').addEventListener('click', toggleSearch);
@@ -2156,33 +2153,3 @@ function doShowDesktopNotification(title, body) {
     }
 }
 
-// Clear all entries (Supabase: only current user's; local: all)
-async function clearAllEntries() {
-    const confirmed = await openConfirm({
-        title: 'Clear all entries',
-        message: useSupabase() ? 'Delete all your call logs?' : 'Delete all call logs?',
-        detail: useSupabase() ? 'This will remove every call log you created. This action cannot be undone.' : 'This will remove every saved call log entry. This action cannot be undone.',
-        okLabel: 'Clear all'
-    });
-    
-    if (confirmed) {
-        if (!useSupabase()) {
-            console.error('Supabase is not configured. Cannot clear entries.');
-            return;
-        }
-        const supabase = getSupabase();
-        if (!supabase) {
-            console.error('Supabase client not available.');
-            return;
-        }
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-            console.error('No active session. Please log in.');
-            return;
-        }
-        await supabase.from('calls').delete().eq('user_id', session.user.id);
-        await loadEntries();
-        await updateStats();
-        showNotification('All entries cleared');
-    }
-}
