@@ -374,6 +374,26 @@ function showAuth(authScreen, appShell) {
         authScreen.setAttribute('aria-hidden', 'false');
         document.getElementById('authNoConfig')?.classList.add('hidden');
         document.querySelector('.auth-card')?.classList.remove('hidden');
+        
+        // Load saved email if available, and clear password for security
+        const emailInput = document.getElementById('authEmail');
+        const passwordInput = document.getElementById('authPassword');
+        
+        // Always clear password for security
+        if (passwordInput) {
+            passwordInput.value = '';
+        }
+        
+        if (emailInput) {
+            try {
+                const savedEmail = localStorage.getItem('calllog-saved-email');
+                if (savedEmail) {
+                    emailInput.value = savedEmail;
+                }
+            } catch (e) {
+                // Ignore localStorage errors
+            }
+        }
     }
 }
 
@@ -403,7 +423,38 @@ function setupAuthListeners() {
     function showAuthForm() {
         layout?.classList.add('is-form');
         formCard?.setAttribute('aria-hidden', 'false');
-        setTimeout(() => document.getElementById('authEmail')?.focus(), 0);
+        
+        // Load saved email if available
+        const emailInput = document.getElementById('authEmail');
+        const passwordInput = document.getElementById('authPassword');
+        
+        // Always clear password for security
+        if (passwordInput) {
+            passwordInput.value = '';
+        }
+        
+        if (emailInput) {
+            try {
+                const savedEmail = localStorage.getItem('calllog-saved-email');
+                if (savedEmail) {
+                    emailInput.value = savedEmail;
+                }
+            } catch (e) {
+                // Ignore localStorage errors
+            }
+        }
+        
+        setTimeout(() => {
+            const emailInput = document.getElementById('authEmail');
+            if (emailInput) {
+                // If email is already filled, focus on password; otherwise focus on email
+                if (emailInput.value.trim()) {
+                    document.getElementById('authPassword')?.focus();
+                } else {
+                    emailInput.focus();
+                }
+            }
+        }, 0);
     }
 
     // Default view: brand card centered; click to continue.
@@ -451,6 +502,12 @@ function setupAuthListeners() {
             return;
         }
         if (data.session) {
+            // Save email for next time
+            try {
+                localStorage.setItem('calllog-saved-email', email);
+            } catch (e) {
+                // Ignore localStorage errors
+            }
             await loadCurrentUserProfile();
             showApp(appShell, authScreen);
             setupLogout();
@@ -501,6 +558,12 @@ function setupAuthListeners() {
                 return;
             }
             if (data.session) {
+                // Save email for next time
+                try {
+                    localStorage.setItem('calllog-saved-email', email);
+                } catch (e) {
+                    // Ignore localStorage errors
+                }
                 await loadCurrentUserProfile();
                 showApp(appShell, authScreen);
                 setupLogout();
@@ -577,7 +640,11 @@ function setupLogout() {
         if (logoutBtn) logoutBtn.style.display = 'none';
         if (profileBtn) profileBtn.style.display = 'none';
         logoutBtn?.removeEventListener('click', handler);
-        showAuth(document.getElementById('authScreen'), document.getElementById('appShell'));
+        const authScreen = document.getElementById('authScreen');
+        const appShell = document.getElementById('appShell');
+        showAuth(authScreen, appShell);
+        // Re-setup auth listeners so the brand card is clickable again
+        setupAuthListeners();
     };
     logoutBtn?.addEventListener('click', handler);
 }

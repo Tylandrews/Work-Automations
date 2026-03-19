@@ -295,7 +295,9 @@ textarea {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
+    align-items: center;
     gap: 18px;
+    text-align: center;
 }
 
 .auth-brand-mark {
@@ -342,6 +344,8 @@ textarea {
     line-height: 1.5;
     color: var(--text-secondary);
     max-width: 38ch;
+    text-align: center;
+    margin: 0 auto;
 }
 
 .auth-brand-cta {
@@ -1080,20 +1084,23 @@ main .form-container {
 }
 
 .btn-icon-only.btn-stats,
-.btn-icon-only.btn-reports {
+.btn-icon-only.btn-reports,
+.btn-icon-only.btn-search {
     background: var(--primary);
     color: white;
     border-color: var(--primary);
 }
 
 .btn-icon-only.btn-stats:hover,
-.btn-icon-only.btn-reports:hover {
+.btn-icon-only.btn-reports:hover,
+.btn-icon-only.btn-search:hover {
     background: var(--primary-dark);
     border-color: var(--primary-dark);
 }
 
 .btn-icon-only.btn-stats:active,
-.btn-icon-only.btn-reports:active {
+.btn-icon-only.btn-reports:active,
+.btn-icon-only.btn-search:active {
     background: var(--primary-dark);
     border-color: var(--primary-dark);
     opacity: 0.9;

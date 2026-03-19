@@ -3,6 +3,33 @@ const path = require('path');
 const fs = require('fs');
 // Local SQL database removed - using Supabase only
 
+// Configure cache directory before app is ready to prevent permission errors
+// This must be called before app.whenReady()
+if (process.platform === 'win32') {
+    // Use command line switches to configure cache
+    // This prevents cache permission errors by using a writable location
+    app.commandLine.appendSwitch('disk-cache-size', '10000000'); // 10MB cache
+    
+    // Set cache directory after app is ready (but configure early)
+    app.whenReady().then(() => {
+        try {
+            const userDataPath = app.getPath('userData');
+            const cachePath = path.join(userDataPath, 'Cache');
+            
+            // Ensure cache directory exists
+            if (!fs.existsSync(cachePath)) {
+                fs.mkdirSync(cachePath, { recursive: true });
+            }
+            
+            // Set the cache path
+            app.setPath('cache', cachePath);
+        } catch (err) {
+            // Ignore - will use default location if we can't set it
+        }
+    });
+}
+
+
 /** Resolve .ico path so taskbar uses it. Packaged: extraResources puts it in resources/. */
 function getAppIconPath() {
     if (process.platform !== 'win32') return undefined;
@@ -110,7 +137,10 @@ function createWindow() {
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
-            contextIsolation: true
+            contextIsolation: true,
+            // Configure cache to use app's user data directory
+            cache: true,
+            partition: 'persist:main'
         },
         icon: getAppIconPath(),
         // Keep in sync with light theme --bg-primary
