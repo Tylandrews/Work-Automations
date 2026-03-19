@@ -9,6 +9,13 @@ let supabaseRealtimeChannel = null;
 let currentUserProfile = null; // { id, full_name, is_admin } for logged-in user (Supabase)
 const profileCache = new Map(); // user_id -> full_name
 
+// Autocomplete state
+const autocompleteCache = new Map(); // query -> { results, timestamp }
+const AUTOCACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let autocompleteDebounceTimer = null;
+let autocompleteAbortController = null;
+let autocompleteActiveInstance = null; // Currently active autocomplete instance
+
 function useSupabase() {
     const config = window.supabaseConfig || {};
     const url = (config.SUPABASE_URL || '').trim();
@@ -23,6 +30,315 @@ function getSupabase() {
         supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
     }
     return supabaseClient;
+}
+
+// ========== Autotask Organization Autocomplete ==========
+// SECURITY: This function NEVER contains or sends API keys.
+// All API calls go through a Supabase Edge Function which stores Autotask credentials server-side.
+
+/**
+ * Search organizations via Supabase Edge Function (secure proxy)
+ * @param {string} query - Search query (minimum 2 characters)
+ * @param {number} limit - Maximum number of results (default: 20)
+ * @returns {Promise<Array<{id: string, name: string}>>}
+ */
+async function searchOrganizationsViaProxy(query, limit = 20) {
+    if (!query || query.trim().length < 2) {
+        return [];
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+        console.warn('Supabase not configured. Autocomplete disabled.');
+        return [];
+    }
+
+    // Check cache first
+    const cacheKey = query.toLowerCase().trim();
+    const cached = autocompleteCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < AUTOCACHE_TTL_MS) {
+        return cached.results;
+    }
+
+    // Get Supabase session for authentication
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        console.warn('No active session. Autocomplete requires authentication.');
+        return [];
+    }
+
+    // Get Supabase project URL
+    const config = window.supabaseConfig || {};
+    const supabaseUrl = (config.SUPABASE_URL || '').trim();
+    if (!supabaseUrl) {
+        console.warn('Supabase URL not configured.');
+        return [];
+    }
+
+    // Call Edge Function (never sends API key - it's stored server-side)
+    const edgeFunctionUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/autotask-search-companies-v3`;
+    const searchParams = new URLSearchParams({
+        q: query.trim(),
+        limit: String(Math.min(Math.max(limit, 1), 50))
+    });
+
+    try {
+        const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
+        // Debug (safe): confirm headers are present without logging sensitive values
+        // Remove later once stable.
+        console.debug('[autotask-autocomplete] session?', !!session, 'tokenLen', String(session?.access_token || '').length, 'apikey?', anonKey.length > 0);
+        const response = await fetch(`${edgeFunctionUrl}?${searchParams}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                // Supabase Edge Functions expect the project anon/publishable key as `apikey`
+                // This is safe to include client-side (as with the rest of the app).
+                'apikey': anonKey,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const txt = await response.text().catch(() => '');
+            let errorDetails = '';
+            let fullError = '';
+            try {
+                const errorJson = JSON.parse(txt);
+                errorDetails = errorJson.details || errorJson.error || '';
+                fullError = JSON.stringify(errorJson, null, 2);
+            } catch {
+                errorDetails = txt;
+                fullError = txt;
+            }
+            console.warn('[autotask-autocomplete] non-2xx', response.status);
+            console.warn('[autotask-autocomplete] Full error response:', fullError);
+            if (response.status === 401) {
+                console.warn('Session expired. Please log in again.');
+                return [];
+            }
+            if (response.status === 503) {
+                console.warn('Autotask API not configured on server.');
+                return [];
+            }
+            throw new Error(`Edge Function returned ${response.status}: ${errorDetails || 'See console for details'}`);
+        }
+
+        const data = await response.json();
+        const organizations = Array.isArray(data.organizations) ? data.organizations : [];
+
+        // Cache results
+        autocompleteCache.set(cacheKey, {
+            results: organizations,
+            timestamp: Date.now()
+        });
+
+        return organizations;
+    } catch (err) {
+        console.error('Failed to search organizations:', err);
+        return [];
+    }
+}
+
+/**
+ * Setup autocomplete for an organization input field
+ * @param {string} inputId - ID of the input element
+ * @param {string} dropdownId - ID of the dropdown container
+ */
+function setupOrganizationAutocomplete(inputId, dropdownId) {
+    const input = document.getElementById(inputId);
+    const dropdown = document.getElementById(dropdownId);
+    if (!input || !dropdown) return;
+
+    let selectedIndex = -1;
+    let suggestions = [];
+
+    function hideDropdown() {
+        dropdown.classList.remove('show');
+        dropdown.setAttribute('aria-hidden', 'true');
+        input.setAttribute('aria-expanded', 'false');
+        selectedIndex = -1;
+        suggestions = [];
+    }
+
+    function showDropdown() {
+        dropdown.classList.add('show');
+        dropdown.setAttribute('aria-hidden', 'false');
+        input.setAttribute('aria-expanded', 'true');
+    }
+
+    function renderSuggestions(orgs) {
+        suggestions = orgs;
+        selectedIndex = -1;
+
+        if (orgs.length === 0) {
+            hideDropdown();
+            return;
+        }
+
+        dropdown.innerHTML = orgs.map((org, index) => {
+            const escapedName = escapeHtml(org.name);
+            return `
+                <div class="autocomplete-item" role="option" data-index="${index}" data-value="${escapeHtmlAttr(org.name)}" aria-selected="false">
+                    ${escapedName}
+                </div>
+            `;
+        }).join('');
+
+        showDropdown();
+
+        // Update ARIA attributes
+        dropdown.setAttribute('aria-activedescendant', '');
+    }
+
+    function selectSuggestion(index) {
+        if (index < 0 || index >= suggestions.length) return;
+
+        const org = suggestions[index];
+        input.value = org.name;
+        hideDropdown();
+
+        // Trigger input event for form validation
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+    }
+
+    function highlightItem(index) {
+        // Remove previous highlight
+        dropdown.querySelectorAll('.autocomplete-item').forEach((item, i) => {
+            item.classList.toggle('highlighted', i === index);
+            item.setAttribute('aria-selected', i === index ? 'true' : 'false');
+        });
+
+        if (index >= 0 && index < suggestions.length) {
+            const item = dropdown.querySelector(`[data-index="${index}"]`);
+            if (item) {
+                dropdown.setAttribute('aria-activedescendant', `${inputId}-item-${index}`);
+                item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+        } else {
+            dropdown.setAttribute('aria-activedescendant', '');
+        }
+    }
+
+    // Debounced search
+    async function performSearch(query) {
+        // Cancel previous request
+        if (autocompleteAbortController) {
+            autocompleteAbortController.abort();
+        }
+        autocompleteAbortController = new AbortController();
+
+        // Clear previous timer
+        if (autocompleteDebounceTimer) {
+            clearTimeout(autocompleteDebounceTimer);
+        }
+
+        autocompleteDebounceTimer = setTimeout(async () => {
+            if (query.length < 2) {
+                hideDropdown();
+                return;
+            }
+
+            try {
+                const orgs = await searchOrganizationsViaProxy(query, 20);
+                if (autocompleteActiveInstance === inputId) {
+                    renderSuggestions(orgs);
+                }
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    console.error('Autocomplete search error:', err);
+                    hideDropdown();
+                }
+            }
+        }, 300); // 300ms debounce
+    }
+
+    // Input event handler
+    input.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        autocompleteActiveInstance = inputId;
+
+        if (query.length < 2) {
+            hideDropdown();
+            return;
+        }
+
+        performSearch(query);
+    });
+
+    // Focus event handler
+    input.addEventListener('focus', () => {
+        autocompleteActiveInstance = inputId;
+        const query = input.value.trim();
+        if (query.length >= 2 && suggestions.length > 0) {
+            showDropdown();
+        }
+    });
+
+    // Blur event handler (with delay to allow clicks)
+    input.addEventListener('blur', () => {
+        setTimeout(() => {
+            if (autocompleteActiveInstance !== inputId) {
+                hideDropdown();
+            }
+        }, 200);
+    });
+
+    // Keyboard navigation
+    input.addEventListener('keydown', (e) => {
+        if (!dropdown.classList.contains('show')) {
+            if (e.key === 'ArrowDown' && input.value.trim().length >= 2) {
+                // Trigger search if dropdown not visible
+                performSearch(input.value.trim());
+                e.preventDefault();
+            }
+            return;
+        }
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                selectedIndex = Math.min(selectedIndex + 1, suggestions.length - 1);
+                highlightItem(selectedIndex);
+                break;
+            case 'ArrowUp':
+                e.preventDefault();
+                selectedIndex = Math.max(selectedIndex - 1, -1);
+                highlightItem(selectedIndex);
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (selectedIndex >= 0) {
+                    selectSuggestion(selectedIndex);
+                }
+                break;
+            case 'Escape':
+                e.preventDefault();
+                hideDropdown();
+                input.focus();
+                break;
+        }
+    });
+
+    // Click handler for dropdown items
+    dropdown.addEventListener('click', (e) => {
+        const item = e.target.closest('.autocomplete-item');
+        if (!item) return;
+
+        const index = parseInt(item.getAttribute('data-index'), 10);
+        if (!isNaN(index)) {
+            selectSuggestion(index);
+        }
+    });
+
+    // Click outside to close
+    document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+            if (autocompleteActiveInstance === inputId) {
+                hideDropdown();
+            }
+        }
+    });
 }
 
 function mapRowToEntry(row) {
@@ -699,6 +1015,12 @@ async function initApp() {
     // Reports are Supabase-only
     const reportsBtn = document.getElementById('reportsBtn');
     if (reportsBtn) reportsBtn.style.display = useSupabase() ? '' : 'none';
+
+    // Setup organization autocomplete (only if Supabase is configured)
+    if (useSupabase()) {
+        setupOrganizationAutocomplete('organization', 'organization-autocomplete-list');
+        setupOrganizationAutocomplete('editOrganization', 'editOrganization-autocomplete-list');
+    }
 
     await initializeHistoryDay();
     await renderCalendar(calendarMonth);

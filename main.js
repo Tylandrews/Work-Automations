@@ -3,6 +3,27 @@ const path = require('path');
 const fs = require('fs');
 // Local SQL database removed - using Supabase only
 
+// Allow opening DevTools via keyboard even with frameless windows / no menu.
+// This is helpful for debugging production issues (e.g., Edge Function 401s).
+// Ctrl+Shift+I (Windows/Linux) or Cmd+Opt+I (macOS) will toggle DevTools.
+function registerDevtoolsToggle(win) {
+    if (!win || win.isDestroyed()) return;
+    try {
+        win.webContents.on('before-input-event', (event, input) => {
+            const isMac = process.platform === 'darwin';
+            const toggleCombo =
+                (!isMac && input.control && input.shift && input.key && input.key.toLowerCase() === 'i') ||
+                (isMac && input.meta && input.alt && input.key && input.key.toLowerCase() === 'i');
+            if (!toggleCombo) return;
+            event.preventDefault();
+            if (win.webContents.isDevToolsOpened()) win.webContents.closeDevTools();
+            else win.webContents.openDevTools({ mode: 'detach' });
+        });
+    } catch (e) {
+        // no-op
+    }
+}
+
 // Configure cache directory before app is ready to prevent permission errors
 // This must be called before app.whenReady()
 if (process.platform === 'win32') {
@@ -159,6 +180,8 @@ function createWindow() {
         if (iconPath) mainWindow.setIcon(iconPath);
         mainWindow.show();
     });
+
+    registerDevtoolsToggle(mainWindow);
 
     // Open DevTools in development (comment out for production)
     // mainWindow.webContents.openDevTools();

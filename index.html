@@ -170,7 +170,10 @@
                             <svg class="icon" aria-hidden="true"><use href="#i-building"></use></svg>
                             Organization *
                         </label>
-                        <input type="text" id="organization" name="organization" required autocomplete="organization" placeholder="Enter organization name">
+                        <div class="autocomplete-wrapper">
+                            <input type="text" id="organization" name="organization" required autocomplete="organization" placeholder="Enter organization name" aria-autocomplete="list" aria-expanded="false" aria-controls="organization-autocomplete-list">
+                            <div id="organization-autocomplete-list" class="autocomplete-dropdown" role="listbox" aria-label="Organization suggestions" aria-hidden="true"></div>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -334,7 +337,10 @@
                         <svg class="icon" aria-hidden="true"><use href="#i-building"></use></svg>
                         Organization *
                     </label>
-                    <input type="text" id="editOrganization" required>
+                    <div class="autocomplete-wrapper">
+                        <input type="text" id="editOrganization" required autocomplete="organization" aria-autocomplete="list" aria-expanded="false" aria-controls="editOrganization-autocomplete-list">
+                        <div id="editOrganization-autocomplete-list" class="autocomplete-dropdown" role="listbox" aria-label="Organization suggestions" aria-hidden="true"></div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="editMobile">
