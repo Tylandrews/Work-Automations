@@ -1,145 +1,116 @@
 # Call Log
 
-Desktop app for IT support teams to capture and review support calls, with optional Supabase sync, reporting, and a small public marketing site.
+Call Log is an Electron desktop application for logging and reviewing telephone support interactions. It provides a dedicated intake form, calendar-based history, search, in-app statistics, and optional cloud synchronization through Supabase. A static marketing site is included under [`Website/`](Website/) for GitHub Pages.
 
 | Resource | Link |
 | -------- | ---- |
-| **Repository** | [github.com/Tylandrews/Work-Automations](https://github.com/Tylandrews/Work-Automations) |
-| **Live site (GitHub Pages)** | [tylandrews.github.io/Work-Automations](https://tylandrews.github.io/Work-Automations/) (after you [enable Pages](#github-pages-marketing-site)) |
-| **Latest release** | [Releases](https://github.com/Tylandrews/Work-Automations/releases/latest) |
+| Repository | [github.com/Tylandrews/Work-Automations](https://github.com/Tylandrews/Work-Automations) |
+| Documentation site (GitHub Pages) | [tylandrews.github.io/Work-Automations](https://tylandrews.github.io/Work-Automations/) |
+| Installers and release assets | [Releases](https://github.com/Tylandrews/Work-Automations/releases/latest) |
 
-## GitHub Pages (marketing site)
+## Overview
 
-The landing page for the project lives in [`Website/`](Website/). It is a static HTML page (no build step).
+The application is designed for help-desk and IT support workflows. Signed-in users store call records in a Supabase-backed database with row-level security. The interface supports optional organization lookup (where Autotask integration is configured), realtime updates for shared teams, desktop notifications, and scheduled reporting when the backend is configured accordingly. Details on reporting appear in [`REPORTING.md`](REPORTING.md).
 
-### Enable GitHub Pages
+## Features
 
-1. Push this repository to GitHub (if it is not already remote).
-2. In the repo on GitHub, open **Settings → Pages**.
-3. Under **Build and deployment**, set **Source** to **GitHub Actions** (not “Deploy from a branch”).
-4. Push to `main`, or open the **Actions** tab and run **Deploy GitHub Pages** manually. The workflow [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) uploads the `Website` folder as the site root.
-5. When the workflow succeeds, **Settings → Pages** shows the public URL (typically `https://<username>.github.io/<repo>/` for a project site).
+- Structured call capture: caller name, organization, telephone number, optional device identifier, support request, optional notes, and adjustable date and time
+- Call history scoped by day with calendar navigation, full-text search within the selected day, entry editing, and summary statistics
+- Email-based authentication via Supabase where the project is configured
+- Optional teammate notifications when new calls are recorded (Supabase Realtime)
+- Cross-platform desktop delivery through Electron (Windows, macOS, Linux)
 
-### After the first deploy
+## Requirements
 
-[`Website/index.html`](Website/index.html) is configured for [Tylandrews/Work-Automations](https://github.com/Tylandrews/Work-Automations). The `og:image` URL assumes the site is served at `https://tylandrews.github.io/Work-Automations/`; if your Pages URL differs, update that meta tag accordingly.
+| Audience | Requirement |
+| -------- | ------------- |
+| End users (released builds) | No Node.js installation; run the published installer or portable executable from [Releases](https://github.com/Tylandrews/Work-Automations/releases/latest) |
+| Contributors | Node.js 18 or newer and npm |
 
-## Desktop application
+## Installation (end users)
 
-### Features
+Download the latest installer or portable executable for your platform from the [Releases](https://github.com/Tylandrews/Work-Automations/releases/latest) page. Executables produced by this project bundle the Electron runtime; end users do not install Node.js separately.
 
-- **Quick form entry**: Caller name, mobile number, organization, and support request
-- **Automatic timestamps**: Date and time for each call (adjustable)
-- **History**: Searchable list of logged calls
-- **Supabase**: Cloud storage, auth, multi-user features, and scheduled reporting (see [`REPORTING.md`](REPORTING.md))
-- **Electron**: Native desktop app on Windows, macOS, and Linux
+## Development
 
-### Installation
-
-**End users (no Node.js)**  
-Distribute the built installer or portable executable from the `dist` folder after you run `npm run build-win` (or the platform-specific build). Users run the installer or portable exe only; they do not install Node.js.
-
-**Developers**
-
-**Prerequisites:** Node.js 18+ and npm — https://nodejs.org/
+### Clone and run
 
 ```bash
+git clone https://github.com/Tylandrews/Work-Automations.git
+cd Work-Automations
 npm install
 npm start
 ```
 
-### Building for distribution
+### Build production artifacts
 
-Built artifacts are self-contained (Electron runtime included). End users do not need Node.js.
+Production builds include the Electron runtime. Installers and portable packages are written to the `dist/` directory.
 
-**Windows**
+| Platform | Command |
+| -------- | ------- |
+| Windows | `npm run build-win` |
+| macOS | `npm run build-mac` |
+| Linux | `npm run build-linux` |
+| All configured targets | `npm run build` |
 
-```bash
-npm run build-win
-```
+On Windows, `npm run build-win` produces an NSIS installer and a portable executable. Close any running instance of the application before rebuilding if file locks occur.
 
-Output in `dist/`: NSIS installer (recommended) and portable `.exe`.
+To attach Chromium DevTools during local development, enable the appropriate call in `main.js` (see Electron documentation for `openDevTools`).
 
-**macOS**
+### Supabase configuration
 
-```bash
-npm run build-mac
-```
-
-**Linux**
-
-```bash
-npm run build-linux
-```
-
-**All platforms**
-
-```bash
-npm run build
-```
-
-### How to use
-
-1. Launch with `npm start`, or run a build from `dist/`.
-2. **Log a call**: Fill name, mobile, organization, and support request (date/time defaults to now). Click **Save Call**.
-3. **History**: Recent calls appear in the panel; newest first.
-4. **Clear**: **Clear All** removes all entries (with confirmation). **Clear Form** resets the form without saving.
-
-### Project structure
-
-```
-Work Automations/
-├── Website/                 # Public marketing site (GitHub Pages)
-├── index.html               # Electron renderer UI
-├── styles.css
-├── script.js
-├── main.js                  # Electron main process
-├── preload.js
-├── package.json
-├── build/                   # App icons and build assets
-└── supabase/                # Edge functions and related config
-```
-
-### Supabase (developers)
-
-Cloud features use Supabase. For local development and builds, create `supabaseConfig.js` from the example:
+Cloud features require a valid `supabaseConfig.js` (not committed to the repository). Copy the example file and supply the project URL and anon key from the Supabase dashboard (**Settings → API**).
 
 ```bash
 cp supabaseConfig.example.js supabaseConfig.js
 ```
 
-Copy **Project URL** and **anon/public** key from Supabase **Settings → API** into `supabaseConfig.js`. The file is gitignored; production builds bundle the config for end users.
+The build pipeline validates configuration where applicable. Release builds intended for distribution should embed the configuration required for production use.
 
-### Development notes
+### Project layout
 
-- Uncomment `mainWindow.webContents.openDevTools()` in `main.js` for DevTools.
-- Replace icon files under `build/` as needed (`icon.png`, `icon.ico`, `icon.icns`).
-- **Teammate notifications**: Run two instances (`npm run start:1` and `npm run start:2`), sign in as different Supabase users in each window, and ensure **Realtime** is enabled for `public.calls` in **Dashboard → Database → Replication**. Logging a call in one window should trigger a tray notification in the other.
+```
+├── Website/          Static marketing site (GitHub Pages)
+├── index.html        Renderer UI
+├── styles.css
+├── script.js
+├── main.js           Electron main process
+├── preload.js
+├── package.json
+├── build/            Application icons and packaging assets
+└── supabase/         Edge functions and related backend assets
+```
 
-### Privacy and security
+## Documentation site (GitHub Pages)
 
-- Supabase data is protected by Row Level Security (RLS); the anon key is intended for client use with RLS.
-- Electron uses context isolation for the renderer.
-- An internet connection is required when using cloud sync and related features.
+The contents of [`Website/`](Website/) can be published with GitHub Actions. In the repository **Settings → Pages**, set **Build and deployment** source to **GitHub Actions** and use the workflow in [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml). After a successful deployment, GitHub displays the public URL on the same settings page.
 
-### Troubleshooting
+Absolute URLs in `Website/index.html` (for example Open Graph metadata) should match the deployed site URL if social previews are required.
 
-**“Cannot find module 'better-sqlite3'”**  
-Rebuild from current source: close the app, `npm install`, `npm run build-win`, reinstall from `dist`. The app uses **sql.js**, not `better-sqlite3`.
+## Security and privacy
 
-**Build: file locked / `app.asar` in use**  
-Close Call Log and Electron processes, then `npm run build-win:fresh` or delete `dist` and rebuild.
+- Database access is enforced with Supabase Row Level Security; client builds use the anon key as intended for public clients together with RLS policies
+- The renderer runs with Electron context isolation enabled
+- Network connectivity is required for cloud-backed features
 
-**App won’t start**  
-Check `node --version`, run `npm install` again.
+## Troubleshooting
 
-**Data**  
-Data location depends on OS (e.g. Windows `%APPDATA%\Call Log\`). With Supabase, data is subject to your project’s RLS and backup policies.
+**Error referencing `better-sqlite3` after installation**  
+Install a build produced from the current repository. Older builds may not match the present stack. From a clean tree: `npm install`, then rebuild with `npm run build-win` (or the appropriate platform command), and reinstall from `dist/`.
+
+**Build failure: output files in use**  
+Terminate all Call Log and Electron processes, then remove the `dist/` folder or run the Windows clean build script before building again.
+
+**Application does not start in development**  
+Confirm Node.js meets the version requirement and run `npm install` again.
+
+**Data retention**  
+Local application data paths follow Electron conventions by operating system. Uninstalling the application may remove local data unless it has been backed up or stored only in Supabase.
+
+## Multi-instance testing (developers)
+
+To verify teammate notifications, run two development instances (for example `npm run start:1` and `npm run start:2`), authenticate as distinct users, and ensure Realtime replication is enabled for the relevant table in the Supabase project.
 
 ## License
 
-MIT
-
----
-
-**Note:** Uninstalling the desktop app may remove local data unless you have backed up the app data directory or rely on Supabase for retention.
+MIT License. See the repository for the full license text.
