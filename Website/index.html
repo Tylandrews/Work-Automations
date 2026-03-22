@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<!-- Set your repo: replace YOUR_USERNAME / call-log in GitHub URLs. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Call Log – Support call logging</title>
+    <meta
+      name="description"
+      content="Call Log is a focused desktop app for logging support calls: intake on the left, searchable history on the right. Download free from GitHub."
+    />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content="Call Log – Support call logging" />
+    <meta
+      property="og:description"
+      content="Log new calls and browse history in one workspace. Download from GitHub."
+    />
+    <meta property="og:image" content="assets/call-log-dashboard.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="preconnect" href="https://cdn.prod.website-files.com" crossorigin />
+    <style>
+      @font-face {
+        font-family: "Haffer Mono";
+        src: url("https://cdn.prod.website-files.com/68a5787bba0829184628bd51/68a5e163329ff81e2107c078_HafferMonoRegular.woff2")
+          format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Haffer Mono";
+        src: url("https://cdn.prod.website-files.com/68a5787bba0829184628bd51/68a5e16300ff1c3e56d220c5_HafferMonoMedium.woff2")
+          format("woff2");
+        font-weight: 500;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      :root {
+        --paper: #f4f4f2;
+        --ink: #201d1d;
+        --ink-muted: #5c5856;
+        --border: rgba(32, 29, 29, 0.1);
+        --electric: #5b6cff;
+        --electric-bright: #7c8cff;
+        --electric-glow: rgba(91, 108, 255, 0.35);
+        --radius: 12px;
+        --radius-pill: 999px;
+        --max: 58rem;
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* Water ripple background (jquery.ripples / WebGL). Gradients alone do not work — the plugin needs a real image URL (we set imageUrl in JS). */
+      .water-bg {
+        position: fixed;
+        inset: 0;
+        z-index: 0;
+        pointer-events: none;
+        background-color: var(--paper);
+        background-size: cover;
+        background-position: center;
+      }
+
+      .water-bg.water-bg--fallback {
+        background-image: linear-gradient(
+          155deg,
+          #e4e2dc 0%,
+          #f4f4f2 38%,
+          #e9e7e0 72%,
+          #f2f1ed 100%
+        );
+        animation: water-bg-shift 14s ease-in-out infinite alternate;
+      }
+
+      @keyframes water-bg-shift {
+        0% {
+          filter: hue-rotate(0deg) brightness(1);
+        }
+        100% {
+          filter: hue-rotate(-6deg) brightness(1.02);
+        }
+      }
+
+      a {
+        color: var(--electric);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .page {
+        position: relative;
+        z-index: 1;
+        max-width: var(--max);
+        margin: 0 auto;
+        padding: 0 1.25rem 3.5rem;
+      }
+
+      .eyebrow {
+        font-family: "Haffer Mono", ui-monospace, monospace;
+        font-size: 0.6875rem;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--ink-muted);
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1.25rem 0 2rem;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+        font-weight: 600;
+        font-size: 1.125rem;
+        letter-spacing: -0.03em;
+        color: var(--ink);
+      }
+
+      .brand img {
+        width: 32px;
+        height: 32px;
+      }
+
+      /* Hero: Osmo split title + center icon */
+      .hero {
+        position: relative;
+        padding-left: clamp(1.5rem, 5vw, 2.5rem);
+        padding-bottom: 0.5rem;
+      }
+
+      .hero::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0.25rem;
+        bottom: 3rem;
+        width: 1px;
+        background: linear-gradient(
+          to bottom,
+          transparent 0%,
+          rgba(32, 29, 29, 0.15) 15%,
+          rgba(32, 29, 29, 0.15) 85%,
+          transparent 100%
+        );
+        pointer-events: none;
+      }
+
+      .hero__eyebrow {
+        margin: 0 0 1.25rem;
+      }
+
+      .hero__title-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 0.75rem;
+        margin: 0 0 1.25rem;
+      }
+
+      .hero__title-row h1,
+      .hero__title-row h2 {
+        margin: 0;
+        font-size: clamp(2.25rem, 6.5vw, 3.75rem);
+        font-weight: 500;
+        letter-spacing: -0.035em;
+        line-height: 1.05;
+      }
+
+      .hero__mark {
+        width: clamp(2.5rem, 8vw, 4rem);
+        height: clamp(2.5rem, 8vw, 4rem);
+        flex-shrink: 0;
+        color: var(--ink);
+      }
+
+      .hero .lead {
+        margin: 0 0 1.75rem;
+        max-width: 36rem;
+        font-size: 1.125rem;
+        color: var(--ink-muted);
+        line-height: 1.55;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.7rem 1.35rem;
+        font-family: "Haffer Mono", ui-monospace, monospace;
+        font-size: 0.75rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        border-radius: var(--radius-pill);
+        border: 1px solid transparent;
+        cursor: pointer;
+        text-decoration: none;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+      }
+
+      .btn:hover {
+        text-decoration: none;
+        transform: translateY(-1px);
+      }
+
+      .btn-primary {
+        background: linear-gradient(180deg, var(--electric-bright) 0%, var(--electric) 100%);
+        color: #fff;
+        box-shadow: 0 6px 28px var(--electric-glow);
+      }
+
+      .btn-primary:hover {
+        color: #fff;
+        filter: brightness(1.05);
+      }
+
+      .btn-secondary {
+        background: transparent;
+        color: var(--ink);
+        border-color: var(--border);
+      }
+
+      .btn-secondary:hover {
+        border-color: var(--ink-muted);
+        color: var(--ink);
+      }
+
+      .shot {
+        margin: 2.75rem 0;
+        border-radius: var(--radius);
+        overflow: hidden;
+        border: 1px solid var(--border);
+        box-shadow: 0 32px 64px -16px rgba(32, 29, 29, 0.18);
+        background: #0f172a;
+      }
+
+      .shot img {
+        display: block;
+        width: 100%;
+        height: auto;
+        vertical-align: middle;
+      }
+
+      .shot figcaption {
+        padding: 0.75rem 1rem;
+        font-family: "Haffer Mono", ui-monospace, monospace;
+        font-size: 0.6875rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.55);
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        background: #0b0e14;
+      }
+
+      .grid {
+        display: grid;
+        gap: 1rem;
+        margin: 2rem 0;
+      }
+
+      @media (min-width: 640px) {
+        .grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      .card {
+        padding: 1.35rem 1.4rem;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
+      }
+
+      .card h3 {
+        margin: 0 0 0.5rem;
+        font-family: "Haffer Mono", ui-monospace, monospace;
+        font-size: 0.6875rem;
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-muted);
+      }
+
+      .card p {
+        margin: 0;
+        font-size: 0.9375rem;
+        color: var(--ink);
+        line-height: 1.55;
+      }
+
+      footer {
+        margin-top: 3rem;
+        padding-top: 1.75rem;
+        border-top: 1px solid var(--border);
+        font-family: "Haffer Mono", ui-monospace, monospace;
+        font-size: 0.6875rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--ink-muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1.5rem;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      footer a {
+        color: var(--ink-muted);
+      }
+
+      footer a:hover {
+        color: var(--electric);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="water-bg" aria-hidden="true"></div>
+    <div class="page">
+      <header>
+        <div class="brand">
+          <img src="assets/favicon.svg" alt="" width="32" height="32" />
+          Call Log
+        </div>
+        <a class="btn btn-secondary" href="https://github.com/YOUR_USERNAME/call-log/releases/latest">Download</a>
+      </header>
+
+      <main>
+        <section class="hero" aria-labelledby="title-a title-b">
+          <p class="eyebrow hero__eyebrow">For support teams</p>
+          <div class="hero__title-row">
+            <h1 id="title-a">Call Log</h1>
+            <svg
+              class="hero__mark"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 80 80"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M54.1182 32.952L71.8189 15.2507L64.7472 8.17867L47.0464 25.88C46.2918 26.6373 44.9985 26.1013 44.9985 25.032V0H34.9988V30.2C34.9988 32.8507 32.8496 35 30.199 35H0V45H25.0312C26.1005 45 26.6364 46.2933 25.8791 47.048L8.18106 64.7493L15.2528 71.8213L32.9536 54.12C33.7082 53.3653 35.0015 53.8987 35.0015 54.968V80H45.0012V49.8C45.0012 47.1493 47.1504 45 49.801 45H80V35H54.9688C53.8995 35 53.3636 33.7067 54.1209 32.952H54.1182Z"
+                fill="currentColor"
+              />
+            </svg>
+            <h2 id="title-b">Support calls, logged clearly</h2>
+          </div>
+          <p class="lead">
+            A workspace for the frontline team. That's the way every day goes, every time we have no control - If the sky is pink and white, if the ground is black and yellow. 
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="https://github.com/YOUR_USERNAME/call-log/releases/latest">
+              Download from GitHub
+            </a>
+            <a class="btn btn-secondary" href="https://github.com/YOUR_USERNAME/call-log"> View repository </a>
+          </div>
+        </section>
+
+        <figure class="shot">
+          <img
+            src="assets/call-log-dashboard.png"
+            width="1200"
+            height="800"
+            alt="Call Log application showing New Call form and Call History"
+            loading="eager"
+            decoding="async"
+          />
+          <figcaption>New Call intake and Call History in one window</figcaption>
+        </figure>
+
+        <div class="grid">
+          <div class="card">
+            <h3>Fast intake</h3>
+            <p>Name, organization, phone, device, request, and notes—structured fields so handoffs stay clear.</p>
+          </div>
+          <div class="card">
+            <h3>Searchable history</h3>
+            <p>Move by day, search, and see summaries so yesterday’s calls are easy to find.</p>
+          </div>
+          <div class="card">
+            <h3>Built for the desk</h3>
+            <p>Dark app UI for long shifts; this page stays light so your product screenshot pops.</p>
+          </div>
+          <div class="card">
+            <h3>Open on GitHub</h3>
+            <p>It's all down-hill from here.</p>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <span>Call Log</span>
+        <span>
+          <a href="https://github.com/YOUR_USERNAME/call-log/releases/latest">Latest release</a>
+          ·
+          <a href="https://github.com/YOUR_USERNAME/call-log">Source</a>
+        </span>
+      </footer>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery.ripples@0.6.3/dist/jquery.ripples.min.js"></script>
+    <script>
+      jQuery(function ($) {
+        var reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+        if (reduce.matches) return;
+
+        var $w = $(".water-bg");
+        if (!$w.length || typeof $.fn.ripples !== "function") {
+          $w.addClass("water-bg--fallback");
+          return;
+        }
+
+        /* Ripples only loads url(...) backgrounds; plain CSS gradients yield a transparent texture (invisible). */
+        var tex = document.createElement("canvas");
+        tex.width = 512;
+        tex.height = 512;
+        var ctx = tex.getContext("2d");
+        var g = ctx.createLinearGradient(0, 0, tex.width, tex.height);
+        g.addColorStop(0, "#e4e2dc");
+        g.addColorStop(0.38, "#f4f4f2");
+        g.addColorStop(0.72, "#e9e7e0");
+        g.addColorStop(1, "#f2f1ed");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, tex.width, tex.height);
+        /* Soft vignette + grain so refraction reads clearly without harsh speckle. */
+        var vig = ctx.createRadialGradient(
+          tex.width * 0.5,
+          tex.height * 0.45,
+          0,
+          tex.width * 0.5,
+          tex.height * 0.45,
+          tex.width * 0.72
+        );
+        vig.addColorStop(0, "rgba(255,255,255,0.06)");
+        vig.addColorStop(1, "rgba(40,38,35,0.07)");
+        ctx.fillStyle = vig;
+        ctx.fillRect(0, 0, tex.width, tex.height);
+        for (var n = 0; n < 9000; n++) {
+          ctx.fillStyle = "rgba(255,255,255," + (0.025 + Math.random() * 0.035) + ")";
+          ctx.fillRect(Math.random() * tex.width, Math.random() * tex.height, 1.2, 1.2);
+        }
+        var imageUrl = tex.toDataURL("image/png");
+
+        try {
+          $w.ripples({
+            imageUrl: imageUrl,
+            /* Higher grid resolution = smoother wave propagation (less blocky). */
+            resolution: 1024,
+            dropRadius: 44,
+            /* Enough displacement to see; shader still blends smoothly. */
+            perturbance: 0.032,
+            interactive: false,
+          });
+        } catch (e) {
+          $w.addClass("water-bg--fallback");
+          return;
+        }
+
+        var targetX = 0;
+        var targetY = 0;
+        var smoothX = 0;
+        var smoothY = 0;
+        var hasTarget = false;
+        var lastDropT = 0;
+        var lastDropX = 0;
+        var lastDropY = 0;
+        var minInterval = 72;
+        var minMove = 28;
+        var smooth = 0.16;
+        /* Stop smoothing loop from counting as “movement” once we’re on target. */
+        var convergeEps = 1.25;
+
+        function emitDrop(screenX, screenY) {
+          var now = performance.now();
+          var dx = screenX - lastDropX;
+          var dy = screenY - lastDropY;
+          var distSq = dx * dx + dy * dy;
+          /* No real motion since last drop — blocks idle flicker (timer used to fire every ~72ms). */
+          if (distSq < 2.25) {
+            return;
+          }
+          if (lastDropT && now - lastDropT < minInterval && distSq < minMove * minMove) {
+            return;
+          }
+          lastDropT = now;
+          lastDropX = screenX;
+          lastDropY = screenY;
+          var rect = $w[0].getBoundingClientRect();
+          $w.ripples("drop", screenX - rect.left, screenY - rect.top, 38, 0.016);
+        }
+
+        function setPointer(clientX, clientY) {
+          targetX = clientX;
+          targetY = clientY;
+          if (!hasTarget) {
+            smoothX = clientX;
+            smoothY = clientY;
+            hasTarget = true;
+          }
+        }
+
+        window.addEventListener(
+          "mousemove",
+          function (e) {
+            setPointer(e.clientX, e.clientY);
+          },
+          { passive: true }
+        );
+
+        window.addEventListener(
+          "touchmove",
+          function (e) {
+            if (e.touches.length) {
+              var t = e.touches[0];
+              setPointer(t.clientX, t.clientY);
+            }
+          },
+          { passive: true }
+        );
+
+        window.addEventListener(
+          "touchstart",
+          function (e) {
+            if (e.touches.length) {
+              var t = e.touches[0];
+              setPointer(t.clientX, t.clientY);
+            }
+          },
+          { passive: true }
+        );
+
+        document.documentElement.addEventListener("mouseleave", function () {
+          hasTarget = false;
+        });
+
+        function rippleFrame() {
+          if (hasTarget) {
+            smoothX += (targetX - smoothX) * smooth;
+            smoothY += (targetY - smoothY) * smooth;
+            var tracking =
+              Math.abs(targetX - smoothX) > convergeEps || Math.abs(targetY - smoothY) > convergeEps;
+            if (tracking) {
+              emitDrop(smoothX, smoothY);
+            }
+          }
+          requestAnimationFrame(rippleFrame);
+        }
+        requestAnimationFrame(rippleFrame);
+
+        function seed() {
+          var w = $w.innerWidth();
+          var h = $w.innerHeight();
+          $w.ripples("drop", w * 0.45, h * 0.42, 72, 0.048);
+        }
+
+        setTimeout(seed, 350);
+        setTimeout(seed, 2800);
+      });
+    </script>
+  </body>
+</html>
