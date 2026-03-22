@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Set your repo: replace YOUR_USERNAME / call-log in GitHub URLs. -->
+<!-- Repo: github.com/Tylandrews/Work-Automations -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -7,15 +7,18 @@
     <title>Call Log – Support call logging</title>
     <meta
       name="description"
-      content="Call Log is a focused desktop app for logging support calls: intake on the left, searchable history on the right. Download free from GitHub."
+      content="Call Log is an Electron desktop app for IT support: log calls with name, org, phone, device, and request; browse history by day, search, stats, and Supabase-backed team sync."
     />
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <meta property="og:title" content="Call Log – Support call logging" />
     <meta
       property="og:description"
-      content="Log new calls and browse history in one workspace. Download from GitHub."
+      content="Electron app: New Call on the left, Call History on the right—sign in, cloud storage, day-by-day history, search, stats, and teammate notifications."
     />
-    <meta property="og:image" content="assets/call-log-dashboard.png" />
+    <meta
+      property="og:image"
+      content="https://tylandrews.github.io/Work-Automations/assets/call-log-dashboard.png"
+    />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -360,7 +363,7 @@
           <img src="assets/favicon.svg" alt="" width="32" height="32" />
           Call Log
         </div>
-        <a class="btn btn-secondary" href="https://github.com/YOUR_USERNAME/call-log/releases/latest">Download</a>
+        <a class="btn btn-secondary" href="https://github.com/Tylandrews/Work-Automations/releases/latest">Download</a>
       </header>
 
       <main>
@@ -383,13 +386,13 @@
             <h2 id="title-b">Support calls, logged clearly</h2>
           </div>
           <p class="lead">
-            A workspace for the frontline team. That's the way every day goes, every time we have no control - If the sky is pink and white, if the ground is black and yellow. 
+            An Electron desktop app built for help-desk and phone support: log a call in <strong>New Call</strong>, then review and search the same day’s entries in <strong>Call History</strong>. You sign in with your work email; calls are stored in <strong>Supabase</strong> so your team shares one timeline. Browse by day (including a calendar picker), run in-app <strong>statistics</strong>, open <strong>reports</strong> when your project has reporting enabled, and get <strong>desktop notifications</strong> when teammates log calls.
           </p>
           <div class="actions">
-            <a class="btn btn-primary" href="https://github.com/YOUR_USERNAME/call-log/releases/latest">
+            <a class="btn btn-primary" href="https://github.com/Tylandrews/Work-Automations/releases/latest">
               Download from GitHub
             </a>
-            <a class="btn btn-secondary" href="https://github.com/YOUR_USERNAME/call-log"> View repository </a>
+            <a class="btn btn-secondary" href="https://github.com/Tylandrews/Work-Automations"> View repository </a>
           </div>
         </section>
 
@@ -402,25 +405,59 @@
             loading="eager"
             decoding="async"
           />
-          <figcaption>New Call intake and Call History in one window</figcaption>
+          <figcaption>New Call (left) and Call History (right)—day controls, search, stats, and reports</figcaption>
         </figure>
 
         <div class="grid">
           <div class="card">
-            <h3>Fast intake</h3>
-            <p>Name, organization, phone, device, request, and notes—structured fields so handoffs stay clear.</p>
+            <h3>New Call form</h3>
+            <p>
+              Required: caller <strong>name</strong>, <strong>organization</strong>, <strong>phone</strong>, and <strong>support request</strong>. Optional <strong>device name</strong> and <strong>notes</strong>.
+              <strong>Date and time</strong> default to now; change them if you are logging a past call. Click <strong>Save Call</strong> to write the entry; <strong>Clear</strong> resets the form.
+            </p>
           </div>
           <div class="card">
-            <h3>Searchable history</h3>
-            <p>Move by day, search, and see summaries so yesterday’s calls are easy to find.</p>
+            <h3>Call History</h3>
+            <p>
+              The right panel lists calls for the <strong>selected day</strong>. Use previous/next day, <strong>Today</strong>, or the <strong>calendar</strong> to change the day.
+              <strong>Search</strong> (including Ctrl+F) filters within that day across name, phone, organization, device, request, and notes. Entries can be <strong>edited or removed</strong> from the list when you need to correct a log.
+            </p>
           </div>
           <div class="card">
-            <h3>Built for the desk</h3>
-            <p>Dark app UI for long shifts; this page stays light so your product screenshot pops.</p>
+            <h3>Stats and reports</h3>
+            <p>
+              Open <strong>statistics</strong> from the history toolbar for aggregates on your data. The <strong>reports</strong> control appears when Supabase is configured and can surface periodic snapshots if your backend enables reporting (see the repo’s reporting docs).
+            </p>
           </div>
           <div class="card">
-            <h3>Open on GitHub</h3>
-            <p>It's all down-hill from here.</p>
+            <h3>Sign-in and cloud data</h3>
+            <p>
+              The app expects a <strong>Supabase</strong> project in the build: you <strong>sign in or sign up</strong> with email and password. Calls are stored per account with row-level security; the app does not save calls without a valid configuration and session.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Team realtime</h3>
+            <p>
+              With Supabase <strong>Realtime</strong> enabled on the calls table, the list refreshes when someone else logs a call. You can get <strong>in-app and desktop (tray) notifications</strong> for teammate activity—without notifying you for your own saves.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Organization lookup (optional)</h3>
+            <p>
+              If your Supabase project has the Autotask integration wired up, the organization field can <strong>suggest companies</strong> as you type (authenticated requests via an Edge Function). If that integration is not deployed, you still type organizations manually.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Desktop shell</h3>
+            <p>
+              Runs as a <strong>native Electron</strong> window with a custom title bar, minimize / maximize / close, <strong>dark mode</strong> toggle, account and logout when online, and optional window height fitting to content on first run.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Open source</h3>
+            <p>
+              MIT-licensed. Download installers from <strong>GitHub Releases</strong>, or build from source with Node.js. Developers configure <code style="font-size:0.85em">supabaseConfig.js</code> before packaging; end users receive a build that already includes your project keys.
+            </p>
           </div>
         </div>
       </main>
@@ -428,9 +465,9 @@
       <footer>
         <span>Call Log</span>
         <span>
-          <a href="https://github.com/YOUR_USERNAME/call-log/releases/latest">Latest release</a>
+          <a href="https://github.com/Tylandrews/Work-Automations/releases/latest">Latest release</a>
           ·
-          <a href="https://github.com/YOUR_USERNAME/call-log">Source</a>
+          <a href="https://github.com/Tylandrews/Work-Automations">Source</a>
         </span>
       </footer>
     </div>
