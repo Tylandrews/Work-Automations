@@ -1,253 +1,116 @@
-# Call Log - Desktop Application
+# Call Log
 
-A standalone Electron desktop application to quickly capture and log IT support call information.
+Call Log is an Electron desktop application for logging and reviewing telephone support interactions. It provides a dedicated intake form, calendar-based history, search, in-app statistics, and optional cloud synchronization through Supabase. A static marketing site is included under [`Website/`](Website/) for GitHub Pages.
+
+| Resource | Link |
+| -------- | ---- |
+| Repository | [github.com/Tylandrews/Work-Automations](https://github.com/Tylandrews/Work-Automations) |
+| Documentation site (GitHub Pages) | [tylandrews.github.io/Work-Automations](https://tylandrews.github.io/Work-Automations/) |
+| Installers and release assets | [Releases](https://github.com/Tylandrews/Work-Automations/releases/latest) |
+
+## Overview
+
+The application is designed for help-desk and IT support workflows. Signed-in users store call records in a Supabase-backed database with row-level security. The interface supports optional organization lookup (where Autotask integration is configured), realtime updates for shared teams, desktop notifications, and scheduled reporting when the backend is configured accordingly. Details on reporting appear in [`REPORTING.md`](REPORTING.md).
 
 ## Features
 
-- 📝 **Quick Form Entry**: Capture caller name, mobile number, organization, and support request
-- 📅 **Automatic Timestamping**: Automatically records date and time of each call
-- 💾 **Local Storage**: All data is stored locally (no server required)
-- 📊 **View History**: See all logged calls in an easy-to-read format
-- 🎨 **Modern UI**: Clean, professional interface that's easy to use
-- 🖥️ **Standalone Desktop App**: Runs as a native desktop application
+- Structured call capture: caller name, organization, telephone number, optional device identifier, support request, optional notes, and adjustable date and time
+- Call history scoped by day with calendar navigation, full-text search within the selected day, entry editing, and summary statistics
+- Email-based authentication via Supabase where the project is configured
+- Optional teammate notifications when new calls are recorded (Supabase Realtime)
+- Cross-platform desktop delivery through Electron (Windows, macOS, Linux)
 
-## Installation
+## Requirements
 
-### For end users (no Node.js required)
+| Audience | Requirement |
+| -------- | ------------- |
+| End users (released builds) | No Node.js installation; run the published installer or portable executable from [Releases](https://github.com/Tylandrews/Work-Automations/releases/latest) |
+| Contributors | Node.js 18 or newer and npm |
 
-If you are **distributing** the app to users: give them the built installer or portable exe from the `dist` folder (after running `npm run build-win`). The installer includes everything needed; users do not install Node.js or anything else. Run the installer (or the portable exe) on a fresh machine and the app will work.
+## Installation (end users)
 
-### For developers (building from source)
-
-**Prerequisites:** Node.js (v18 or higher) and npm. Download from https://nodejs.org/
-
-**Setup steps:**
-
-1. **Install Dependencies**
-   ```bash
-   npm install
-   ```
-
-2. **Run the Application**
-   ```bash
-   npm start
-   ```
-
-## Building for Distribution
-
-The built installer (or portable exe) is **self-contained**: it includes the Electron runtime (Chromium + Node.js). **End users do not need to install Node.js or any other software**—they only run the installer or portable executable.
-
-### Build for Windows
-```bash
-npm run build-win
-```
-Creates in the `dist` folder:
-- **NSIS installer** (`.exe`) – recommended for deployment; users run it once to install. No prerequisites.
-- **Portable** (`.exe`) – single executable, no install step; copy and run.
-
-Give users one of these files; they can install and run on a fresh Windows machine without installing Node.js.
-
-**For end users (fresh machine):** Run the NSIS installer from `dist/` (e.g. `Call Log Setup 3.0.0.exe`). Choose install location, finish the wizard—no Node.js or other components required. Alternatively, give them the portable exe to run without installing.
-
-### Build for macOS
-```bash
-npm run build-mac
-```
-Creates DMG and ZIP files in the `dist` folder.
-
-### Build for Linux
-```bash
-npm run build-linux
-```
-Creates AppImage and DEB packages in the `dist` folder.
-
-### Build for All Platforms
-```bash
-npm run build
-```
-
-## How to Use
-
-1. **Launch the Application**
-   - Run `npm start` to launch the app
-   - Or use the built executable from the `dist` folder
-
-2. **Log a Call**
-   - Fill in the form with:
-     - Name (required)
-     - Mobile Number (required)
-     - Organization (required)
-     - Support Request (required)
-     - Date & Time (auto-filled with current time, but can be adjusted)
-   - Click "Save Call"
-
-3. **View Past Calls**
-   - All logged calls appear in the right panel
-   - Most recent calls appear at the top
-   - Each entry shows all the captured information
-
-4. **Clear Data**
-   - Click "Clear All" to remove all logged entries (with native confirmation dialog)
-   - Use "Clear Form" to reset the form without saving
-
-## Data Storage
-
-- All data is stored locally in Electron's localStorage
-- Data persists between application sessions
-- Data location varies by operating system:
-  - **Windows**: `%APPDATA%\Call Log\`
-  - **macOS**: `~/Library/Application Support/Call Log/`
-  - **Linux**: `~/.config/Call Log/`
-- To backup data, ensure your data directory is included in your backup routine.
-
-## Project Structure
-
-```
-Work Automations/
-├── index.html          # Main UI
-├── styles.css          # Styling
-├── script.js           # Application logic
-├── main.js             # Electron main process
-├── preload.js          # Electron preload script (security)
-├── package.json        # Node.js dependencies and build config
-└── build/              # Build assets (icons, etc.)
-```
-
-## Supabase Configuration
-
-This app uses **Supabase** for cloud-based data storage and multi-user support. The Supabase configuration is **automatically bundled** with the app during the build process, so end users don't need to configure anything.
-
-### For Developers
-
-Before building the app, you need to create `supabaseConfig.js` with your Supabase credentials:
-
-1. **Copy the example file:**
-   ```bash
-   cp supabaseConfig.example.js supabaseConfig.js
-   ```
-
-2. **Get your Supabase credentials:**
-   - Go to your Supabase project dashboard
-   - Navigate to **Settings → API**
-   - Copy your **Project URL** and **anon/public key**
-
-3. **Update `supabaseConfig.js`:**
-   ```javascript
-   window.supabaseConfig = {
-     SUPABASE_URL: 'https://your-project-ref.supabase.co',
-     SUPABASE_ANON_KEY: 'your-anon-key-here'
-   };
-   ```
-
-**Important:**
-- `supabaseConfig.js` is in `.gitignore` for security (credentials won't be committed)
-- The config file is **automatically included** in production builds
-- The build process will validate that the config exists and is properly configured
-- The anon key is safe to bundle - it's designed for client-side use and protected by Row Level Security (RLS) policies
-
-### For End Users
-
-End users who install the app **do not need to configure anything**. The Supabase configuration is already bundled in the installer, so the app will work immediately after installation.
+Download the latest installer or portable executable for your platform from the [Releases](https://github.com/Tylandrews/Work-Automations/releases/latest) page. Executables produced by this project bundle the Electron runtime; end users do not install Node.js separately.
 
 ## Development
 
-### Running in Development Mode
+### Clone and run
+
 ```bash
+git clone https://github.com/Tylandrews/Work-Automations.git
+cd Work-Automations
+npm install
 npm start
 ```
 
-To enable DevTools for debugging, uncomment this line in `main.js`:
-```javascript
-mainWindow.webContents.openDevTools();
+### Build production artifacts
+
+Production builds include the Electron runtime. Installers and portable packages are written to the `dist/` directory.
+
+| Platform | Command |
+| -------- | ------- |
+| Windows | `npm run build-win` |
+| macOS | `npm run build-mac` |
+| Linux | `npm run build-linux` |
+| All configured targets | `npm run build` |
+
+On Windows, `npm run build-win` produces an NSIS installer and a portable executable. Close any running instance of the application before rebuilding if file locks occur.
+
+To attach Chromium DevTools during local development, enable the appropriate call in `main.js` (see Electron documentation for `openDevTools`).
+
+### Supabase configuration
+
+Cloud features require a valid `supabaseConfig.js` (not committed to the repository). Copy the example file and supply the project URL and anon key from the Supabase dashboard (**Settings → API**).
+
+```bash
+cp supabaseConfig.example.js supabaseConfig.js
 ```
 
-### Customizing the Icon
+The build pipeline validates configuration where applicable. Release builds intended for distribution should embed the configuration required for production use.
 
-Replace the icon files in the `build/` folder:
-- `icon.png` - For Linux (256x256 or 512x512)
-- `icon.ico` - For Windows (multiple sizes: 16x16, 32x32, 48x48, 256x256)
-- `icon.icns` - For macOS (multiple sizes)
+### Project layout
 
-You can use online tools like [CloudConvert](https://cloudconvert.com/) to convert between formats.
+```
+├── Website/          Static marketing site (GitHub Pages)
+├── index.html        Renderer UI
+├── styles.css
+├── script.js
+├── main.js           Electron main process
+├── preload.js
+├── package.json
+├── build/            Application icons and packaging assets
+└── supabase/         Edge functions and related backend assets
+```
 
-### Testing multi-user notifications (Supabase)
+## Documentation site (GitHub Pages)
 
-To see the **"Teammate logged a call"** notification (when someone else logs a call), run two app instances as two different Supabase users:
+The contents of [`Website/`](Website/) can be published with GitHub Actions. In the repository **Settings → Pages**, set **Build and deployment** source to **GitHub Actions** and use the workflow in [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml). After a successful deployment, GitHub displays the public URL on the same settings page.
 
-1. **Start two instances** (each keeps its own login and data):
-   - Terminal 1: `npm run start:1`
-   - Terminal 2: `npm run start:2`
+Absolute URLs in `Website/index.html` (for example Open Graph metadata) should match the deployed site URL if social previews are required.
 
-2. **Log in as different users** in each window:
-   - Window 1: sign up or log in as e.g. `user1@example.com`
-   - Window 2: sign up or log in as e.g. `user2@example.com`  
-   Both must use the same Supabase project (your `supabaseConfig.js`).
+## Security and privacy
 
-3. **Test:** In window 1, log a call (fill the form and save). Window 2 should show the tray notification: **"Teammate logged a call – with [name] – [org]"**. Repeat from window 2 to see the notification in window 1.
-
-Ensure **Realtime** is enabled for the `calls` table in Supabase: **Dashboard → Database → Replication** → turn on for `public.calls`.
-
-## Privacy & Security
-
-- All data is stored in your Supabase cloud database
-- Data is protected by Supabase Row Level Security (RLS) policies
-- Each user can only access their own call logs (unless admin)
-- Uses Electron's context isolation for security
-- Supabase anon key is safe to bundle - protected by RLS policies
-- Internet connection required for data sync
+- Database access is enforced with Supabase Row Level Security; client builds use the anon key as intended for public clients together with RLS policies
+- The renderer runs with Electron context isolation enabled
+- Network connectivity is required for cloud-backed features
 
 ## Troubleshooting
 
-### "Cannot find module 'better-sqlite3'" after installing the app
-The app uses **sql.js** for the database, not `better-sqlite3`. This error means the installed build was created from an older version of the project. To fix:
+**Error referencing `better-sqlite3` after installation**  
+Install a build produced from the current repository. Older builds may not match the present stack. From a clean tree: `npm install`, then rebuild with `npm run build-win` (or the appropriate platform command), and reinstall from `dist/`.
 
-1. **Close** any running instance of "Call Log" (and quit from the system tray if it’s there).
-2. In this project folder run:
-   ```bash
-   npm install
-   npm run build-win
-   ```
-3. Install the **new** build from the `dist` folder (e.g. run the NSIS installer in `dist` or use the portable exe).
-4. Launch the newly installed app; it will use sql.js and the error should be gone.
+**Build failure: output files in use**  
+Terminate all Call Log and Electron processes, then remove the `dist/` folder or run the Windows clean build script before building again.
 
-### Build fails with "The process cannot access the file ... app.asar"
-Something is locking the build output (often the installed app or an Electron process). Fix:
+**Application does not start in development**  
+Confirm Node.js meets the version requirement and run `npm install` again.
 
-1. **Close** "Call Log" completely (Task Manager → end any "Call Log" or "Electron" processes if needed).
-2. From the project folder run a clean build:
-   ```bash
-   npm run build-win:fresh
-   ```
-   This removes the `dist` folder then builds. If `dist` is locked, the clean step will fail—close the app and try again.
-3. Or manually: delete the `dist` folder, then run `npm run build-win`.
+**Data retention**  
+Local application data paths follow Electron conventions by operating system. Uninstalling the application may remove local data unless it has been backed up or stored only in Supabase.
 
-### Application won't start
-- Ensure Node.js is installed: `node --version`
-- Reinstall dependencies: `rm -rf node_modules && npm install` (or on Windows: remove `node_modules` and run `npm install`)
+## Multi-instance testing (developers)
 
-### Build fails (general)
-- Make sure all dependencies are installed: `npm install`
-- Check that electron-builder is installed: `npm list electron-builder`
-
-### Data not persisting
-- Check application data directory permissions
-- Ensure you're not running in a restricted environment
-
-## Future Enhancements
-
-Potential features that could be added:
-- Search/filter functionality
-- Edit existing entries
-- Print functionality
-- Integration with ticketing systems
-- Cloud sync (optional)
-- Customizable fields
-- Data import in multiple formats
+To verify teammate notifications, run two development instances (for example `npm run start:1` and `npm run start:2`), authenticate as distinct users, and ensure Realtime replication is enabled for the relevant table in the Supabase project.
 
 ## License
 
-MIT
-
----
-
-**Note**: This application stores data locally. If you uninstall the application, you may lose data unless you have backed up the data directory.
+MIT License. See the repository for the full license text.
