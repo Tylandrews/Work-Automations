@@ -1391,8 +1391,9 @@ function setupEventListeners() {
     document.getElementById('profileForm')?.addEventListener('submit', handleProfileSubmit);
     
     // Close modals on outside click
+    // Keep Edit modal open on backdrop clicks to prevent accidental dismiss while editing.
     document.getElementById('editModal').addEventListener('click', (e) => {
-        if (e.target.id === 'editModal') closeEditModal();
+        if (e.target.id === 'editModal') return;
     });
     document.getElementById('statsModal').addEventListener('click', (e) => {
         if (e.target.id === 'statsModal') closeStatsModal();
