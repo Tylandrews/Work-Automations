@@ -603,6 +603,18 @@ textarea {
     display: block;
 }
 
+.app-version {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 8px;
+    line-height: 1.2;
+    background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+}
+
 .app-title {
     font-size: 13px;
     font-weight: 600;

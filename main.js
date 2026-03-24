@@ -256,6 +256,10 @@ ipcMain.handle('get-master-key', () => {
     return key;
 });
 
+ipcMain.handle('get-app-version', () => {
+    return app.getVersion();
+});
+
 // Local SQL database handlers removed - app now uses Supabase only
 // All database operations are handled client-side via Supabase client
 

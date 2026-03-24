@@ -57,6 +57,46 @@ On Windows, `npm run build-win` produces an NSIS installer and a portable execut
 
 To attach Chromium DevTools during local development, enable the appropriate call in `main.js` (see Electron documentation for `openDevTools`).
 
+### Automated release pipeline
+
+This repository uses GitHub Actions for validation and release automation.
+
+- [`.github/workflows/validate.yml`](.github/workflows/validate.yml) validates JavaScript syntax and project setup on pull requests and pushes to `main`
+- [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml) builds and publishes Windows release assets when a tag in the format `vX.Y.Z` is pushed
+- [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) deploys the static `Website/` folder to GitHub Pages
+
+#### Release policy (version and tag alignment)
+
+Release tags must match the app version in `package.json`.
+
+Recommended flow:
+
+```bash
+npm version patch
+git push
+git push --tags
+```
+
+You can also use `minor` or `major` instead of `patch`. The release workflow validates that `vX.Y.Z` matches `package.json` before building.
+
+#### Required repository secrets
+
+Set these GitHub repository secrets before running release builds:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+
+The release workflow creates `supabaseConfig.js` from these secrets at build time, then runs the existing build scripts.
+
+#### Release outputs and recovery
+
+- Expected release outputs are generated under `dist/` and uploaded to GitHub Releases (installer and related metadata files)
+- If release fails:
+  - Confirm tag format is `vX.Y.Z`
+  - Confirm tag version matches `package.json`
+  - Confirm required secrets are present
+  - Re-run the workflow from the Actions tab after fixing the issue
+
 ### Supabase configuration
 
 Cloud features require a valid `supabaseConfig.js` (not committed to the repository). Copy the example file and supply the project URL and anon key from the Supabase dashboard (**Settings → API**).

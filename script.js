@@ -625,9 +625,20 @@ async function getProfileNameByUserId(userId) {
     }
 }
 
+async function updateAppVersionLabel() {
+    const versionLabel = document.getElementById('appVersion');
+    if (!versionLabel) return;
+    let versionText = '';
+    if (window.electronAPI?.getAppVersion) {
+        versionText = String(await window.electronAPI.getAppVersion().catch(() => '') || '').trim();
+    }
+    versionLabel.textContent = versionText ? `v${versionText}` : 'v--';
+}
+
 // Initialize: auth gate then app
 document.addEventListener('DOMContentLoaded', async () => {
     try {
+        await updateAppVersionLabel();
         initTheme();
         initWaterCanvasRipples();
         const authScreen = document.getElementById('authScreen');
