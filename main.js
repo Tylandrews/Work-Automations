@@ -251,6 +251,11 @@ ipcMain.handle('show-tray-notification', (event, { title, body }) => {
     showTrayNotification(title, body);
 });
 
+ipcMain.handle('get-master-key', () => {
+    const key = (process.env.CALLLOG_MASTER_KEY || '').trim();
+    return key;
+});
+
 // Local SQL database handlers removed - app now uses Supabase only
 // All database operations are handled client-side via Supabase client
 

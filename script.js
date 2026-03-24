@@ -9,6 +9,17 @@ let supabaseRealtimeChannel = null;
 let currentUserProfile = null; // { id, full_name, is_admin } for logged-in user (Supabase)
 const profileCache = new Map(); // user_id -> full_name
 
+const PII_KEY_NAME = 'calls_pii';
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+const encryptionState = {
+    enabled: false,
+    initialized: false,
+    keyVersion: 1,
+    dataKey: null,
+    blindKey: null
+};
+
 // Autocomplete state
 const autocompleteCache = new Map(); // query -> { results, timestamp }
 const AUTOCACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -30,6 +41,188 @@ function getSupabase() {
         supabaseClient = window.supabase.createClient(config.SUPABASE_URL, config.SUPABASE_ANON_KEY);
     }
     return supabaseClient;
+}
+
+function b64Encode(bytes) {
+    let binary = '';
+    const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    for (let i = 0; i < arr.length; i++) binary += String.fromCharCode(arr[i]);
+    return btoa(binary);
+}
+
+function b64Decode(base64) {
+    const binary = atob(base64);
+    const arr = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+    return arr;
+}
+
+async function sha256Bytes(text) {
+    const data = textEncoder.encode(text);
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return new Uint8Array(hash);
+}
+
+async function getMasterKeyMaterial() {
+    let raw = '';
+    if (window.electronAPI?.getMasterKey) {
+        raw = String(await window.electronAPI.getMasterKey().catch(() => '') || '').trim();
+    }
+    if (!raw) {
+        raw = String(window.supabaseConfig?.CALLLOG_MASTER_KEY || '').trim();
+    }
+    if (!raw) return null;
+
+    try {
+        const decoded = b64Decode(raw);
+        if (decoded.length === 32) return decoded;
+    } catch (_) {
+        // fall through to hash-based normalization
+    }
+
+    return sha256Bytes(raw);
+}
+
+function normalizeForBlindIndex(value, fieldName) {
+    const v = String(value || '').trim();
+    if (!v) return '';
+    if (fieldName === 'phone') return v.toLowerCase().replace(/\s+/g, '');
+    if (fieldName === 'name') return v.toLowerCase().replace(/\s+/g, ' ');
+    return v.toLowerCase();
+}
+
+async function importAesKey(rawKey) {
+    return crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+async function importHmacKey(rawKey) {
+    return crypto.subtle.importKey(
+        'raw',
+        rawKey,
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+    );
+}
+
+function toHex(bytes) {
+    return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function computeBlindIndex(fieldName, value) {
+    if (!encryptionState.enabled || !encryptionState.blindKey) return null;
+    const normalized = normalizeForBlindIndex(value, fieldName);
+    if (!normalized) return null;
+    const sig = await crypto.subtle.sign('HMAC', encryptionState.blindKey, textEncoder.encode(normalized));
+    return toHex(new Uint8Array(sig));
+}
+
+async function encryptValue(fieldName, plaintext) {
+    if (!encryptionState.enabled || !encryptionState.dataKey) return null;
+    const value = String(plaintext || '').trim();
+    if (!value) return null;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const aad = textEncoder.encode(`calls:${fieldName}`);
+    const ciphertext = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv, additionalData: aad },
+        encryptionState.dataKey,
+        textEncoder.encode(value)
+    );
+    return `v1.${b64Encode(iv)}.${b64Encode(new Uint8Array(ciphertext))}`;
+}
+
+async function decryptValue(fieldName, payload) {
+    if (!encryptionState.enabled || !encryptionState.dataKey) return null;
+    if (!payload || typeof payload !== 'string') return null;
+    const parts = payload.split('.');
+    if (parts.length !== 3 || parts[0] !== 'v1') return null;
+    const iv = b64Decode(parts[1]);
+    const data = b64Decode(parts[2]);
+    const aad = textEncoder.encode(`calls:${fieldName}`);
+    const plaintext = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv, additionalData: aad },
+        encryptionState.dataKey,
+        data
+    );
+    return textDecoder.decode(plaintext);
+}
+
+async function wrapDek(masterKeyBytes, dekBytes) {
+    const key = await importAesKey(masterKeyBytes);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const wrapped = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv, additionalData: textEncoder.encode('calls:dek') },
+        key,
+        dekBytes
+    );
+    return `v1.${b64Encode(iv)}.${b64Encode(new Uint8Array(wrapped))}`;
+}
+
+async function unwrapDek(masterKeyBytes, wrappedPayload) {
+    const parts = String(wrappedPayload || '').split('.');
+    if (parts.length !== 3 || parts[0] !== 'v1') {
+        throw new Error('Invalid wrapped DEK format');
+    }
+    const key = await importAesKey(masterKeyBytes);
+    const iv = b64Decode(parts[1]);
+    const wrapped = b64Decode(parts[2]);
+    const raw = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv, additionalData: textEncoder.encode('calls:dek') },
+        key,
+        wrapped
+    );
+    return new Uint8Array(raw);
+}
+
+async function getOrCreateWrappedDek(supabase) {
+    const { data, error } = await supabase
+        .from('app_keys')
+        .select('key_version, dek_encrypted')
+        .eq('key_name', PII_KEY_NAME)
+        .maybeSingle();
+    if (!error && data?.dek_encrypted) {
+        return { wrappedDek: data.dek_encrypted, keyVersion: Number(data.key_version || 1) };
+    }
+
+    const dek = crypto.getRandomValues(new Uint8Array(64));
+    const masterKey = await getMasterKeyMaterial();
+    if (!masterKey) throw new Error('Missing CALLLOG_MASTER_KEY');
+    const wrappedDek = await wrapDek(masterKey, dek);
+    const keyVersion = 1;
+    const { error: upsertError } = await supabase
+        .from('app_keys')
+        .upsert({ key_name: PII_KEY_NAME, key_version: keyVersion, dek_encrypted: wrappedDek }, { onConflict: 'key_name' });
+    if (upsertError) throw upsertError;
+    return { wrappedDek, keyVersion };
+}
+
+async function initializeEncryption() {
+    if (encryptionState.initialized) return;
+    encryptionState.initialized = true;
+    if (!window.crypto?.subtle || !useSupabase()) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const masterKey = await getMasterKeyMaterial();
+    if (!masterKey) {
+        console.warn('CALLLOG_MASTER_KEY is not set. Falling back to plaintext storage.');
+        return;
+    }
+
+    try {
+        const { wrappedDek, keyVersion } = await getOrCreateWrappedDek(supabase);
+        const rawDek = await unwrapDek(masterKey, wrappedDek);
+        if (rawDek.length < 64) {
+            throw new Error('Wrapped DEK must be at least 64 bytes');
+        }
+        encryptionState.dataKey = await importAesKey(rawDek.slice(0, 32));
+        encryptionState.blindKey = await importHmacKey(rawDek.slice(32, 64));
+        encryptionState.keyVersion = Number(keyVersion || 1);
+        encryptionState.enabled = true;
+    } catch (err) {
+        console.error('Encryption init failed. Falling back to plaintext.', err);
+        encryptionState.enabled = false;
+    }
 }
 
 // ========== Autotask Organization Autocomplete ==========
@@ -341,11 +534,31 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
     });
 }
 
-function mapRowToEntry(row) {
+async function mapRowToEntry(row) {
+    let name = row.name || '';
+    let phone = row.phone || '';
+
+    if (encryptionState.enabled) {
+        if (row.name_ciphertext) {
+            try {
+                name = await decryptValue('name', row.name_ciphertext) || '';
+            } catch (e) {
+                console.error('Failed to decrypt name for row', row.id, e);
+            }
+        }
+        if (row.phone_ciphertext) {
+            try {
+                phone = await decryptValue('phone', row.phone_ciphertext) || '';
+            } catch (e) {
+                console.error('Failed to decrypt phone for row', row.id, e);
+            }
+        }
+    }
+
     return {
         id: row.id,
-        name: row.name,
-        phone: row.phone || '',
+        name,
+        phone,
         organization: row.organization,
         deviceName: row.device_name || '',
         supportRequest: row.support_request || '',
@@ -1007,6 +1220,12 @@ function subscribeRealtime() {
 
 async function initApp() {
     await runMigrationIfNeeded();
+    await initializeEncryption();
+    if (encryptionState.enabled) {
+        encryptBackfillForCurrentUser().catch((err) => {
+            console.error('Backfill failed:', err);
+        });
+    }
     setCurrentDateTime();
     setupEventListeners();
     setupKeyboardShortcuts();
@@ -1559,16 +1778,35 @@ async function saveEntry(entry) {
     }
     const now = new Date().toISOString();
     const callTime = entry.timestamp || now;
+    let nameCiphertext = null;
+    let phoneCiphertext = null;
+    let nameBlindIndex = null;
+    let phoneBlindIndex = null;
+    let keyVersion = 1;
+
+    if (encryptionState.enabled) {
+        nameCiphertext = await encryptValue('name', entry.name || '');
+        phoneCiphertext = await encryptValue('phone', entry.phone || '');
+        nameBlindIndex = await computeBlindIndex('name', entry.name || '');
+        phoneBlindIndex = await computeBlindIndex('phone', entry.phone || '');
+        keyVersion = encryptionState.keyVersion;
+    }
+
     const { data, error } = await supabase
         .from('calls')
         .insert({
             user_id: session.user.id,
-            name: entry.name || '',
-            phone: entry.phone || '',
+            name: encryptionState.enabled ? '' : (entry.name || ''),
+            phone: encryptionState.enabled ? '' : (entry.phone || ''),
             organization: entry.organization || '',
             device_name: entry.deviceName || '',
             support_request: entry.supportRequest || '',
             notes: entry.notes || '',
+            name_ciphertext: nameCiphertext,
+            name_blind_index: nameBlindIndex,
+            phone_ciphertext: phoneCiphertext,
+            phone_blind_index: phoneBlindIndex,
+            key_version: keyVersion,
             call_time: callTime,
             created_at: now,
             updated_at: now
@@ -1601,7 +1839,75 @@ async function getEntries() {
         console.error('getEntries Supabase error:', error);
         return [];
     }
-    return (data || []).map(mapRowToEntry);
+    const rows = data || [];
+    return Promise.all(rows.map(mapRowToEntry));
+}
+
+async function findEntriesByExactPhone(phone) {
+    if (!encryptionState.enabled) return [];
+    const blindIndex = await computeBlindIndex('phone', phone);
+    if (!blindIndex) return [];
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    const { data, error } = await supabase
+        .from('calls')
+        .select('*')
+        .eq('phone_blind_index', blindIndex)
+        .order('call_time', { ascending: false });
+    if (error) {
+        console.error('findEntriesByExactPhone error:', error);
+        return [];
+    }
+    return Promise.all((data || []).map(mapRowToEntry));
+}
+
+async function encryptBackfillForCurrentUser(batchSize = 200) {
+    if (!encryptionState.enabled || !useSupabase()) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { data, error } = await supabase
+        .from('calls')
+        .select('id, user_id, name, phone, name_ciphertext, phone_ciphertext')
+        .eq('user_id', session.user.id)
+        .or('name_ciphertext.is.null,phone_ciphertext.is.null')
+        .order('updated_at', { ascending: true })
+        .limit(batchSize);
+
+    if (error) {
+        console.error('Backfill select error:', error);
+        return;
+    }
+
+    const rows = data || [];
+    for (const row of rows) {
+        const patch = {
+            updated_at: new Date().toISOString(),
+            key_version: encryptionState.keyVersion
+        };
+
+        if (!row.name_ciphertext && row.name) {
+            patch.name_ciphertext = await encryptValue('name', row.name);
+            patch.name_blind_index = await computeBlindIndex('name', row.name);
+            patch.name = '';
+        }
+        if (!row.phone_ciphertext && row.phone) {
+            patch.phone_ciphertext = await encryptValue('phone', row.phone);
+            patch.phone_blind_index = await computeBlindIndex('phone', row.phone);
+            patch.phone = '';
+        }
+
+        const { error: updateError } = await supabase
+            .from('calls')
+            .update(patch)
+            .eq('id', row.id)
+            .eq('user_id', session.user.id);
+        if (updateError) {
+            console.error('Backfill update failed for row', row.id, updateError);
+        }
+    }
 }
 
 // Load and display entries
@@ -1623,9 +1929,15 @@ async function loadEntries() {
     // Then apply text filter within the day
     if (currentFilter) {
         const filterLower = currentFilter.toLowerCase();
+        let exactPhoneMatches = null;
+        if (encryptionState.enabled && /^[+\d()\-\s]{5,}$/.test(currentFilter.trim())) {
+            const rows = await findEntriesByExactPhone(currentFilter.trim());
+            exactPhoneMatches = new Set(rows.map((r) => String(r.id)));
+        }
         filteredEntries = filteredEntries.filter(entry =>
             entry.name.toLowerCase().includes(filterLower) ||
             (entry.phone || entry.mobile || '').includes(filterLower) ||
+            (exactPhoneMatches ? exactPhoneMatches.has(String(entry.id)) : false) ||
             entry.organization.toLowerCase().includes(filterLower) ||
             (entry.deviceName && entry.deviceName.toLowerCase().includes(filterLower)) ||
             (entry.supportRequest && entry.supportRequest.toLowerCase().includes(filterLower)) ||
@@ -1854,15 +2166,31 @@ async function handleEditSubmit(e) {
         console.error('No active session. Please log in.');
         return;
     }
+    let nameCiphertext = null;
+    let phoneCiphertext = null;
+    let nameBlindIndex = null;
+    let phoneBlindIndex = null;
+    if (encryptionState.enabled) {
+        nameCiphertext = await encryptValue('name', fields.name);
+        phoneCiphertext = await encryptValue('phone', fields.phone);
+        nameBlindIndex = await computeBlindIndex('name', fields.name);
+        phoneBlindIndex = await computeBlindIndex('phone', fields.phone);
+    }
+
     const { error } = await supabase
         .from('calls')
         .update({
-            name: fields.name,
-            phone: fields.phone,
+            name: encryptionState.enabled ? '' : fields.name,
+            phone: encryptionState.enabled ? '' : fields.phone,
             organization: fields.organization,
             device_name: fields.deviceName || '',
             support_request: fields.supportRequest,
             notes: fields.notes || '',
+            name_ciphertext: encryptionState.enabled ? nameCiphertext : null,
+            name_blind_index: encryptionState.enabled ? nameBlindIndex : null,
+            phone_ciphertext: encryptionState.enabled ? phoneCiphertext : null,
+            phone_blind_index: encryptionState.enabled ? phoneBlindIndex : null,
+            key_version: encryptionState.enabled ? encryptionState.keyVersion : 1,
             call_time: fields.callTime || new Date().toISOString(),
             updated_at: new Date().toISOString()
         })
