@@ -763,9 +763,20 @@ async function getProfileNameByUserId(userId) {
     }
 }
 
+async function updateAppVersionLabel() {
+    const versionLabel = document.getElementById('appVersion');
+    if (!versionLabel) return;
+    let versionText = '';
+    if (window.electronAPI?.getAppVersion) {
+        versionText = String(await window.electronAPI.getAppVersion().catch(() => '') || '').trim();
+    }
+    versionLabel.textContent = versionText ? `v${versionText}` : 'v--';
+}
+
 // Initialize: auth gate then app
 document.addEventListener('DOMContentLoaded', async () => {
     try {
+        await updateAppVersionLabel();
         initTheme();
         initWaterCanvasRipples();
         const authScreen = document.getElementById('authScreen');
@@ -1529,8 +1540,9 @@ function setupEventListeners() {
     document.getElementById('profileForm')?.addEventListener('submit', handleProfileSubmit);
     
     // Close modals on outside click
+    // Keep Edit modal open on backdrop clicks to prevent accidental dismiss while editing.
     document.getElementById('editModal').addEventListener('click', (e) => {
-        if (e.target.id === 'editModal') closeEditModal();
+        if (e.target.id === 'editModal') return;
     });
     document.getElementById('statsModal').addEventListener('click', (e) => {
         if (e.target.id === 'statsModal') closeStatsModal();

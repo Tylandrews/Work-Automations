@@ -603,6 +603,18 @@ textarea {
     display: block;
 }
 
+.app-version {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 8px;
+    line-height: 1.2;
+    background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+}
+
 .app-title {
     font-size: 13px;
     font-weight: 600;
@@ -1531,22 +1543,14 @@ main .form-container {
     transform: translate3d(0, 0, 0);
 }
 
-/* Keep scroll affordance in modals */
+/* Edit modal: keep scrolling, hide visual scrollbar */
 #editModal .modal-content {
-    scrollbar-width: thin;
-    scrollbar-color: var(--scrollbar-thumb) transparent;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
 }
 #editModal .modal-content::-webkit-scrollbar {
-    width: 10px;
-}
-#editModal .modal-content::-webkit-scrollbar-track {
-    background: transparent;
-}
-#editModal .modal-content::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 999px;
-    border: 3px solid transparent;
-    background-clip: padding-box;
+    width: 0;
+    height: 0;
 }
 
 .modal-small {

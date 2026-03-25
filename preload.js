@@ -22,5 +22,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         close: () => ipcRenderer.invoke('window-close')
     },
     setWindowHeight: (height) => ipcRenderer.invoke('set-window-height', height),
-    getMasterKey: () => ipcRenderer.invoke('get-master-key')
+    getMasterKey: () => ipcRenderer.invoke('get-master-key'),
+    getAppVersion: () => ipcRenderer.invoke('get-app-version')
 });
