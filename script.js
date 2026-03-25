@@ -26,6 +26,105 @@ const AUTOCACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 let autocompleteDebounceTimer = null;
 let autocompleteAbortController = null;
 let autocompleteActiveInstance = null; // Currently active autocomplete instance
+const ORG_SELECTION_CACHE_PREFIX = 'calllog-org-selection-';
+const CACHED_AUTOTASK_COMPANIES_KEY = 'cached_autotask_companies';
+
+function getCachedOrganizationSelection(inputId) {
+    try {
+        return String(localStorage.getItem(`${ORG_SELECTION_CACHE_PREFIX}${inputId}`) || '').trim();
+    } catch (err) {
+        return '';
+    }
+}
+
+function setCachedOrganizationSelection(inputId, organizationName) {
+    const value = String(organizationName || '').trim();
+    if (!value) return;
+    try {
+        localStorage.setItem(`${ORG_SELECTION_CACHE_PREFIX}${inputId}`, value);
+    } catch (err) {
+        // Ignore localStorage errors
+    }
+}
+
+function addToCachedAutotaskCompanies(organizations) {
+    const incoming = Array.isArray(organizations) ? organizations : [organizations];
+    const normalizedIncoming = incoming
+        .map((org) => {
+            if (typeof org === 'string') return { id: '', name: org.trim() };
+            return {
+                id: String(org?.id || ''),
+                name: String(org?.name || '').trim()
+            };
+        })
+        .filter((org) => org.name);
+    if (normalizedIncoming.length === 0) return;
+
+    try {
+        const existingRaw = localStorage.getItem(CACHED_AUTOTASK_COMPANIES_KEY);
+        const existing = (() => {
+            if (!existingRaw) return [];
+            try {
+                const parsed = JSON.parse(existingRaw);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (err) {
+                return [];
+            }
+        })();
+
+        const byName = new Map(
+            existing
+                .map((org) => ({
+                    id: String(org?.id || ''),
+                    name: String(org?.name || '').trim()
+                }))
+                .filter((org) => org.name)
+                .map((org) => [org.name.toLowerCase(), org])
+        );
+
+        normalizedIncoming.forEach((org) => {
+            byName.set(org.name.toLowerCase(), org);
+        });
+
+        const merged = Array.from(byName.values()).slice(0, 500);
+        localStorage.setItem(CACHED_AUTOTASK_COMPANIES_KEY, JSON.stringify(merged));
+    } catch (err) {
+        // Ignore localStorage errors
+    }
+}
+
+function buildAutotaskCacheId(organizationName, autotaskId = '') {
+    const normalizedId = String(autotaskId || '').trim();
+    if (normalizedId) return normalizedId;
+    const normalizedName = String(organizationName || '').trim().toLowerCase();
+    if (!normalizedName) return '';
+    return `manual:${normalizedName.replace(/\s+/g, ' ').replace(/[^a-z0-9 _.-]/g, '')}`;
+}
+
+async function cacheOrganizationInSupabase(organizationName, autotaskId = '') {
+    const companyName = String(organizationName || '').trim();
+    if (!companyName) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const cacheId = buildAutotaskCacheId(companyName, autotaskId);
+    if (!cacheId) return;
+
+    const { error } = await supabase
+        .from('cached_autotask_companies')
+        .upsert({
+            autotask_id: cacheId,
+            company_name: companyName,
+            cached_at: new Date().toISOString()
+        }, {
+            onConflict: 'autotask_id',
+            ignoreDuplicates: false
+        });
+
+    if (error) {
+        console.warn('Failed to cache company in Supabase:', error.message || error);
+    }
+}
 
 function useSupabase() {
     const config = window.supabaseConfig || {};
@@ -318,6 +417,7 @@ async function searchOrganizationsViaProxy(query, limit = 20) {
 
         const data = await response.json();
         const organizations = Array.isArray(data.organizations) ? data.organizations : [];
+        addToCachedAutotaskCompanies(organizations);
 
         // Cache results
         autocompleteCache.set(cacheKey, {
@@ -344,6 +444,12 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
 
     let selectedIndex = -1;
     let suggestions = [];
+    let suppressNextInputSearch = false;
+
+    const cachedOrganization = getCachedOrganizationSelection(inputId);
+    if (!input.value.trim() && cachedOrganization) {
+        input.value = cachedOrganization;
+    }
 
     function hideDropdown() {
         dropdown.classList.remove('show');
@@ -388,6 +494,11 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
 
         const org = suggestions[index];
         input.value = org.name;
+        input.dataset.autotaskId = String(org.id || '');
+        setCachedOrganizationSelection(inputId, org.name);
+        addToCachedAutotaskCompanies(org);
+        cacheOrganizationInSupabase(org.name, org.id).catch(() => {});
+        suppressNextInputSearch = true;
         hideDropdown();
 
         // Trigger input event for form validation
@@ -448,7 +559,13 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
 
     // Input event handler
     input.addEventListener('input', (e) => {
+        if (suppressNextInputSearch) {
+            suppressNextInputSearch = false;
+            return;
+        }
+
         const query = e.target.value.trim();
+        input.dataset.autotaskId = '';
         autocompleteActiveInstance = inputId;
 
         if (query.length < 2) {
@@ -503,6 +620,12 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
                 e.preventDefault();
                 if (selectedIndex >= 0) {
                     selectSuggestion(selectedIndex);
+                } else if (suggestions.length > 0) {
+                    const currentValue = input.value.trim().toLowerCase();
+                    const exactIndex = suggestions.findIndex((org) => {
+                        return String(org?.name || '').trim().toLowerCase() === currentValue;
+                    });
+                    selectSuggestion(exactIndex >= 0 ? exactIndex : 0);
                 }
                 break;
             case 'Escape':
@@ -1738,6 +1861,13 @@ async function handleFormSubmit(e) {
         notes: (document.getElementById('notes') && document.getElementById('notes').value) ? document.getElementById('notes').value.trim() : '',
         timestamp: entryDate.toISOString()
     };
+    if (formData.organization) {
+        const organizationInput = document.getElementById('organization');
+        const selectedAutotaskId = organizationInput ? String(organizationInput.dataset.autotaskId || '').trim() : '';
+        setCachedOrganizationSelection('organization', formData.organization);
+        addToCachedAutotaskCompanies({ id: '', name: formData.organization });
+        cacheOrganizationInSupabase(formData.organization, selectedAutotaskId).catch(() => {});
+    }
 
     try {
         const saved = await saveEntry(formData);
