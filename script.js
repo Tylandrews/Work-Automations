@@ -368,7 +368,12 @@ async function searchOrganizationsViaProxy(query, limit = 20) {
     }
 
     // Call Edge Function (never sends API key - it's stored server-side)
-    const edgeFunctionUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/autotask-search-companies-v3`;
+    // Prefer the canonical function that performs Supabase cache writes.
+    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
+    const edgeFunctionCandidates = [
+        `${baseFunctionsUrl}/autotask-search-companies`,
+        `${baseFunctionsUrl}/autotask-search-companies-v3`
+    ];
     const searchParams = new URLSearchParams({
         q: query.trim(),
         limit: String(Math.min(Math.max(limit, 1), 50))
@@ -379,16 +384,26 @@ async function searchOrganizationsViaProxy(query, limit = 20) {
         // Debug (safe): confirm headers are present without logging sensitive values
         // Remove later once stable.
         console.debug('[autotask-autocomplete] session?', !!session, 'tokenLen', String(session?.access_token || '').length, 'apikey?', anonKey.length > 0);
-        const response = await fetch(`${edgeFunctionUrl}?${searchParams}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-                // Supabase Edge Functions expect the project anon/publishable key as `apikey`
-                // This is safe to include client-side (as with the rest of the app).
-                'apikey': anonKey,
-                'Content-Type': 'application/json'
+        let response = null;
+        for (const endpoint of edgeFunctionCandidates) {
+            const candidateResponse = await fetch(`${endpoint}?${searchParams}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    // Supabase Edge Functions expect the project anon/publishable key as `apikey`
+                    // This is safe to include client-side (as with the rest of the app).
+                    'apikey': anonKey,
+                    'Content-Type': 'application/json'
+                }
+            });
+            if (candidateResponse.ok || candidateResponse.status !== 404) {
+                response = candidateResponse;
+                break;
             }
-        });
+        }
+        if (!response) {
+            throw new Error('No deployed Autotask search edge function found.');
+        }
 
         if (!response.ok) {
             const txt = await response.text().catch(() => '');
