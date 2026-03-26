@@ -17,9 +17,13 @@ const encryptionState = {
     initialized: false,
     keyVersion: 1,
     dataKey: null,
-    blindKey: null
+    blindKey: null,
+    initPromise: null
 };
 const REQUIRE_ENCRYPTED_PII_WRITES = true;
+const DEBUG_ENCRYPTION = true
+let debugDecryptSkipLoggedCount = 0
+let debugDecryptFailLoggedCount = 0
 
 function isPiiWriteAllowed() {
     return encryptionState.enabled || !REQUIRE_ENCRYPTED_PII_WRITES;
@@ -95,39 +99,6 @@ function addToCachedAutotaskCompanies(organizations) {
         localStorage.setItem(CACHED_AUTOTASK_COMPANIES_KEY, JSON.stringify(merged));
     } catch (err) {
         // Ignore localStorage errors
-    }
-}
-
-function buildAutotaskCacheId(organizationName, autotaskId = '') {
-    const normalizedId = String(autotaskId || '').trim();
-    if (normalizedId) return normalizedId;
-    const normalizedName = String(organizationName || '').trim().toLowerCase();
-    if (!normalizedName) return '';
-    return `manual:${normalizedName.replace(/\s+/g, ' ').replace(/[^a-z0-9 _.-]/g, '')}`;
-}
-
-async function cacheOrganizationInSupabase(organizationName, autotaskId = '') {
-    const companyName = String(organizationName || '').trim();
-    if (!companyName) return;
-    const supabase = getSupabase();
-    if (!supabase) return;
-
-    const cacheId = buildAutotaskCacheId(companyName, autotaskId);
-    if (!cacheId) return;
-
-    const { error } = await supabase
-        .from('cached_autotask_companies')
-        .upsert({
-            autotask_id: cacheId,
-            company_name: companyName,
-            cached_at: new Date().toISOString()
-        }, {
-            onConflict: 'autotask_id',
-            ignoreDuplicates: false
-        });
-
-    if (error) {
-        console.warn('Failed to cache company in Supabase:', error.message || error);
     }
 }
 
@@ -243,12 +214,20 @@ async function decryptValue(fieldName, payload) {
     const iv = b64Decode(parts[1]);
     const data = b64Decode(parts[2]);
     const aad = textEncoder.encode(`calls:${fieldName}`);
-    const plaintext = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv, additionalData: aad },
-        encryptionState.dataKey,
-        data
-    );
-    return textDecoder.decode(plaintext);
+    try {
+        const plaintext = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv, additionalData: aad },
+            encryptionState.dataKey,
+            data
+        );
+        return textDecoder.decode(plaintext);
+    } catch (e) {
+        if (DEBUG_ENCRYPTION && debugDecryptFailLoggedCount < 20) {
+            debugDecryptFailLoggedCount += 1
+            console.warn('[decrypt]', fieldName, 'failed:', e?.message || e)
+        }
+        return null
+    }
 }
 
 async function wrapDek(masterKeyBytes, dekBytes) {
@@ -301,31 +280,54 @@ async function getOrCreateWrappedDek(supabase) {
 }
 
 async function initializeEncryption() {
-    if (encryptionState.initialized) return;
-    encryptionState.initialized = true;
-    if (!window.crypto?.subtle || !useSupabase()) return;
-    const supabase = getSupabase();
-    if (!supabase) return;
+    if (encryptionState.enabled && encryptionState.dataKey && encryptionState.blindKey) return
+    if (encryptionState.initPromise) return encryptionState.initPromise
 
-    const masterKey = await getMasterKeyMaterial();
-    if (!masterKey) {
-        console.warn('CALLLOG_MASTER_KEY is not set. Encryption is disabled and PII writes are blocked.');
-        return;
-    }
+    encryptionState.initPromise = (async () => {
+        if (!window.crypto?.subtle || !useSupabase()) return
+
+        const supabase = getSupabase();
+        if (!supabase) return
+
+        const masterKey = await getMasterKeyMaterial();
+        if (!masterKey) {
+            console.warn('CALLLOG_MASTER_KEY is not set. Encryption is disabled and PII writes are blocked.');
+            encryptionState.enabled = false
+            return
+        }
+        if (DEBUG_ENCRYPTION) {
+            console.debug('[encryption] master key loaded:', !!masterKey)
+        }
+
+        try {
+            const { wrappedDek, keyVersion } = await getOrCreateWrappedDek(supabase);
+            const rawDek = await unwrapDek(masterKey, wrappedDek);
+            if (rawDek.length < 64) {
+                throw new Error('Wrapped DEK must be at least 64 bytes');
+            }
+            encryptionState.dataKey = await importAesKey(rawDek.slice(0, 32));
+            encryptionState.blindKey = await importHmacKey(rawDek.slice(32, 64));
+            encryptionState.keyVersion = Number(keyVersion || 1);
+            encryptionState.enabled = true;
+            encryptionState.initialized = true
+            if (DEBUG_ENCRYPTION) {
+                console.debug('[encryption] initialized:', {
+                    enabled: encryptionState.enabled,
+                    hasDataKey: !!encryptionState.dataKey,
+                    hasBlindKey: !!encryptionState.blindKey
+                })
+            }
+        } catch (err) {
+            console.error('Encryption init failed. PII writes are blocked while encryption is unavailable.', err);
+            encryptionState.enabled = false;
+            encryptionState.initialized = true
+        }
+    })()
 
     try {
-        const { wrappedDek, keyVersion } = await getOrCreateWrappedDek(supabase);
-        const rawDek = await unwrapDek(masterKey, wrappedDek);
-        if (rawDek.length < 64) {
-            throw new Error('Wrapped DEK must be at least 64 bytes');
-        }
-        encryptionState.dataKey = await importAesKey(rawDek.slice(0, 32));
-        encryptionState.blindKey = await importHmacKey(rawDek.slice(32, 64));
-        encryptionState.keyVersion = Number(keyVersion || 1);
-        encryptionState.enabled = true;
-    } catch (err) {
-        console.error('Encryption init failed. PII writes are blocked while encryption is unavailable.', err);
-        encryptionState.enabled = false;
+        await encryptionState.initPromise
+    } finally {
+        encryptionState.initPromise = null
     }
 }
 
@@ -358,9 +360,23 @@ async function searchOrganizationsViaProxy(query, limit = 20) {
     }
 
     // Get Supabase session for authentication
-    const { data: { session } } = await supabase.auth.getSession();
+    let { data: { session } } = await supabase.auth.getSession();
     if (!session) {
         console.warn('No active session. Autocomplete requires authentication.');
+        return [];
+    }
+    const expiresAtMs = typeof session.expires_at === 'number' ? session.expires_at * 1000 : null;
+    const isExpiringSoon = typeof expiresAtMs === 'number' ? expiresAtMs < (Date.now() + 30 * 1000) : false;
+    if (isExpiringSoon) {
+        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+        if (refreshErr || !refreshed?.session?.access_token) {
+            console.warn('Session expired. Please log in again.');
+            return [];
+        }
+        session = refreshed.session;
+    }
+    if (!session?.access_token) {
+        console.warn('Session expired. Please log in again.');
         return [];
     }
 
@@ -376,8 +392,8 @@ async function searchOrganizationsViaProxy(query, limit = 20) {
     // Prefer the canonical function that performs Supabase cache writes.
     const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
     const edgeFunctionCandidates = [
-        `${baseFunctionsUrl}/autotask-search-companies`,
-        `${baseFunctionsUrl}/autotask-search-companies-v3`
+        `${baseFunctionsUrl}/autotask-search-companies-v3`,
+        `${baseFunctionsUrl}/autotask-search-companies`
     ];
     const searchParams = new URLSearchParams({
         q: query.trim(),
@@ -389,6 +405,7 @@ async function searchOrganizationsViaProxy(query, limit = 20) {
         // Debug (safe): confirm headers are present without logging sensitive values
         // Remove later once stable.
         console.debug('[autotask-autocomplete] session?', !!session, 'tokenLen', String(session?.access_token || '').length, 'apikey?', anonKey.length > 0);
+        const isJwtLike = (token) => typeof token === 'string' && token.split('.').length === 3;
         let response = null;
         for (const endpoint of edgeFunctionCandidates) {
             const candidateResponse = await fetch(`${endpoint}?${searchParams}`, {
@@ -408,6 +425,34 @@ async function searchOrganizationsViaProxy(query, limit = 20) {
         }
         if (!response) {
             throw new Error('No deployed Autotask search edge function found.');
+        }
+
+        if (response.status === 401) {
+            const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+            const refreshedToken = refreshed?.session?.access_token;
+            if (!refreshErr && isJwtLike(refreshedToken)) {
+                session = refreshed.session;
+                response = null;
+                for (const endpoint of edgeFunctionCandidates) {
+                    const candidateResponse = await fetch(`${endpoint}?${searchParams}`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${session.access_token}`,
+                            // Supabase Edge Functions expect the project anon/publishable key as `apikey`
+                            // This is safe to include client-side (as with the rest of the app).
+                            'apikey': anonKey,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    if (candidateResponse.ok || candidateResponse.status !== 404) {
+                        response = candidateResponse;
+                        break;
+                    }
+                }
+                if (!response) {
+                    throw new Error('No deployed Autotask search edge function found.');
+                }
+            }
         }
 
         if (!response.ok) {
@@ -540,10 +585,8 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
 
         const org = suggestions[index];
         input.value = org.name;
-        input.dataset.autotaskId = String(org.id || '');
         setCachedOrganizationSelection(inputId, org.name);
         addToCachedAutotaskCompanies(org);
-        cacheOrganizationInSupabase(org.name, org.id).catch(() => {});
         suppressNextInputSearch = true;
         hideDropdown();
 
@@ -611,7 +654,6 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
             return;
         }
         const query = e.target.value.trim();
-        input.dataset.autotaskId = '';
         autocompleteActiveInstance = inputId;
 
         if (query.length < 2) {
@@ -724,6 +766,12 @@ async function mapRowToEntry(row) {
                 console.error('Failed to decrypt phone for row', row.id, e);
             }
         }
+    } else if (DEBUG_ENCRYPTION && (row.name_ciphertext || row.phone_ciphertext) && debugDecryptSkipLoggedCount < 20) {
+        debugDecryptSkipLoggedCount += 1
+        console.warn('[decrypt-skip] encryption disabled but ciphertext present for row', row.id, {
+            hasNameCiphertext: !!row.name_ciphertext,
+            hasPhoneCiphertext: !!row.phone_ciphertext
+        })
     }
 
     return {
@@ -1348,6 +1396,15 @@ function setupLogout() {
                 supabaseRealtimeChannel = null;
             }
         }
+
+        // Reset in-memory encryption keys so next login always re-initializes.
+        encryptionState.enabled = false
+        encryptionState.initialized = false
+        encryptionState.keyVersion = 1
+        encryptionState.dataKey = null
+        encryptionState.blindKey = null
+        encryptionState.initPromise = null
+
         if (logoutBtn) logoutBtn.style.display = 'none';
         if (profileBtn) profileBtn.style.display = 'none';
         logoutBtn?.removeEventListener('click', handler);
@@ -1403,6 +1460,13 @@ function subscribeRealtime() {
 async function initApp() {
     await runMigrationIfNeeded();
     await initializeEncryption();
+    if (DEBUG_ENCRYPTION) {
+        console.debug('[initApp] encryption after init:', {
+            enabled: encryptionState.enabled,
+            hasDataKey: !!encryptionState.dataKey,
+            hasBlindKey: !!encryptionState.blindKey
+        })
+    }
     if (encryptionState.enabled) {
         encryptBackfillForCurrentUser().catch((err) => {
             console.error('Backfill failed:', err);
@@ -1922,11 +1986,8 @@ async function handleFormSubmit(e) {
         timestamp: entryDate.toISOString()
     };
     if (formData.organization) {
-        const organizationInput = document.getElementById('organization');
-        const selectedAutotaskId = organizationInput ? String(organizationInput.dataset.autotaskId || '').trim() : '';
         setCachedOrganizationSelection('organization', formData.organization);
         addToCachedAutotaskCompanies({ id: '', name: formData.organization });
-        cacheOrganizationInSupabase(formData.organization, selectedAutotaskId).catch(() => {});
     }
 
     try {
@@ -2256,6 +2317,14 @@ async function loadEntries() {
     const entriesList = document.getElementById('entriesList');
     if (!entriesList) return;
 
+    if (DEBUG_ENCRYPTION) {
+        console.debug('[entries] encryption state at load:', {
+            enabled: encryptionState.enabled,
+            hasDataKey: !!encryptionState.dataKey,
+            hasBlindKey: !!encryptionState.blindKey
+        })
+    }
+
     // Immediate loading state to avoid pop-in
     setEntriesLoading(true);
     const loadStartedAt = performance.now();
@@ -2382,6 +2451,18 @@ function setEntriesLoading(isLoading) {
     `;
 }
 
+function normalizePhoneForTel(phone) {
+    const raw = String(phone ?? '').trim();
+    if (!raw) return '';
+
+    // Keep a leading plus (E.164 style) and drop all other non-digit characters.
+    const hasPlus = raw.startsWith('+')
+    const digits = raw.replace(/[^\d]/g, '')
+    if (!digits) return '';
+
+    return hasPlus ? `+${digits}` : digits
+}
+
 // Create HTML for an entry card
 function createEntryCard(entry) {
     const date = new Date(entry.timestamp);
@@ -2392,6 +2473,14 @@ function createEntryCard(entry) {
         hour: '2-digit',
         minute: '2-digit'
     });
+
+    const rawPhone = String(entry.phone || entry.mobile || '').trim();
+    const telNumber = normalizePhoneForTel(rawPhone);
+    const telHref = telNumber ? `tel:${telNumber}` : '';
+
+    const phoneHtml = telHref
+        ? `<a class="call-link" href="${escapeHtmlAttr(telHref)}" tabindex="0" aria-label="Call ${escapeHtml(rawPhone)}" title="Click to call">${escapeHtml(rawPhone)}</a>`
+        : escapeHtml(rawPhone);
     
     return `
         <div class="entry-card" data-id="${escapeHtmlAttr(String(entry.id))}" role="button" tabindex="0" title="Click to edit">
@@ -2400,7 +2489,7 @@ function createEntryCard(entry) {
                 <span class="entry-date">${formattedDate}</span>
             </div>
             <div class="entry-detail">
-                <strong>Phone:</strong> ${escapeHtml(entry.phone || entry.mobile || '')}
+                <strong>Phone:</strong> ${phoneHtml}
             </div>
             <div class="entry-detail">
                 <strong>Organization:</strong> ${escapeHtml(entry.organization)}
@@ -2419,6 +2508,9 @@ function setupEntriesListClick() {
     const list = document.getElementById('entriesList');
     if (!list) return;
     list.addEventListener('click', (e) => {
+        const callLink = e.target.closest('.call-link')
+        if (callLink) return
+
         const copyable = e.target.closest('.copyable-request');
         if (copyable) {
             const text = copyable.getAttribute('data-copy-text');
@@ -2437,6 +2529,15 @@ function setupEntriesListClick() {
         if (id) editEntry(id);
     });
     list.addEventListener('keydown', (e) => {
+        const callLink = e.target.closest('.call-link')
+        if (callLink) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                callLink.click()
+            }
+            return
+        }
+
         if (e.key !== 'Enter' && e.key !== ' ') return;
         const card = e.target.closest('.entry-card');
         if (!card) return;
