@@ -26,6 +26,10 @@
     --scrollbar-thumb: rgba(11, 18, 36, 0.20);
     --close-hover: #7f1d1d;
     --focus-ring: rgba(53, 87, 214, 0.20);
+    --icon-red: #dc2626;
+    --icon-red-ring: rgba(220, 38, 38, 0.20);
+    --icon-red-soft: color-mix(in srgb, var(--icon-red) 75%, var(--border));
+    --icon-red-ring-soft: rgba(220, 38, 38, 0.15);
     --radius-lg: 12px;
     --radius-md: 10px;
     --radius-sm: 8px;
@@ -59,6 +63,10 @@
     --scrollbar-thumb: rgba(245, 247, 255, 0.20);
     --close-hover: rgba(251, 113, 133, 0.95);
     --focus-ring: rgba(134, 163, 255, 0.20);
+    --icon-red: #fb7185;
+    --icon-red-ring: rgba(251, 113, 133, 0.24);
+    --icon-red-soft: color-mix(in srgb, var(--icon-red) 75%, var(--border));
+    --icon-red-ring-soft: rgba(251, 113, 133, 0.18);
     --radius-lg: 12px;
     --radius-md: 10px;
     --radius-sm: 8px;
@@ -984,6 +992,13 @@ main .form-container {
     outline: none;
     border-color: var(--primary);
     box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* New Call panel: use app red focus treatment */
+.form-container .form-group input:focus,
+.form-container .form-group textarea:focus {
+    border-color: var(--icon-red-soft);
+    box-shadow: 0 0 0 3px var(--icon-red-ring-soft);
 }
 
 .form-group textarea {

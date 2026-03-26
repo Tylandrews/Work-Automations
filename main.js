@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const vm = require('vm');
 // Local SQL database removed - using Supabase only
 
 // Allow opening DevTools via keyboard even with frameless windows / no menu.
@@ -252,8 +253,36 @@ ipcMain.handle('show-tray-notification', (event, { title, body }) => {
 });
 
 ipcMain.handle('get-master-key', () => {
-    const key = (process.env.CALLLOG_MASTER_KEY || '').trim();
-    return key;
+    const envKey = (process.env.CALLLOG_MASTER_KEY || '').trim();
+    if (envKey) return envKey;
+
+    // Fallback: read local supabaseConfig.js for CALLLOG_MASTER_KEY in development.
+    // This keeps renderer encryption working even when env vars are not set.
+    try {
+        const candidatePaths = [
+            path.join(__dirname, 'supabaseConfig.js'),
+            path.join(process.cwd(), 'supabaseConfig.js'),
+            path.join(app.getAppPath(), 'supabaseConfig.js')
+        ];
+
+        for (const cfgPath of candidatePaths) {
+            if (!fs.existsSync(cfgPath)) continue;
+            const text = fs.readFileSync(cfgPath, 'utf8');
+
+            const sandbox = { window: {} };
+            vm.createContext(sandbox);
+            vm.runInContext(text, sandbox, { timeout: 1000, filename: cfgPath });
+            const vmKey = String(sandbox?.window?.supabaseConfig?.CALLLOG_MASTER_KEY || '').trim();
+            if (vmKey) return vmKey;
+
+            const m = text.match(/CALLLOG_MASTER_KEY\s*:\s*['"`]([^'"`\r\n]+)['"`]/);
+            const regexKey = (m && m[1] ? String(m[1]).trim() : '');
+            if (regexKey) return regexKey;
+        }
+        return '';
+    } catch (e) {
+        return '';
+    }
 });
 
 ipcMain.handle('get-app-version', () => {

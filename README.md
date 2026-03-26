@@ -2,6 +2,8 @@
 
 Call Log is an Electron desktop application for logging and reviewing telephone support interactions. It provides a dedicated intake form, calendar-based history, search, in-app statistics, and optional cloud synchronization through Supabase. A static marketing site is included under [`Website/`](Website/) for GitHub Pages.
 
+Daily work tracking is maintained in [`TIMESHEET.md`](TIMESHEET.md).
+
 | Resource | Link |
 | -------- | ---- |
 | Repository | [github.com/Tylandrews/Work-Automations](https://github.com/Tylandrews/Work-Automations) |
@@ -106,6 +108,8 @@ cp supabaseConfig.example.js supabaseConfig.js
 ```
 
 The build pipeline validates configuration where applicable. Release builds intended for distribution should embed the configuration required for production use.
+
+For organization autocomplete, deploy the Edge Function under `supabase/functions/autotask-search-companies-v3` and configure required function secrets (`AUTOTASK_INTEGRATION_CODE`, `AUTOTASK_USERNAME`, `AUTOTASK_SECRET`, plus project secrets including `SUPABASE_SERVICE_ROLE_KEY`).
 
 ### Project layout
 

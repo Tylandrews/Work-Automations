@@ -19,6 +19,11 @@ const encryptionState = {
     dataKey: null,
     blindKey: null
 };
+const REQUIRE_ENCRYPTED_PII_WRITES = true;
+
+function isPiiWriteAllowed() {
+    return encryptionState.enabled || !REQUIRE_ENCRYPTED_PII_WRITES;
+}
 
 // Autocomplete state
 const autocompleteCache = new Map(); // query -> { results, timestamp }
@@ -205,7 +210,7 @@ async function initializeEncryption() {
 
     const masterKey = await getMasterKeyMaterial();
     if (!masterKey) {
-        console.warn('CALLLOG_MASTER_KEY is not set. Falling back to plaintext storage.');
+        console.warn('CALLLOG_MASTER_KEY is not set. Encryption is disabled and PII writes are blocked.');
         return;
     }
 
@@ -220,7 +225,7 @@ async function initializeEncryption() {
         encryptionState.keyVersion = Number(keyVersion || 1);
         encryptionState.enabled = true;
     } catch (err) {
-        console.error('Encryption init failed. Falling back to plaintext.', err);
+        console.error('Encryption init failed. PII writes are blocked while encryption is unavailable.', err);
         encryptionState.enabled = false;
     }
 }
@@ -344,6 +349,7 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
 
     let selectedIndex = -1;
     let suggestions = [];
+    let suppressNextSearch = false;
 
     function hideDropdown() {
         dropdown.classList.remove('show');
@@ -359,16 +365,42 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
         input.setAttribute('aria-expanded', 'true');
     }
 
-    function renderSuggestions(orgs) {
-        suggestions = orgs;
+    function renderSuggestions(orgs, query) {
+        const q = String(query || '').trim().toLowerCase()
+        const ranked = [...orgs].sort((a, b) => {
+            const an = String(a?.name || '').toLowerCase()
+            const bn = String(b?.name || '').toLowerCase()
+
+            const aFirstWord = an.split(/\s+/)[0] || ''
+            const bFirstWord = bn.split(/\s+/)[0] || ''
+
+            // Rank by: first-word prefix, any-word prefix, then earliest occurrence, then alphabetical
+            const aFirstWordPrefix = q && aFirstWord.startsWith(q) ? 0 : 1
+            const bFirstWordPrefix = q && bFirstWord.startsWith(q) ? 0 : 1
+            if (aFirstWordPrefix !== bFirstWordPrefix) return aFirstWordPrefix - bFirstWordPrefix
+
+            const aAnyWordPrefix = q && new RegExp(`(^|\\s)${q.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`).test(an) ? 0 : 1
+            const bAnyWordPrefix = q && new RegExp(`(^|\\s)${q.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}`).test(bn) ? 0 : 1
+            if (aAnyWordPrefix !== bAnyWordPrefix) return aAnyWordPrefix - bAnyWordPrefix
+
+            const aIdx = q ? an.indexOf(q) : -1
+            const bIdx = q ? bn.indexOf(q) : -1
+            const aPos = aIdx >= 0 ? aIdx : 9999
+            const bPos = bIdx >= 0 ? bIdx : 9999
+            if (aPos !== bPos) return aPos - bPos
+
+            return an.localeCompare(bn)
+        })
+
+        suggestions = ranked;
         selectedIndex = -1;
 
-        if (orgs.length === 0) {
+        if (ranked.length === 0) {
             hideDropdown();
             return;
         }
 
-        dropdown.innerHTML = orgs.map((org, index) => {
+        dropdown.innerHTML = ranked.map((org, index) => {
             const escapedName = escapeHtml(org.name);
             return `
                 <div class="autocomplete-item" role="option" data-index="${index}" data-value="${escapeHtmlAttr(org.name)}" aria-selected="false">
@@ -391,6 +423,7 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
         hideDropdown();
 
         // Trigger input event for form validation
+        suppressNextSearch = true;
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.focus();
     }
@@ -435,7 +468,7 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
             try {
                 const orgs = await searchOrganizationsViaProxy(query, 20);
                 if (autocompleteActiveInstance === inputId) {
-                    renderSuggestions(orgs);
+                    renderSuggestions(orgs, query);
                 }
             } catch (err) {
                 if (err.name !== 'AbortError') {
@@ -448,6 +481,11 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
 
     // Input event handler
     input.addEventListener('input', (e) => {
+        if (suppressNextSearch) {
+            suppressNextSearch = false;
+            hideDropdown();
+            return;
+        }
         const query = e.target.value.trim();
         autocompleteActiveInstance = inputId;
 
@@ -503,6 +541,8 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
                 e.preventDefault();
                 if (selectedIndex >= 0) {
                     selectSuggestion(selectedIndex);
+                } else {
+                    hideDropdown();
                 }
                 break;
             case 'Escape':
@@ -1788,6 +1828,10 @@ async function saveEntry(entry) {
         console.error('No active session. Please log in.');
         return null;
     }
+    if (!isPiiWriteAllowed()) {
+        console.error('Refusing to save entry: encryption is not enabled.');
+        return null;
+    }
     const now = new Date().toISOString();
     const callTime = entry.timestamp || now;
     let nameCiphertext = null;
@@ -1882,7 +1926,7 @@ async function encryptBackfillForCurrentUser(batchSize = 200) {
 
     const { data, error } = await supabase
         .from('calls')
-        .select('id, user_id, name, phone, name_ciphertext, phone_ciphertext')
+        .select('id, user_id, name, phone, name_ciphertext, phone_ciphertext, name_blind_index, phone_blind_index')
         .eq('user_id', session.user.id)
         .or('name_ciphertext.is.null,phone_ciphertext.is.null')
         .order('updated_at', { ascending: true })
@@ -1895,21 +1939,78 @@ async function encryptBackfillForCurrentUser(batchSize = 200) {
 
     const rows = data || [];
     for (const row of rows) {
+        const now = new Date().toISOString();
         const patch = {
-            updated_at: new Date().toISOString(),
-            key_version: encryptionState.keyVersion
+            key_version: encryptionState.keyVersion,
+            updated_at: now
         };
 
-        if (!row.name_ciphertext && row.name) {
+        let hasChanges = false;
+
+        // NAME
+        if (row.name_ciphertext) {
+            // If ciphertext already exists but plaintext `name` is still present, clear it.
+            if (row.name) {
+                patch.name = '';
+                hasChanges = true;
+            }
+
+            // Ensure blind index exists for exact/fast matching.
+            if (!row.name_blind_index) {
+                let namePlain = row.name || '';
+                if (!namePlain) {
+                    try {
+                        namePlain = (await decryptValue('name', row.name_ciphertext)) || '';
+                    } catch (e) {
+                        console.error('Backfill decrypt name failed for row', row.id, e);
+                        namePlain = '';
+                    }
+                }
+
+                if (namePlain) {
+                    patch.name_blind_index = await computeBlindIndex('name', namePlain);
+                    hasChanges = true;
+                }
+            }
+        } else if (row.name) {
+            // No ciphertext: encrypt and clear plaintext.
             patch.name_ciphertext = await encryptValue('name', row.name);
             patch.name_blind_index = await computeBlindIndex('name', row.name);
             patch.name = '';
+            hasChanges = true;
         }
-        if (!row.phone_ciphertext && row.phone) {
+
+        // PHONE
+        if (row.phone_ciphertext) {
+            if (row.phone) {
+                patch.phone = '';
+                hasChanges = true;
+            }
+
+            if (!row.phone_blind_index) {
+                let phonePlain = row.phone || '';
+                if (!phonePlain) {
+                    try {
+                        phonePlain = (await decryptValue('phone', row.phone_ciphertext)) || '';
+                    } catch (e) {
+                        console.error('Backfill decrypt phone failed for row', row.id, e);
+                        phonePlain = '';
+                    }
+                }
+
+                if (phonePlain) {
+                    patch.phone_blind_index = await computeBlindIndex('phone', phonePlain);
+                    hasChanges = true;
+                }
+            }
+        } else if (row.phone) {
             patch.phone_ciphertext = await encryptValue('phone', row.phone);
             patch.phone_blind_index = await computeBlindIndex('phone', row.phone);
             patch.phone = '';
+            hasChanges = true;
         }
+
+        if (!hasChanges) continue;
 
         const { error: updateError } = await supabase
             .from('calls')
@@ -1919,6 +2020,96 @@ async function encryptBackfillForCurrentUser(batchSize = 200) {
         if (updateError) {
             console.error('Backfill update failed for row', row.id, updateError);
         }
+    }
+
+    // Second pass: clear plaintext when ciphertext already exists (this can happen if a previous
+    // run encrypted only one of the fields).
+    const now = new Date().toISOString();
+
+    try {
+        const { data: nameRows, error: nameErr } = await supabase
+            .from('calls')
+            .select('id, name, name_ciphertext, name_blind_index')
+            .eq('user_id', session.user.id)
+            .neq('name', '')
+            .not('name_ciphertext', 'is', null)
+            .order('updated_at', { ascending: true })
+            .limit(batchSize);
+
+        if (nameErr) throw nameErr;
+
+        for (const r of (nameRows || [])) {
+            const patch = {
+                name: '',
+                updated_at: now,
+                key_version: encryptionState.keyVersion
+            };
+
+            if (!r.name_blind_index && r.name) {
+                patch.name_blind_index = await computeBlindIndex('name', r.name);
+            }
+
+            if (!patch.name_blind_index && !r.name && r.name_ciphertext) {
+                try {
+                    const plain = (await decryptValue('name', r.name_ciphertext)) || '';
+                    if (plain) patch.name_blind_index = await computeBlindIndex('name', plain);
+                } catch (e) {
+                    console.error('Backfill decrypt name (cleanup) failed for row', r.id, e);
+                }
+            }
+
+            const { error: updateError } = await supabase
+                .from('calls')
+                .update(patch)
+                .eq('id', r.id)
+                .eq('user_id', session.user.id);
+            if (updateError) console.error('Backfill cleanup name update failed for row', r.id, updateError);
+        }
+    } catch (e) {
+        console.error('Backfill cleanup name pass failed:', e);
+    }
+
+    try {
+        const { data: phoneRows, error: phoneErr } = await supabase
+            .from('calls')
+            .select('id, phone, phone_ciphertext, phone_blind_index')
+            .eq('user_id', session.user.id)
+            .neq('phone', '')
+            .not('phone_ciphertext', 'is', null)
+            .order('updated_at', { ascending: true })
+            .limit(batchSize);
+
+        if (phoneErr) throw phoneErr;
+
+        for (const r of (phoneRows || [])) {
+            const patch = {
+                phone: '',
+                updated_at: now,
+                key_version: encryptionState.keyVersion
+            };
+
+            if (!r.phone_blind_index && r.phone) {
+                patch.phone_blind_index = await computeBlindIndex('phone', r.phone);
+            }
+
+            if (!patch.phone_blind_index && !r.phone && r.phone_ciphertext) {
+                try {
+                    const plain = (await decryptValue('phone', r.phone_ciphertext)) || '';
+                    if (plain) patch.phone_blind_index = await computeBlindIndex('phone', plain);
+                } catch (e) {
+                    console.error('Backfill decrypt phone (cleanup) failed for row', r.id, e);
+                }
+            }
+
+            const { error: updateError } = await supabase
+                .from('calls')
+                .update(patch)
+                .eq('id', r.id)
+                .eq('user_id', session.user.id);
+            if (updateError) console.error('Backfill cleanup phone update failed for row', r.id, updateError);
+        }
+    } catch (e) {
+        console.error('Backfill cleanup phone pass failed:', e);
     }
 }
 
@@ -2176,6 +2367,11 @@ async function handleEditSubmit(e) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
         console.error('No active session. Please log in.');
+        return;
+    }
+    if (!isPiiWriteAllowed()) {
+        console.error('Refusing to update entry: encryption is not enabled.');
+        showNotification('Cannot update call: encryption is not active.');
         return;
     }
     let nameCiphertext = null;

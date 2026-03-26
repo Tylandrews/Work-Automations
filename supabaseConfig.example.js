@@ -5,5 +5,6 @@
  */
 window.supabaseConfig = {
   SUPABASE_URL: 'https://your-project-ref.supabase.co',
-  SUPABASE_ANON_KEY: 'your-anon-key-here'
+  SUPABASE_ANON_KEY: 'your-anon-key-here',
+  CALLLOG_MASTER_KEY: 'PASTE_HERE'
 };

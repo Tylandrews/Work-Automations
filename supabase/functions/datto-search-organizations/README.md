@@ -1,6 +1,6 @@
 # Datto Search Organizations Edge Function (Deprecated)
 
-This Edge Function was replaced by the Autotask PSA implementation. Use `autotask-search-companies` instead.
+This Edge Function was replaced by the Autotask PSA implementation. Use `autotask-search-companies-v3` instead.
 
 ## Setup
 
