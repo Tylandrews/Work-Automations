@@ -1092,5 +1092,26 @@
         "description": "Verify the UI remains functional and shows either the persisted theme preference or the default theme with graceful fallback"
       }
     ]
+  },
+  {
+    "id": "TC035",
+    "title": "Organization autocomplete shows cached companies quickly before slow network",
+    "description": "Verifies suggestions from persisted cached_autotask_companies appear within a short deadline while the edge function is artificially delayed.",
+    "category": "Call intake and organization autocomplete",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Seed cached_autotask_companies in localStorage and stub autotask search with a long delay"
+      },
+      {
+        "type": "action",
+        "description": "Sign in and type a two-character query that matches only the cached organization name"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the first autocomplete item is visible within CALLLOG_TEST_ORG_INSTANT_MAX_MS (default 900ms)"
+      }
+    ]
   }
 ]

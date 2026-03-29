@@ -1,11 +1,12 @@
 """
-TC012: Open the calendar modal, pick a day with no saved calls, entries list shows empty state.
+TC016: With at least one call on the selected day, a search query that matches nothing shows the no-results copy.
 
-Uses a day far in the future so it is very unlikely to have rows in Supabase.
-EMPTY_DAY is computed in the browser so it matches the app's local calendar (toLocalDayKey).
+Then closing search restores the normal list for that day.
 """
 import asyncio
 import os
+import secrets
+from datetime import datetime
 
 from tc_browser import is_headless_browser
 from playwright.async_api import async_playwright, expect
@@ -13,6 +14,9 @@ from playwright.async_api import async_playwright, expect
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
 LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "")
 LOGIN_PASSWORD = os.environ.get("CALLLOG_TEST_PASSWORD", "")
+
+# Fixed string; must not appear in the per-run caller name (substring search is case-insensitive)
+NO_MATCH_QUERY = "zzzz_nomatch_94f2b1c8d7e6_qwerty"
 
 
 async def run_test() -> None:
@@ -33,6 +37,8 @@ async def run_test() -> None:
 
         context = await browser.new_context()
         context.set_default_timeout(25000)
+
+        marker = f"TC016_{secrets.token_hex(6)}"
 
         page = await context.new_page()
         await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30000)
@@ -55,40 +61,32 @@ async def run_test() -> None:
 
         await expect(page.locator("#callForm")).to_be_visible(timeout=10000)
 
-        empty_day = await page.evaluate(
-            """() => {
-                const d = new Date();
-                d.setDate(d.getDate() + 550);
-                const y = d.getFullYear();
-                const m = String(d.getMonth() + 1).padStart(2, '0');
-                const day = String(d.getDate()).padStart(2, '0');
-                return `${y}-${m}-${day}`;
-            }"""
-        )
+        await page.locator("#name").fill(marker)
+        await page.locator("#organization").fill("TC016 Org")
+        await page.locator("#mobile").fill("555-0160")
+        await page.locator("#supportRequest").fill("TC016 support line")
+        await page.locator("#callDate").fill(datetime.now().strftime("%Y-%m-%dT%H:%M"))
 
-        await page.locator("#historyCalendarBtn").click()
-        calendar_modal = page.locator("#calendarModal")
-        await expect(calendar_modal).to_be_visible()
-
-        day_btn = page.locator(f'#calendarGrid button.cal-day[data-day="{empty_day}"]')
-        for _ in range(36):
-            if await day_btn.count() > 0:
-                break
-            await page.locator("#calNextMonth").click()
-            await expect(page.locator("#calendarGrid button.cal-day").first).to_be_visible(
-                timeout=15000
-            )
-        else:
-            raise AssertionError(
-                f"Calendar did not reach a month containing {empty_day} within navigation limit"
-            )
-
-        await day_btn.first.click()
-        await expect(calendar_modal).to_be_hidden(timeout=15000)
+        await page.get_by_role("button", name="Save Call").click()
 
         entries = page.locator("#entriesList")
-        await expect(entries.locator(".entry-card")).to_have_count(0, timeout=30000)
-        await expect(entries).to_contain_text("No calls", timeout=10000)
+        await expect(entries).to_contain_text(marker, timeout=30000)
+
+        search_wrap = page.locator("#searchContainer")
+        await page.locator("#searchBtn").click()
+        await expect(search_wrap).to_be_visible()
+
+        await page.locator("#searchInput").fill(NO_MATCH_QUERY)
+
+        await expect(entries).to_contain_text("No matching calls found", timeout=30000)
+        await expect(entries).to_contain_text("Try adjusting your search terms")
+        await expect(entries.locator(".entry-card")).to_have_count(0)
+
+        await page.locator("#closeSearch").click()
+        await expect(search_wrap).to_be_hidden()
+
+        await expect(entries).to_contain_text(marker, timeout=30000)
+        await expect(entries.locator(".entry-card").filter(has_text=marker)).to_be_visible()
 
     finally:
         if context:

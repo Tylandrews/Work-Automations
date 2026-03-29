@@ -8,7 +8,6 @@ without real Autotask data. Set CALLLOG_TEST_NO_AUTOTASK_MOCK=1 to hit the real 
 import asyncio
 import json
 import os
-import re
 
 from tc_browser import is_headless_browser
 from playwright.async_api import async_playwright, expect
@@ -47,18 +46,38 @@ async def run_test() -> None:
                 {"organizations": [{"id": "e2e-tc009", "name": MOCK_ORG_NAME}]},
             )
 
-            async def fulfill_autotask_search(route):
-                await route.fulfill(
-                    status=200,
-                    content_type="application/json; charset=utf-8",
-                    body=payload,
-                )
+            def _is_autotask_search_url(url: str) -> bool:
+                u = url.lower()
+                return "/functions/v1/" in u and "autotask-search-companies" in u
 
-            autotask_fn_re = re.compile(
-                r".*/functions/v1/autotask-search-companies.*",
-                re.IGNORECASE,
-            )
-            await page.route(autotask_fn_re, fulfill_autotask_search)
+            # Browser preflights cross-origin GET (Authorization + apikey). Mock must answer
+            # OPTIONS and echo Access-Control-Allow-Origin or fetch fails → empty autocomplete.
+            async def fulfill_autotask_search(route):
+                req = route.request
+                origin = (req.headers.get("origin") or "").strip()
+                allow_origin = origin if origin else "*"
+                acrh = (req.headers.get("access-control-request-headers") or "").strip()
+                allow_headers = (
+                    acrh
+                    if acrh
+                    else "authorization, apikey, content-type, x-client-info, prefer"
+                )
+                base_cors = {
+                    "Access-Control-Allow-Origin": allow_origin,
+                    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+                    "Access-Control-Allow-Headers": allow_headers,
+                    "Access-Control-Max-Age": "86400",
+                }
+                if req.method.upper() == "OPTIONS":
+                    await route.fulfill(status=204, headers=base_cors)
+                    return
+                headers = {
+                    **base_cors,
+                    "Content-Type": "application/json; charset=utf-8",
+                }
+                await route.fulfill(status=200, headers=headers, body=payload)
+
+            await page.route(_is_autotask_search_url, fulfill_autotask_search)
 
         await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30000)
 

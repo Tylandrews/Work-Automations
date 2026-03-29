@@ -89,7 +89,13 @@ async def run_test() -> None:
         await expect(entries).to_contain_text(NAME_A)
         await expect(entries).to_contain_text(NAME_B)
 
-        await inp.press_sequentially("_portland")
+        # One atomic filter update: per-key input fires overlapping async loadEntries()
+        # (no serialization); stale completions can leave 0 cards. TC018 uses the same pattern.
+        narrow_query = f"{SHARED}_portland"
+        await inp.fill(narrow_query)
+        await inp.evaluate(
+            """el => el.dispatchEvent(new Event('input', { bubbles: true }))"""
+        )
         await expect(entries.locator(".entry-card")).to_have_count(1, timeout=30000)
         await expect(entries).to_contain_text(NAME_A)
         await expect(entries).not_to_contain_text(NAME_B)

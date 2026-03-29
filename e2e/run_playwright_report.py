@@ -3,17 +3,19 @@ Discover TC*.py Playwright tests, run them with the current Python interpreter, 
 playwright-e2e-report.html using the Call Log E2E report HTML template.
 
 Usage (from repo root, with app served on 4173):
-  py -3.10 testsprite_tests/run_playwright_report.py
+  py -3.10 e2e/run_playwright_report.py
 
 Options:
-  --output PATH     HTML output (default: testsprite_tests/playwright-e2e-report.html)
-  --template PATH   Report HTML template (default: testsprite_tests/testsprite-mcp-test-report.html)
+  --output PATH     HTML output (default: e2e/playwright-e2e-report.html)
+  --template PATH   Report HTML template (default: e2e/e2e-report-template.html)
   --skip-url-check  Do not probe CALLLOG_TEST_BASE_URL before running
   --timeout SEC     Per-test subprocess timeout (default: 420)
   --headed          Run Chromium with visible windows (ignored if --live-dashboard)
   --live-dashboard  Serve live-updating report page while tests run (headless Chromium)
   --live-port N     Dashboard bind port (default 9765)
   --no-open-live    Do not open browser for live dashboard
+  --workers N       Run up to N tests in parallel (default 1). Use 0 for auto (cap 8, min 1).
+  --json-summary P  Write Shields-compatible stats JSON (and meta for Pages) to PATH
 """
 from __future__ import annotations
 
@@ -26,14 +28,16 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.error
 import urllib.request
 import webbrowser
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from e2e_env_loader import load_e2e_dotenv
 from e2e_live_server import try_start_live_dashboard
 
 
@@ -108,7 +112,8 @@ class LiveRunState:
                 if failed_ids
                 else ("None — all listed tests passed." if self.run_done else "…")
             )
-            current = next((r.tc_id for r in self.rows if r.phase == "running"), None)
+            running_ids = [r.tc_id for r in self.rows if r.phase == "running"]
+            current = running_ids[0] if running_ids else None
             tests_out = []
             for r in self.rows:
                 tests_out.append(
@@ -132,8 +137,53 @@ class LiveRunState:
                 "total": total,
                 "risks": risks,
                 "current_tc_id": current,
+                "current_tc_ids": running_ids,
                 "tests": tests_out,
             }
+
+
+def github_actions_run_url() -> str | None:
+    server = (os.environ.get("GITHUB_SERVER_URL") or "").strip().rstrip("/")
+    repo = (os.environ.get("GITHUB_REPOSITORY") or "").strip()
+    run_id = (os.environ.get("GITHUB_RUN_ID") or "").strip()
+    if server and repo and run_id:
+        return f"{server}/{repo}/actions/runs/{run_id}"
+    return None
+
+
+def write_e2e_stats_json(
+    out_path: Path,
+    results: list[TestResult],
+    *,
+    source: str = "ci",
+) -> None:
+    """Write JSON for Shields endpoint badge and Website/e2e-stats.json consumers."""
+    total = len(results)
+    passed_n = sum(1 for r in results if r.passed)
+    failed_n = total - passed_n
+    color = "brightgreen" if failed_n == 0 else "red"
+    message = f"{passed_n}/{total} passing"
+    sha = (os.environ.get("GITHUB_SHA") or "").strip()
+    short_sha = sha[:7] if len(sha) >= 7 else (sha or None)
+    payload: dict[str, Any] = {
+        "schemaVersion": 1,
+        "label": "E2E",
+        "message": message,
+        "color": color,
+        "total": total,
+        "passed": passed_n,
+        "failed": failed_n,
+        "lastRunAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "commitSha": short_sha,
+        "commitShaFull": sha or None,
+        "runUrl": github_actions_run_url(),
+        "source": source,
+    }
+    out_path = out_path.expanduser()
+    if not out_path.is_absolute():
+        out_path = (repo_root() / out_path).resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def repo_root() -> Path:
@@ -158,7 +208,8 @@ def discover_tests() -> list[Path]:
 
 
 def load_plan_titles() -> dict[str, tuple[str, str]]:
-    plan_path = tests_dir() / "testsprite_frontend_test_plan.json"
+    """Optional titles/categories from e2e_scenarios.json for report UI."""
+    plan_path = tests_dir() / "e2e_scenarios.json"
     out: dict[str, tuple[str, str]] = {}
     if not plan_path.is_file():
         return out
@@ -215,6 +266,17 @@ def run_one(
     except subprocess.TimeoutExpired:
         dt = time.perf_counter() - t0
         return -1, "", f"Subprocess timeout after {timeout}s", dt
+
+
+def compute_parallel_workers(requested: int, num_scripts: int) -> int:
+    """Map CLI --workers to a safe pool size (1..num_scripts). requested==0 means auto."""
+    if num_scripts <= 0:
+        return 1
+    if requested == 0:
+        cpu_n = os.cpu_count() or 4
+        auto_cap = max(1, min(8, cpu_n))
+        return min(num_scripts, auto_cap)
+    return min(max(1, requested), num_scripts)
 
 
 def build_table_row(total: int, passed: int, failed: int) -> str:
@@ -388,10 +450,19 @@ LIVE_CLIENT_SNIPPET = r"""
     if (elBanner) {
       if (data.run_done) {
         elBanner.textContent = data.failed > 0 ? ' Run finished with failures.' : ' Run finished.'
-      } else if (data.current_tc_id) {
-        elBanner.textContent = ' Running ' + data.current_tc_id + '…'
       } else {
-        elBanner.textContent = ' Starting…'
+        var ids = data.current_tc_ids || []
+        if (ids.length === 0 && data.current_tc_id) ids = [data.current_tc_id]
+        if (ids.length === 1) {
+          elBanner.textContent = ' Running ' + ids[0] + '…'
+        } else if (ids.length > 1) {
+          var head = ids.slice(0, 2).join(', ')
+          var more = ids.length - 2
+          elBanner.textContent =
+            ' Running ' + head + (more > 0 ? ' (+' + more + ' more)…' : '…')
+        } else {
+          elBanner.textContent = ' Starting…'
+        }
       }
     }
     elTable.innerHTML = tableRow(data.total, data.passed, data.failed)
@@ -540,7 +611,7 @@ def main() -> int:
     parser.add_argument(
         "--template",
         type=Path,
-        default=tests_dir() / "testsprite-mcp-test-report.html",
+        default=tests_dir() / "e2e-report-template.html",
         help="Report HTML template path",
     )
     parser.add_argument("--skip-url-check", action="store_true")
@@ -578,7 +649,24 @@ def main() -> int:
         action="store_true",
         help="With --live-dashboard, print the URL but do not open a browser tab.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Run up to N TC*.py subprocesses in parallel (default 1). "
+        "Use 0 for auto: min(test count, max(1, min(8, CPU count))). "
+        "Many workers against one Supabase user may cause flaky tests.",
+    )
+    parser.add_argument(
+        "--json-summary",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Write Shields-compatible E2E summary JSON (plus total/passed/failed, run URL) for README/Pages.",
+    )
     args = parser.parse_args()
+
+    load_e2e_dotenv()
 
     base_url = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
 
@@ -601,12 +689,19 @@ def main() -> int:
     if args.limit and args.limit > 0:
         scripts = scripts[: args.limit]
 
+    if args.workers < 0:
+        print("--workers must be >= 0 (use 0 for auto)", file=sys.stderr)
+        return 2
+
+    n_workers = compute_parallel_workers(args.workers, len(scripts))
+
     if not (os.environ.get("CALLLOG_TEST_EMAIL") or "").strip() or not (
         os.environ.get("CALLLOG_TEST_PASSWORD") or ""
     ).strip():
         print(
             "Note: CALLLOG_TEST_EMAIL and/or CALLLOG_TEST_PASSWORD are unset. "
-            "Tests that sign in need both (no defaults in repo). Export them before expecting sign-in cases to pass.",
+            "Copy e2e/.env.example to e2e/.env and fill in values, "
+            "or export those variables. Sign-in tests need both.",
             file=sys.stderr,
         )
 
@@ -624,7 +719,10 @@ def main() -> int:
         if args.live_dashboard
         else ("headed (visible browser)" if args.headed else "headless")
     )
-    print(f"Running {len(scripts)} tests with {py_exe} (cwd={cwd}, {mode}) ...\n")
+    worker_note = f", workers={n_workers}" if n_workers > 1 else ""
+    print(
+        f"Running {len(scripts)} tests with {py_exe} (cwd={cwd}, {mode}{worker_note}) ...\n"
+    )
 
     live_state: LiveRunState | None = None
     httpd: Any = None
@@ -650,31 +748,48 @@ def main() -> int:
             webbrowser.open(live_url)
         time.sleep(0.45)
 
-    results: list[TestResult] = []
-    for i, script in enumerate(scripts):
+    print_lock = threading.Lock()
+
+    def run_single_indexed(i: int, script: Path) -> tuple[int, TestResult]:
         tid = tc_id_from_name(script.name)
         title, category = plan.get(tid, (script.stem.replace("_", " "), ""))
-        print(f"  {tid} {script.name} ... ", end="", flush=True)
         if live_state is not None:
             live_state.mark_running(i)
         code, out, err, dt = run_one(py_exe, script, cwd, args.timeout, child_env)
         ok = code == 0
         if live_state is not None:
             live_state.mark_done(i, ok, dt, code, out, err)
-        results.append(
-            TestResult(
-                tc_id=tid,
-                file_name=script.name,
-                title=title,
-                category=category,
-                passed=ok,
-                duration_sec=dt,
-                exit_code=code,
-                stdout=out,
-                stderr=err,
-            )
+        result = TestResult(
+            tc_id=tid,
+            file_name=script.name,
+            title=title,
+            category=category,
+            passed=ok,
+            duration_sec=dt,
+            exit_code=code,
+            stdout=out,
+            stderr=err,
         )
-        print("PASS" if ok else f"FAIL (exit {code})")
+        with print_lock:
+            suffix = "PASS" if ok else f"FAIL (exit {code})"
+            print(f"  {tid} {script.name} ... {suffix}", flush=True)
+        return i, result
+
+    results_by_index: dict[int, TestResult] = {}
+    if n_workers <= 1:
+        for i, script in enumerate(scripts):
+            idx, tr = run_single_indexed(i, script)
+            results_by_index[idx] = tr
+    else:
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [
+                executor.submit(run_single_indexed, i, script)
+                for i, script in enumerate(scripts)
+            ]
+            for fut in as_completed(futures):
+                idx, tr = fut.result()
+                results_by_index[idx] = tr
+    results = [results_by_index[i] for i in range(len(scripts))]
 
     if live_state is not None:
         live_state.finish()
@@ -691,6 +806,15 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html_body, encoding="utf-8")
     print(f"\nWrote {out_path.resolve()}")
+
+    if args.json_summary is not None:
+        write_e2e_stats_json(args.json_summary, results, source="ci")
+        js_path = args.json_summary.expanduser()
+        if not js_path.is_absolute():
+            js_path = (repo_root() / js_path).resolve()
+        else:
+            js_path = js_path.resolve()
+        print(f"Wrote JSON summary: {js_path}")
 
     passed_n = sum(1 for r in results if r.passed)
     print(f"Summary: {passed_n}/{len(results)} passed")

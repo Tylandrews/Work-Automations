@@ -45,14 +45,26 @@ async def run_test() -> None:
 
         await expect(page.locator("#callForm")).to_be_visible(timeout=10000)
 
-        await page.locator("#reportsBtn").click()
+        reports_btn = page.locator("#reportsBtn")
+        await expect(reports_btn).to_be_visible(timeout=10000)
+        await reports_btn.click()
+
         modal = page.locator("#reportsModal")
         await expect(modal).to_be_visible(timeout=15000)
         await expect(page.locator("#reportsTitle")).to_have_text("Reports")
 
+        # #reportsError stays in the layout while empty; wait for real content (message or cards).
+        await page.wait_for_function(
+            """() => {
+                const err = (document.getElementById('reportsError')?.textContent || '').trim();
+                const n = document.querySelectorAll('#reportsGrid .report-card').length;
+                return err.length > 0 || n > 0;
+            }""",
+            timeout=30000,
+        )
+
         err_text = (await page.locator("#reportsError").inner_text()).strip()
-        cards = page.locator("#reportsGrid .report-card")
-        n_cards = await cards.count()
+        n_cards = await page.locator("#reportsGrid .report-card").count()
         assert err_text or n_cards >= 1, "Expected reports error text or at least one report card"
 
     finally:

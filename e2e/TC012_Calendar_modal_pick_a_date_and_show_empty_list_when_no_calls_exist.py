@@ -1,11 +1,11 @@
 """
-TC016: With at least one call on the selected day, a search query that matches nothing shows the no-results copy.
+TC012: Open the calendar modal, pick a day with no saved calls, entries list shows empty state.
 
-Then closing search restores the normal list for that day.
+Uses a day far in the future so it is very unlikely to have rows in Supabase.
+EMPTY_DAY is computed in the browser so it matches the app's local calendar (toLocalDayKey).
 """
 import asyncio
 import os
-from datetime import datetime
 
 from tc_browser import is_headless_browser
 from playwright.async_api import async_playwright, expect
@@ -13,10 +13,6 @@ from playwright.async_api import async_playwright, expect
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
 LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "")
 LOGIN_PASSWORD = os.environ.get("CALLLOG_TEST_PASSWORD", "")
-
-MARKER = "TC016_visible_marker_z9k4"
-# Deliberately avoids matching the saved row (substring search is case-insensitive)
-NO_MATCH_QUERY = "zzzz_nomatch_94f2b1c8d7e6_qwerty"
 
 
 async def run_test() -> None:
@@ -59,32 +55,40 @@ async def run_test() -> None:
 
         await expect(page.locator("#callForm")).to_be_visible(timeout=10000)
 
-        await page.locator("#name").fill(MARKER)
-        await page.locator("#organization").fill("TC016 Org")
-        await page.locator("#mobile").fill("555-0160")
-        await page.locator("#supportRequest").fill("TC016 support line")
-        await page.locator("#callDate").fill(datetime.now().strftime("%Y-%m-%dT%H:%M"))
+        empty_day = await page.evaluate(
+            """() => {
+                const d = new Date();
+                d.setDate(d.getDate() + 550);
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                return `${y}-${m}-${day}`;
+            }"""
+        )
 
-        await page.get_by_role("button", name="Save Call").click()
+        await page.locator("#historyCalendarBtn").click()
+        calendar_modal = page.locator("#calendarModal")
+        await expect(calendar_modal).to_be_visible()
+
+        day_btn = page.locator(f'#calendarGrid button.cal-day[data-day="{empty_day}"]')
+        month_label = page.locator("#calendarMonthLabel")
+        cal_next = page.locator("#calNextMonth")
+        for _ in range(48):
+            if await day_btn.count() > 0:
+                break
+            prev_text = (await month_label.inner_text()).strip()
+            await cal_next.click()
+            # Header updates with the grid after getEntries(); stay in sync with script.js renderCalendar
+            await expect(month_label).not_to_have_text(prev_text, timeout=25000)
+
+        await expect(day_btn.first).to_be_visible(timeout=90000)
+
+        await day_btn.first.click()
+        await expect(calendar_modal).to_be_hidden(timeout=15000)
 
         entries = page.locator("#entriesList")
-        await expect(entries).to_contain_text(MARKER, timeout=30000)
-
-        search_wrap = page.locator("#searchContainer")
-        await page.locator("#searchBtn").click()
-        await expect(search_wrap).to_be_visible()
-
-        await page.locator("#searchInput").fill(NO_MATCH_QUERY)
-
-        await expect(entries).to_contain_text("No matching calls found", timeout=30000)
-        await expect(entries).to_contain_text("Try adjusting your search terms")
-        await expect(entries.locator(".entry-card")).to_have_count(0)
-
-        await page.locator("#closeSearch").click()
-        await expect(search_wrap).to_be_hidden()
-
-        await expect(entries).to_contain_text(MARKER, timeout=30000)
-        await expect(entries.locator(".entry-card").filter(has_text=MARKER)).to_be_visible()
+        await expect(entries.locator(".entry-card")).to_have_count(0, timeout=30000)
+        await expect(entries).to_contain_text("No calls", timeout=10000)
 
     finally:
         if context:

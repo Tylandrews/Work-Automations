@@ -342,6 +342,125 @@
         line-height: 1.55;
       }
 
+      .quality {
+        margin: 2.75rem 0 2rem;
+        padding: 1.75rem 1.5rem;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
+      }
+
+      .quality h2 {
+        margin: 0 0 1.25rem;
+        font-size: clamp(1.35rem, 3.5vw, 1.75rem);
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        color: var(--ink);
+      }
+
+      .quality__layout {
+        display: grid;
+        gap: 1.5rem;
+        align-items: center;
+      }
+
+      @media (min-width: 720px) {
+        .quality__layout {
+          grid-template-columns: auto 1fr;
+          gap: 2rem;
+        }
+      }
+
+      .quality__ring-wrap {
+        display: flex;
+        justify-content: center;
+      }
+
+      .quality__ring {
+        width: 140px;
+        height: 140px;
+        transform: rotate(-90deg);
+      }
+
+      .quality__ring-bg {
+        fill: none;
+        stroke: rgba(32, 29, 29, 0.08);
+        stroke-width: 10;
+      }
+
+      .quality__ring-fg {
+        fill: none;
+        stroke-width: 10;
+        stroke-linecap: round;
+        stroke: var(--electric);
+        transition: stroke-dashoffset 0.85s cubic-bezier(0.33, 1, 0.68, 1);
+      }
+
+      .quality__ring-fg--ok {
+        stroke: #16a34a;
+      }
+
+      .quality__ring-fg--bad {
+        stroke: #dc2626;
+      }
+
+      .quality__ring-fg--idle {
+        stroke: var(--ink-muted);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .quality__ring-fg {
+          transition: none;
+        }
+      }
+
+      .quality__ring-label {
+        transform: rotate(90deg);
+        transform-origin: 70px 70px;
+        font-family: "Haffer Mono", ui-monospace, monospace;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        fill: var(--ink);
+        text-anchor: middle;
+        dominant-baseline: central;
+      }
+
+      .quality__summary {
+        margin: 0 0 0.65rem;
+        font-size: 1.0625rem;
+        line-height: 1.55;
+        color: var(--ink);
+      }
+
+      .quality__meta {
+        margin: 0 0 1rem;
+        font-size: 0.875rem;
+        color: var(--ink-muted);
+        line-height: 1.5;
+      }
+
+      .quality__counts {
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        color: var(--ink);
+      }
+
+      .quality__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem 1rem;
+        align-items: center;
+      }
+
+      .quality__actions a {
+        font-family: "Haffer Mono", ui-monospace, monospace;
+        font-size: 0.6875rem;
+        font-weight: 500;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
       footer {
         margin-top: 3rem;
         padding-top: 1.75rem;
@@ -467,6 +586,50 @@
             </p>
           </div>
         </div>
+
+        <section class="quality" aria-labelledby="quality-heading">
+          <p class="eyebrow">Continuous quality</p>
+          <h2 id="quality-heading">Automated checks</h2>
+          <div class="quality__layout">
+            <div class="quality__ring-wrap">
+              <svg
+                class="quality__ring"
+                viewBox="0 0 140 140"
+                role="img"
+                aria-labelledby="quality-ring-title"
+              >
+                <title id="quality-ring-title">End-to-end test pass rate</title>
+                <circle class="quality__ring-bg" cx="70" cy="70" r="54" />
+                <circle
+                  id="qualityRingFg"
+                  class="quality__ring-fg quality__ring-fg--idle"
+                  cx="70"
+                  cy="70"
+                  r="54"
+                  stroke-dasharray="339.292"
+                  stroke-dashoffset="339.292"
+                />
+                <text class="quality__ring-label" x="70" y="70" id="qualityRingPct">—</text>
+              </svg>
+            </div>
+            <div>
+              <p class="quality__summary" id="qualitySummary" aria-live="polite">
+                Loading latest results from this deployment…
+              </p>
+              <p class="quality__meta" id="qualityMeta" aria-live="polite"></p>
+              <div class="quality__actions">
+                <a
+                  id="qualityRunLink"
+                  href="https://github.com/Tylandrews/Work-Automations/actions/workflows/deploy-pages.yml"
+                  >Workflow runs</a
+                >
+                <a href="https://github.com/Tylandrews/Work-Automations/tree/main/e2e"
+                  >Test suite</a
+                >
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
 
       <footer>
@@ -637,6 +800,137 @@
         setTimeout(seed, 350);
         setTimeout(seed, 2800);
       });
+    </script>
+    <script>
+      (function () {
+        var summaryEl = document.getElementById("qualitySummary");
+        var metaEl = document.getElementById("qualityMeta");
+        var ringFg = document.getElementById("qualityRingFg");
+        var ringPct = document.getElementById("qualityRingPct");
+        var runLink = document.getElementById("qualityRunLink");
+        var reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+        var C = 2 * Math.PI * 54;
+        var titleEl = document.getElementById("quality-ring-title");
+
+        function setRing(ratio, cls, doAnimate) {
+          var r = Math.max(0, Math.min(1, ratio));
+          ringFg.setAttribute("stroke-dasharray", String(C));
+          ringFg.setAttribute("class", "quality__ring-fg " + cls);
+          var offset = C * (1 - r);
+          if (doAnimate && !reduce.matches) {
+            ringFg.style.strokeDashoffset = String(C);
+            ringFg.getBoundingClientRect();
+            requestAnimationFrame(function () {
+              ringFg.style.strokeDashoffset = String(offset);
+            });
+          } else {
+            ringFg.style.strokeDashoffset = String(offset);
+          }
+        }
+
+        function animateCount(from, to, durationMs, onUpdate) {
+          if (reduce.matches || durationMs <= 0) {
+            onUpdate(to);
+            return;
+          }
+          var start = performance.now();
+          function frame(t) {
+            var u = Math.min(1, (t - start) / durationMs);
+            var eased = 1 - Math.pow(1 - u, 2);
+            onUpdate(Math.round(from + (to - from) * eased));
+            if (u < 1) requestAnimationFrame(frame);
+          }
+          requestAnimationFrame(frame);
+        }
+
+        function applyData(data) {
+          var source = data.source || "";
+          var total = typeof data.total === "number" ? data.total : 0;
+          var passed = data.passed;
+          var failed = data.failed;
+          var full =
+            typeof passed === "number" &&
+            typeof failed === "number" &&
+            source !== "inventory";
+
+          if (runLink && data.runUrl) {
+            runLink.href = data.runUrl;
+            runLink.textContent = "This run on GitHub";
+          }
+
+          if (full) {
+            var rate = total > 0 ? passed / total : 0;
+            var ok = failed === 0;
+            setRing(
+              rate,
+              ok ? "quality__ring-fg--ok" : "quality__ring-fg--bad",
+              true
+            );
+            ringPct.textContent = Math.round(rate * 100) + "%";
+            if (titleEl) {
+              titleEl.textContent =
+                passed +
+                " of " +
+                total +
+                " end-to-end scenarios passed on the last deploy.";
+            }
+            summaryEl.innerHTML =
+              '<span class="quality__counts" id="qPassed">0</span> of <span class="quality__counts">' +
+              total +
+              "</span> Playwright scenarios passed on the last Pages deploy.";
+            animateCount(0, passed, 700, function (v) {
+              var el = document.getElementById("qPassed");
+              if (el) el.textContent = String(v);
+            });
+            var meta = [];
+            if (data.lastRunAt)
+              meta.push(
+                "Finished: " +
+                  data.lastRunAt.replace("T", " ").replace("Z", " UTC")
+              );
+            if (data.commitSha) meta.push("Commit " + data.commitSha);
+            metaEl.textContent = meta.join(" · ");
+          } else {
+            setRing(0, "quality__ring-fg--idle", false);
+            ringPct.textContent = total ? String(total) : "—";
+            if (titleEl) {
+              titleEl.textContent =
+                (total || 0) +
+                " automated scenarios are defined in the repository.";
+            }
+            summaryEl.textContent =
+              (data.message || (total ? total + " scenarios" : "Scenarios")) +
+              ". Full pass/fail counts appear here when CI runs the suite with test credentials.";
+            var m = [];
+            if (data.lastRunAt)
+              m.push(
+                "Updated: " +
+                  data.lastRunAt.replace("T", " ").replace("Z", " UTC")
+              );
+            if (data.commitSha) m.push("Commit " + data.commitSha);
+            metaEl.textContent = m.join(" · ");
+          }
+        }
+
+        function fallback() {
+          setRing(0, "quality__ring-fg--idle", false);
+          ringPct.textContent = "—";
+          if (titleEl) {
+            titleEl.textContent = "End-to-end test status unavailable.";
+          }
+          summaryEl.textContent =
+            "Results are loaded from e2e-stats.json after each deploy. Use the links below to open GitHub Actions and the Playwright tests folder.";
+          metaEl.textContent = "";
+        }
+
+        fetch("e2e-stats.json", { cache: "no-store" })
+          .then(function (r) {
+            if (!r.ok) throw new Error("stats");
+            return r.json();
+          })
+          .then(applyData)
+          .catch(fallback);
+      })();
     </script>
   </body>
 </html>

@@ -3,6 +3,8 @@ let currentFilter = '';
 let editingEntryId = null;
 let selectedDay = null; // local day key: YYYY-MM-DD
 let calendarMonth = null; // Date representing first day of visible month
+/** Serializes prev/next month clicks so rapid navigation still advances one month per click */
+let calendarMonthNavChain = Promise.resolve()
 let confirmResolver = null;
 let supabaseClient = null;
 let supabaseRealtimeChannel = null;
@@ -32,6 +34,8 @@ function isPiiWriteAllowed() {
 // Autocomplete state
 const autocompleteCache = new Map(); // query -> { results, timestamp }
 const AUTOCACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+/** Debounce before hitting the network; instant path uses localStorage + memory cache first */
+const AUTOCOMPLETE_DEBOUNCE_MS = 150
 let autocompleteDebounceTimer = null;
 let autocompleteAbortController = null;
 let autocompleteActiveInstance = null; // Currently active autocomplete instance
@@ -100,6 +104,54 @@ function addToCachedAutotaskCompanies(organizations) {
     } catch (err) {
         // Ignore localStorage errors
     }
+}
+
+function loadPersistentAutotaskCompanies() {
+    try {
+        const raw = localStorage.getItem(CACHED_AUTOTASK_COMPANIES_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((org) => ({
+                id: String(org?.id || ''),
+                name: String(org?.name || '').trim()
+            }))
+            .filter((org) => org.name);
+    } catch (err) {
+        return [];
+    }
+}
+
+function filterOrganizationsByQuerySubstring(organizations, queryLower, limit) {
+    const q = String(queryLower || '').trim().toLowerCase();
+    if (q.length < 2) return [];
+    const out = [];
+    const seen = new Set();
+    for (const org of organizations) {
+        const name = String(org?.name || '').trim();
+        const n = name.toLowerCase();
+        if (!n.includes(q)) continue;
+        if (seen.has(n)) continue;
+        seen.add(n);
+        out.push({ id: String(org?.id || ''), name });
+        if (out.length >= limit) break;
+    }
+    return out;
+}
+
+/**
+ * Synchronous suggestions from RAM cache or persisted company list (no network).
+ */
+function getInstantAutocompleteResults(query, limit = 20) {
+    const trimmed = String(query || '').trim();
+    if (trimmed.length < 2) return [];
+    const cacheKey = trimmed.toLowerCase();
+    const cached = autocompleteCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < AUTOCACHE_TTL_MS) {
+        return cached.results;
+    }
+    return filterOrganizationsByQuerySubstring(loadPersistentAutotaskCompanies(), cacheKey, limit);
 }
 
 function useSupabase() {
@@ -346,17 +398,16 @@ async function searchOrganizationsViaProxy(query, limit = 20) {
         return [];
     }
 
-    const supabase = getSupabase();
-    if (!supabase) {
-        console.warn('Supabase not configured. Autocomplete disabled.');
-        return [];
-    }
-
-    // Check cache first
     const cacheKey = query.toLowerCase().trim();
     const cached = autocompleteCache.get(cacheKey);
     if (cached && (Date.now() - cached.timestamp) < AUTOCACHE_TTL_MS) {
         return cached.results;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+        console.warn('Supabase not configured. Autocomplete disabled.');
+        return [];
     }
 
     // Get Supabase session for authentication
@@ -640,7 +691,7 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
                     hideDropdown();
                 }
             }
-        }, 300); // 300ms debounce
+        }, AUTOCOMPLETE_DEBOUNCE_MS);
     }
 
     // Input event handler
@@ -658,6 +709,11 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
             return;
         }
 
+        const instantOrgs = getInstantAutocompleteResults(query, 20);
+        if (instantOrgs.length > 0) {
+            renderSuggestions(instantOrgs, query);
+        }
+
         performSearch(query);
     });
 
@@ -665,6 +721,13 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
     input.addEventListener('focus', () => {
         autocompleteActiveInstance = inputId;
         const query = input.value.trim();
+        if (query.length >= 2) {
+            const inst = getInstantAutocompleteResults(query, 20);
+            if (inst.length > 0) {
+                renderSuggestions(inst, query);
+                return;
+            }
+        }
         if (query.length >= 2 && suggestions.length > 0) {
             showDropdown();
         }
@@ -683,8 +746,12 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
     input.addEventListener('keydown', (e) => {
         if (!dropdown.classList.contains('show')) {
             if (e.key === 'ArrowDown' && input.value.trim().length >= 2) {
-                // Trigger search if dropdown not visible
-                performSearch(input.value.trim());
+                const qv = input.value.trim();
+                const inst = getInstantAutocompleteResults(qv, 20);
+                if (inst.length > 0) {
+                    renderSuggestions(inst, qv);
+                }
+                performSearch(qv);
                 e.preventDefault();
             }
             return;
@@ -1607,8 +1674,16 @@ function setupEventListeners() {
     document.getElementById('calendarModal')?.addEventListener('click', (e) => {
         if (e.target?.id === 'calendarModal') closeCalendar();
     });
-    document.getElementById('calPrevMonth')?.addEventListener('click', () => { void navigateCalendarMonth(-1); });
-    document.getElementById('calNextMonth')?.addEventListener('click', () => { void navigateCalendarMonth(1); });
+    document.getElementById('calPrevMonth')?.addEventListener('click', () => {
+        calendarMonthNavChain = calendarMonthNavChain
+            .then(() => navigateCalendarMonth(-1))
+            .catch((err) => console.warn('[calendar] navigate prev', err));
+    });
+    document.getElementById('calNextMonth')?.addEventListener('click', () => {
+        calendarMonthNavChain = calendarMonthNavChain
+            .then(() => navigateCalendarMonth(1))
+            .catch((err) => console.warn('[calendar] navigate next', err));
+    });
     
     // Confirm modal
     document.getElementById('closeConfirmModal')?.addEventListener('click', () => closeConfirm(false));
@@ -1777,11 +1852,12 @@ async function renderCalendar(monthDate) {
 
     const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
 
-    label.textContent = monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-
     const entries = await getEntries();
     const daysWithCalls = getDaysWithCalls(entries);
     const todayKey = getTodayKey();
+
+    // Update header only after data is loaded so it stays in sync with the grid (avoids stale cells)
+    label.textContent = monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
     // Build a 6x7 grid, Monday-first
     // JS getDay(): Sun=0..Sat=6. Convert so Mon=0..Sun=6
@@ -2912,19 +2988,21 @@ async function refreshReports() {
         grid.innerHTML = '';
         return;
     }
+
+    const loadingCardsHtml = `
+        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+    `;
+    grid.innerHTML = loadingCardsHtml;
+
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
         if (errEl) errEl.textContent = 'Sign in to load reports.';
         grid.innerHTML = '';
         return;
     }
-
-    grid.innerHTML = `
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-    `;
 
     try {
         const [tw, tm, uw, um] = await Promise.all([

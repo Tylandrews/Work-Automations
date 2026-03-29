@@ -4,6 +4,11 @@ Call Log is an Electron desktop application for logging and reviewing telephone 
 
 Daily work tracking is maintained in [`TIMESHEET.md`](TIMESHEET.md).
 
+[![Validate](https://github.com/Tylandrews/Work-Automations/actions/workflows/validate.yml/badge.svg)](https://github.com/Tylandrews/Work-Automations/actions/workflows/validate.yml)
+[![E2E (Pages)](https://img.shields.io/endpoint?url=https%3A%2F%2Ftylandrews.github.io%2FWork-Automations%2Fe2e-stats.json)](https://tylandrews.github.io/Work-Automations/)
+
+The **E2E** badge reads [`e2e-stats.json`](https://tylandrews.github.io/Work-Automations/e2e-stats.json) produced on each deploy: pass/fail when CI runs Playwright with secrets, otherwise a scenario count.
+
 | Resource | Link |
 | -------- | ---- |
 | Repository | [github.com/Tylandrews/Work-Automations](https://github.com/Tylandrews/Work-Automations) |
@@ -65,7 +70,7 @@ This repository uses GitHub Actions for validation and release automation.
 
 - [`.github/workflows/validate.yml`](.github/workflows/validate.yml) validates JavaScript syntax and project setup on pull requests and pushes to `main`
 - [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml) builds and publishes Windows release assets when a tag in the format `vX.Y.Z` is pushed
-- [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) deploys the static `Website/` folder to GitHub Pages
+- [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) deploys the static `Website/` folder to GitHub Pages, runs `npm ci`, optionally runs the full Playwright suite (when secrets below are set), and writes `Website/e2e-stats.json` for the marketing site and the README badge
 
 #### Release policy (version and tag alignment)
 
@@ -89,6 +94,15 @@ Set these GitHub repository secrets before running release builds:
 - `SUPABASE_ANON_KEY`
 
 The release workflow creates `supabaseConfig.js` from these secrets at build time, then runs the existing build scripts.
+
+#### Optional repository secrets (GitHub Pages E2E)
+
+To have the deploy workflow run the full Playwright end-to-end suite and publish pass/fail counts to the live site and badge, set these in addition to `SUPABASE_URL` and `SUPABASE_ANON_KEY`:
+
+- `CALLLOG_TEST_EMAIL` — same dedicated test account as local Playwright setup (`CALLLOG_TEST_*` in `e2e/.env` or the process environment; never commit real passwords)
+- `CALLLOG_TEST_PASSWORD`
+
+If any of these are missing, deploy still succeeds: an inventory-only `e2e-stats.json` is written (scenario count from `e2e/TC*.py`). The E2E step uses `continue-on-error` so a failing test run does not block the site from updating.
 
 #### Release outputs and recovery
 

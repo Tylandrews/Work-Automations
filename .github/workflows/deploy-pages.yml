@@ -32,6 +32,65 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Playwright
+        run: |
+          pip install -r e2e/requirements-ci.txt
+          playwright install chromium
+
+      - name: Run E2E and write Website/e2e-stats.json
+        id: e2e_stats
+        continue-on-error: true
+        env:
+          CALLLOG_TEST_EMAIL: ${{ secrets.CALLLOG_TEST_EMAIL }}
+          CALLLOG_TEST_PASSWORD: ${{ secrets.CALLLOG_TEST_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CALLLOG_TEST_BASE_URL: http://localhost:4173
+        run: |
+          set -e
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ] \
+            || [ -z "${CALLLOG_TEST_EMAIL:-}" ] || [ -z "${CALLLOG_TEST_PASSWORD:-}" ]; then
+            echo "Skipping full E2E (missing CALLLOG_TEST_* or Supabase secrets)."
+            exit 0
+          fi
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+
+          cfg = {
+              "SUPABASE_URL": os.environ["SUPABASE_URL"],
+              "SUPABASE_ANON_KEY": os.environ["SUPABASE_ANON_KEY"],
+          }
+          pathlib.Path("supabaseConfig.js").write_text(
+              "window.supabaseConfig = " + json.dumps(cfg, indent=2) + ";\n",
+              encoding="utf-8",
+          )
+          PY
+          python e2e/run_e2e_full.py --no-open-report --static-report --headless -- \
+            --json-summary Website/e2e-stats.json
+
+      - name: Fallback inventory-only e2e-stats.json
+        if: always()
+        run: |
+          if [ ! -f Website/e2e-stats.json ]; then
+            python e2e/write_e2e_inventory_stats.py --output Website/e2e-stats.json
+          fi
+
       - name: Ensure GitHub Pages site exists (GitHub Actions / workflow)
         env:
           GH_TOKEN: ${{ github.token }}

@@ -17,8 +17,8 @@
     "build-mac": "electron-builder --mac",
     "build-linux": "electron-builder --linux",
     "clean": "node scripts/clean-dist.js",
-    "test:e2e": "py -3.10 testsprite_tests/run_e2e_full.py",
-    "test:e2e:report": "py -3.10 testsprite_tests/run_playwright_report.py"
+    "test:e2e": "py -3.10 e2e/run_e2e_full.py",
+    "test:e2e:report": "py -3.10 e2e/run_playwright_report.py"
   },
   "keywords": [
     "electron",

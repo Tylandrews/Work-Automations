@@ -7,8 +7,12 @@ Thumbs.db
 supabaseConfig.js
 .test-userdata/
 
-# E2E / TestSprite: never commit machine-generated reports, proxy creds, or API keys
-testsprite_tests/tmp/
-testsprite_tests/__pycache__/
+# E2E: never commit secrets, machine-generated reports, or proxy creds
+e2e/.env
+e2e/tmp/
+e2e/__pycache__/
 **/__pycache__/
 *.pyc
+
+# Generated on CI for GitHub Pages / Shields (optional local runs)
+Website/e2e-stats.json

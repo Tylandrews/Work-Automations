@@ -2,20 +2,33 @@
 One command: optional static server, Playwright E2E, live Call Log dashboard in the browser.
 
 From repo root:
-  py -3.10 testsprite_tests/run_e2e_full.py
+  py -3.10 e2e/run_e2e_full.py
   npm run test:e2e
 
 The default UI is a local live dashboard (Call Log E2E report layout) that updates
 as each test finishes. Playwright runs headless.
 
 Static HTML + visible Chromium per test instead:
-  py -3.10 testsprite_tests/run_e2e_full.py --static-report
+  py -3.10 e2e/run_e2e_full.py --static-report
 
-CI (no browser tabs):
-  py -3.10 testsprite_tests/run_e2e_full.py --no-open-report
+CI (no browser tabs, headless, JSON for GitHub Pages):
+  py -3.10 e2e/run_e2e_full.py --no-open-report --static-report --headless -- \\
+    --json-summary Website/e2e-stats.json
+
+CI (no browser tabs, default live dashboard):
+  py -3.10 e2e/run_e2e_full.py --no-open-report
 
 Extra args are forwarded to run_playwright_report.py (place after -- if using npm):
   npm run test:e2e -- --limit 3
+
+Run several TC*.py subprocesses in parallel (faster wall time; same Supabase user may flake if N is high):
+  py -3.10 e2e/run_e2e_full.py -- --workers 6
+  npm run test:e2e -- --workers 0
+
+--workers 0 picks an automatic cap (min 1, max 8, bounded by CPU and test count).
+
+Sign-in tests need CALLLOG_TEST_EMAIL and CALLLOG_TEST_PASSWORD. Set them in the shell
+or copy e2e/.env.example to e2e/.env (gitignored).
 """
 from __future__ import annotations
 
@@ -29,6 +42,8 @@ import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
+
+from e2e_env_loader import load_e2e_dotenv
 
 
 def repo_root() -> Path:
@@ -105,6 +120,8 @@ def main() -> int:
         help="Do not open any browser tab (for live mode: pass --no-open-live to the runner)",
     )
     args, report_args = parser.parse_known_args()
+
+    load_e2e_dotenv()
 
     root = repo_root()
     report_script = tests_dir() / "run_playwright_report.py"
