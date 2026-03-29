@@ -1,0 +1,18 @@
+{
+  "status": "local-only",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:4173",
+  "loginUser": "YOUR_TEST_EMAIL",
+  "loginPassword": "YOUR_TEST_PASSWORD",
+  "executionArgs": {
+    "projectName": "Call Log",
+    "projectPath": "",
+    "testIds": [],
+    "additionalInstruction": "",
+    "serverMode": "production",
+    "envs": {}
+  },
+  "serverPort": 0,
+  "proxy": ""
+}
