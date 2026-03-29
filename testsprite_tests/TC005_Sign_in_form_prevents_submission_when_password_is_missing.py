@@ -11,7 +11,9 @@ from tc_browser import is_headless_browser
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
-LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "andrews.s.tyler@gmail.com")
+LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "")
+# Non-secret placeholder so #authEmail is valid while we assert #authPassword is missing
+_PLACEHOLDER_EMAIL = "e2e-tc005-placeholder@example.com"
 
 
 async def run_test() -> None:
@@ -40,7 +42,7 @@ async def run_test() -> None:
         await page.locator("#authBrandCard").click()
         await expect(page.locator("#authFormCard")).to_have_attribute("aria-hidden", "false")
 
-        await page.locator("#authEmail").fill(LOGIN_EMAIL)
+        await page.locator("#authEmail").fill(LOGIN_EMAIL or _PLACEHOLDER_EMAIL)
         await page.locator("#authPassword").fill("")
         await page.locator("#authSignInBtn").click()
 

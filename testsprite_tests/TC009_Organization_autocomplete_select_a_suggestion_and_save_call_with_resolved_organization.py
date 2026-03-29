@@ -14,8 +14,8 @@ from tc_browser import is_headless_browser
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
-LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "andrews.s.tyler@gmail.com")
-LOGIN_PASSWORD = os.environ.get("CALLLOG_TEST_PASSWORD", "123456")
+LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "")
+LOGIN_PASSWORD = os.environ.get("CALLLOG_TEST_PASSWORD", "")
 ORG_QUERY = os.environ.get("CALLLOG_TEST_ORG_QUERY", "AC")
 MOCK_ORG_NAME = "ACME Org TC009"
 NO_MOCK = os.environ.get("CALLLOG_TEST_NO_AUTOTASK_MOCK", "").strip().lower() in ("1", "true", "yes")

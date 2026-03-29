@@ -12,8 +12,8 @@ from tc_browser import is_headless_browser
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
-LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "andrews.s.tyler@gmail.com")
-LOGIN_PASSWORD = os.environ.get("CALLLOG_TEST_PASSWORD", "123456")
+LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "")
+LOGIN_PASSWORD = os.environ.get("CALLLOG_TEST_PASSWORD", "")
 
 # Per-run unique core so older test data on the same day cannot match the filter
 _CORE = secrets.token_hex(6)

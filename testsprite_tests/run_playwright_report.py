@@ -601,6 +601,15 @@ def main() -> int:
     if args.limit and args.limit > 0:
         scripts = scripts[: args.limit]
 
+    if not (os.environ.get("CALLLOG_TEST_EMAIL") or "").strip() or not (
+        os.environ.get("CALLLOG_TEST_PASSWORD") or ""
+    ).strip():
+        print(
+            "Note: CALLLOG_TEST_EMAIL and/or CALLLOG_TEST_PASSWORD are unset. "
+            "Tests that sign in need both (no defaults in repo). Export them before expecting sign-in cases to pass.",
+            file=sys.stderr,
+        )
+
     if args.live_dashboard and args.headed:
         print(
             "Note: --live-dashboard keeps Playwright headless; ignoring --headed.",

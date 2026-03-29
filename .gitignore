@@ -6,3 +6,9 @@ Thumbs.db
 # Supabase config - keep local, but will be bundled in production builds
 supabaseConfig.js
 .test-userdata/
+
+# E2E / TestSprite: never commit machine-generated reports, proxy creds, or API keys
+testsprite_tests/tmp/
+testsprite_tests/__pycache__/
+**/__pycache__/
+*.pyc

@@ -402,9 +402,6 @@ async function searchOrganizationsViaProxy(query, limit = 20) {
 
     try {
         const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
-        // Debug (safe): confirm headers are present without logging sensitive values
-        // Remove later once stable.
-        console.debug('[autotask-autocomplete] session?', !!session, 'tokenLen', String(session?.access_token || '').length, 'apikey?', anonKey.length > 0);
         const isJwtLike = (token) => typeof token === 'string' && token.split('.').length === 3;
         let response = null;
         for (const endpoint of edgeFunctionCandidates) {

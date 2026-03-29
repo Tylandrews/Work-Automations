@@ -105,7 +105,7 @@ Several failures share the same root cause: **inconsistent auth completion and o
 
 1. **Auth and browser context:** The app is built for Electron; running the same HTML in a remote headless browser plus tunnel can diverge (storage, timing, CORS, Supabase rate limits). Many failures are "could not reach main UI" rather than feature-level assertions.
 
-2. **Test data and configuration:** `testsprite_tests/tmp/config.json` stores TestSprite login placeholders used for scripted sign-in. **Do not commit real passwords**; rotate any credential that was ever placed in that file and prefer environment-based injection for CI.
+2. **Test data and configuration:** Use `CALLLOG_TEST_EMAIL` and `CALLLOG_TEST_PASSWORD` for Playwright sign-in tests. See `testsprite_tests/config.example.json` for optional TestSprite-shaped fields (copy to a **local** path under `tmp/` if your tooling requires it; `testsprite_tests/tmp/` is gitignored). Never commit real passwords or API keys.
 
 3. **Invalid-login messaging (TC002):** If the product should always surface a visible error for bad passwords, align UI copy with what tests assert (e.g. explicit text), or relax assertions to `role="alert"` / `#authError` content.
 
