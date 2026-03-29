@@ -1,0 +1,140 @@
+version: "2"
+type: frontend
+tech_stack:
+  - JavaScript (ES modules via script tags)
+  - HTML5
+  - CSS3
+  - Electron (desktop shell; UI is loadFile index.html)
+  - Supabase JS client (auth, Postgres, Realtime)
+  - GSAP
+  - Chart.js
+routes:
+  - path: /
+    file: index.html
+    auth_required: false
+    description: Single-page Call Log UI; auth screen or main shell shown by app state (not URL routing)
+features:
+  - name: Supabase sign-in and sign-up
+    description: Email and password authentication when Supabase is configured in supabaseConfig.js
+    files:
+      - index.html
+      - script.js
+      - supabaseConfig.js
+    entry_route: /
+    user_interactions:
+      - Open sign-in card from brand area when shown
+      - Enter email and password
+      - Click Log in or Sign up
+      - See validation or auth error messages
+      - Choose Continue with local storage when Supabase is not configured
+    api_calls:
+      - method: POST
+        endpoint: Supabase Auth (signUp / signInWithPassword)
+    auth_required: false
+  - name: Call intake form
+    description: Capture caller name, organization, phone, optional device, support request, notes, and call datetime
+    files:
+      - index.html
+      - script.js
+    entry_route: /
+    user_interactions:
+      - Fill required and optional fields on the form
+      - Use organization autocomplete when available
+      - Clear the form or submit to log a call
+      - Adjust date and time for the call
+    api_calls:
+      - method: POST
+        endpoint: Supabase REST (insert into calls) when cloud sync is active
+      - method: GET
+        endpoint: Supabase REST (read calls) when cloud sync is active
+    auth_required: false
+  - name: History and calendar
+    description: Browse calls by day, open date picker, navigate previous and next day
+    files:
+      - index.html
+      - script.js
+    entry_route: /
+    user_interactions:
+      - Change selected day with arrows or Today
+      - Open calendar modal and pick a date
+      - View entries list for the selected day
+    api_calls:
+      - method: GET
+        endpoint: Supabase REST (filtered calls by date) when using cloud
+    auth_required: false
+  - name: Search calls
+    description: Search within the selected day in the history panel
+    files:
+      - index.html
+      - script.js
+    entry_route: /
+    user_interactions:
+      - Open search, type query, close search
+    api_calls: []
+    auth_required: false
+  - name: Edit and delete call entries
+    description: Modal to edit fields or delete with confirmation
+    files:
+      - index.html
+      - script.js
+    entry_route: /
+    user_interactions:
+      - Open an entry, change fields, save or cancel
+      - Delete with confirm dialog
+    api_calls:
+      - method: PATCH
+        endpoint: Supabase REST (update call row) when using cloud
+      - method: DELETE
+        endpoint: Supabase REST (delete call row) when using cloud
+    auth_required: false
+  - name: Statistics modal
+    description: Summary stats for the selected day or scope
+    files:
+      - index.html
+      - script.js
+    entry_route: /
+    user_interactions:
+      - Open statistics from toolbar and close modal
+    api_calls: []
+    auth_required: false
+  - name: Reports overlay
+    description: Scheduled or on-demand reporting UI when backend is configured
+    files:
+      - index.html
+      - script.js
+    entry_route: /
+    user_interactions:
+      - Open Reports, refresh, optionally run reports when controls are visible
+    api_calls:
+      - method: GET
+        endpoint: Supabase Edge Functions or REST (project-specific)
+    auth_required: false
+  - name: Account profile
+    description: Update display name and email for signed-in users
+    files:
+      - index.html
+      - script.js
+    entry_route: /
+    user_interactions:
+      - Open Account, edit fields, save or cancel
+    api_calls:
+      - method: PUT
+        endpoint: Supabase Auth user update
+    auth_required: true
+  - name: Theme toggle
+    description: Switch between light and dark theme
+    files:
+      - index.html
+      - script.js
+    entry_route: /
+    user_interactions:
+      - Click theme toggle in title bar
+    api_calls: []
+    auth_required: false
+known_limitations:
+  - issue: Packaged Electron APIs (IPC, native window chrome) are not available when the same HTML is opened in a normal browser over HTTP
+    location: main.js
+    impact: Window control buttons and some desktop-only behavior cannot be exercised in browser-only TestSprite runs
+  - issue: Full Supabase auth and cloud sync require valid supabaseConfig.js credentials and network access to the project
+    location: supabaseConfig.js
+    impact: Tests may fall back to local-only mode or show not-configured states

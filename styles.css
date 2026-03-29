@@ -273,6 +273,11 @@ textarea {
     min-height: 420px;
 }
 
+.auth-layout.auth-layout--supabase-missing .auth-brand,
+.auth-layout.auth-layout--supabase-missing #authFormCard {
+    display: none;
+}
+
 .auth-brand {
     border-radius: var(--radius-lg);
     border: 1px solid var(--border);

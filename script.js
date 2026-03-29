@@ -884,16 +884,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 setupAuthListeners();
             }
         } else {
-            // Supabase is required - show error message
+            // Supabase is required — show configuration message only
             showAuth(authScreen, appShell);
+            document.querySelector('.auth-layout')?.classList.add('auth-layout--supabase-missing');
             const noConfigEl = document.getElementById('authNoConfig');
             if (noConfigEl) {
                 noConfigEl.classList.remove('hidden');
-                noConfigEl.querySelector('.auth-no-config-title').textContent = 'Supabase configuration required';
-                noConfigEl.querySelector('.auth-no-config-body').textContent = 'Please configure Supabase by creating supabaseConfig.js with your project URL and anon key.';
-                const useLocalBtn = noConfigEl.querySelector('#authUseLocalBtn');
-                if (useLocalBtn) {
-                    useLocalBtn.style.display = 'none';
+                const titleEl = noConfigEl.querySelector('.auth-no-config-title');
+                const bodyEl = noConfigEl.querySelector('.auth-no-config-body');
+                if (titleEl) titleEl.textContent = 'Supabase configuration required';
+                if (bodyEl) {
+                    bodyEl.textContent = 'Call Log requires Supabase. Add your project URL and anon key in supabaseConfig.js (see supabaseConfig.example.js).';
                 }
             }
         }
@@ -1609,8 +1610,8 @@ function setupEventListeners() {
     document.getElementById('calendarModal')?.addEventListener('click', (e) => {
         if (e.target?.id === 'calendarModal') closeCalendar();
     });
-    document.getElementById('calPrevMonth')?.addEventListener('click', () => navigateCalendarMonth(-1));
-    document.getElementById('calNextMonth')?.addEventListener('click', () => navigateCalendarMonth(1));
+    document.getElementById('calPrevMonth')?.addEventListener('click', () => { void navigateCalendarMonth(-1); });
+    document.getElementById('calNextMonth')?.addEventListener('click', () => { void navigateCalendarMonth(1); });
     
     // Confirm modal
     document.getElementById('closeConfirmModal')?.addEventListener('click', () => closeConfirm(false));
@@ -1760,7 +1761,7 @@ function closeCalendar() {
     modal.setAttribute('aria-hidden', 'true');
 }
 
-function navigateCalendarMonth(deltaMonths) {
+async function navigateCalendarMonth(deltaMonths) {
     if (!calendarMonth) {
         calendarMonth = new Date();
         calendarMonth.setDate(1);
@@ -1769,7 +1770,7 @@ function navigateCalendarMonth(deltaMonths) {
     d.setMonth(d.getMonth() + deltaMonths);
     d.setDate(1);
     calendarMonth = d;
-    renderCalendar(calendarMonth);
+    await renderCalendar(calendarMonth);
 }
 
 async function renderCalendar(monthDate) {
@@ -2346,7 +2347,7 @@ async function loadEntries() {
         }
         filteredEntries = filteredEntries.filter(entry =>
             entry.name.toLowerCase().includes(filterLower) ||
-            (entry.phone || entry.mobile || '').includes(filterLower) ||
+            String(entry.phone || entry.mobile || '').toLowerCase().includes(filterLower) ||
             (exactPhoneMatches ? exactPhoneMatches.has(String(entry.id)) : false) ||
             entry.organization.toLowerCase().includes(filterLower) ||
             (entry.deviceName && entry.deviceName.toLowerCase().includes(filterLower)) ||
@@ -2745,11 +2746,17 @@ function closeStatsModal() {
 
 // ---------- Reports modal (Supabase) ----------
 function openReportsModal() {
-    if (!useSupabase()) return;
     const modal = document.getElementById('reportsModal');
     if (!modal) return;
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
+    if (!useSupabase()) {
+        const errEl = document.getElementById('reportsError');
+        const grid = document.getElementById('reportsGrid');
+        if (errEl) errEl.textContent = 'Reporting requires Supabase. Configure your project URL and anon key.';
+        if (grid) grid.innerHTML = '';
+        return;
+    }
     updateReportsAdminUI();
     refreshReports().catch(() => {});
 }
@@ -2903,9 +2910,17 @@ async function refreshReports() {
     if (errEl) errEl.textContent = '';
 
     const supabase = getSupabase();
-    if (!supabase) return;
+    if (!supabase) {
+        if (errEl) errEl.textContent = 'Unable to load reports. Check Supabase configuration.';
+        grid.innerHTML = '';
+        return;
+    }
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!session) {
+        if (errEl) errEl.textContent = 'Sign in to load reports.';
+        grid.innerHTML = '';
+        return;
+    }
 
     grid.innerHTML = `
         <div class="report-card"><div class="report-card-title">Loading…</div></div>

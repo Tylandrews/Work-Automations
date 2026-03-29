@@ -1,14 +1,16 @@
 # Deploy the static marketing site in Website/ to GitHub Pages.
-# Repo Settings → Pages → Build and deployment → Source: GitHub Actions
+#
+# We do not use actions/configure-pages: it calls GET /repos/.../pages and fails with 404
+# until a Pages site exists (chicken-and-egg). Static artifact deploy does not need it.
+#
+# "Ensure GitHub Pages site" tries POST build_type=workflow with GITHUB_TOKEN. If that
+# fails, a repo admin must set Settings → Pages → Source → GitHub Actions, then re-run.
 name: Deploy GitHub Pages
 
 on:
   push:
     branches:
       - main
-    paths:
-      - "Website/**"
-      - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -28,13 +30,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/checkout@v6
+
+      - name: Ensure GitHub Pages site exists (GitHub Actions / workflow)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          gh api "repos/${{ github.repository }}/pages" --silent >/dev/null 2>&1
+          pages_ok=$?
+          set -e
+          if [ "$pages_ok" -eq 0 ]; then
+            echo "GitHub Pages site is already configured."
+            exit 0
+          fi
+          echo "No GitHub Pages site from API (first-time setup). Creating with build_type=workflow..."
+          set +e
+          post_out=$(echo '{"build_type":"workflow"}' | gh api --method POST "repos/${{ github.repository }}/pages" --input - 2>&1)
+          post_ec=$?
+          set -e
+          if [ "$post_ec" -eq 0 ]; then
+            echo "GitHub Pages enabled for GitHub Actions."
+            exit 0
+          fi
+          echo "$post_out"
+          echo "::error::Could not create the GitHub Pages site via API (exit $post_ec). A repository admin should open Settings → Pages → Build and deployment → set Source to GitHub Actions, save, then re-run this workflow."
+          exit 1
+
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: Website
+
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

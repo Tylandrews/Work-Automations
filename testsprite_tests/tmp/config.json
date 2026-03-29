@@ -1,0 +1,20 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:4173",
+  "loginUser": "andrews.s.tyler@gmail.com",
+  "loginPassword": "123456",
+  "executionArgs": {
+    "projectName": "Work Automations",
+    "projectPath": "c:\\Users\\andre\\Desktop\\Files\\coding\\Work Automations",
+    "testIds": [],
+    "additionalInstruction": "Call Log is a single-page HTML/JS app (Electron in production; tests run against http://localhost:4173/). Auth is optional when Supabase is configured; otherwise use Continue with local storage. Prefer exercising call form, history navigation, search, and theme toggle without requiring a live Supabase project.",
+    "serverMode": "production",
+    "envs": {
+      "API_KEY": "sk-user-LbwLX6v6Boapn4WT2cNPZFhvr34nvLKeYHlDbE-O0p1AThOi3PygHjGwfCww_qYrr58y7OeUxna0-3_L5tkmg3v4cAUIzX0PTfm-BdBLKYSEHySCqL4laQERKiCCi1PbvL8"
+    }
+  },
+  "serverPort": 65096,
+  "proxy": "http://6e315ad6-699e-4835-8db4-93a390f7bee6:WZ0NOJU9Td9mFsMffr0fYV0rk5QLJ6xX@tun.testsprite.com:8080"
+}

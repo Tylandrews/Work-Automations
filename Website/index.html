@@ -17,7 +17,7 @@
     />
     <meta
       property="og:image"
-      content="https://tylandrews.github.io/Work-Automations/assets/call-log-dashboard.png"
+      content="https://tylandrews.github.io/Work-Automations/assets/favicon.svg"
     />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -279,7 +279,19 @@
         display: block;
         width: 100%;
         height: auto;
-        
+      }
+
+      .shot__placeholder {
+        min-height: clamp(12rem, 42vw, 28rem);
+        background: linear-gradient(145deg, #1e293b 0%, #0f172a 50%, #172554 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        text-align: center;
+        font-size: 0.9375rem;
+        color: rgba(255, 255, 255, 0.72);
+        line-height: 1.5;
       }
 
       .shot figcaption {
@@ -397,14 +409,9 @@
         </section>
 
         <figure class="shot">
-          <img
-            src="assets/call-log-dashboard.png"
-            width="1200"
-            height="800"
-            alt="Call Log application showing New Call form and Call History"
-            loading="eager"
-            decoding="async"
-          />
+          <div class="shot__placeholder" role="img" aria-label="Call Log application showing New Call form and Call History">
+            Download Call Log from GitHub Releases to see the full desktop interface—New Call, Call History, search, stats, and reports.
+          </div>
           <figcaption>New Call (left) and Call History (right)—day controls, search, stats, and reports</figcaption>
         </figure>
 
