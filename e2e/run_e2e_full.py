@@ -21,9 +21,9 @@ CI (no browser tabs, default live dashboard):
 Extra args are forwarded to run_playwright_report.py (place after -- if using npm):
   npm run test:e2e -- --limit 3
 
-Run several TC*.py subprocesses in parallel (faster wall time; same Supabase user may flake if N is high):
-  py -3.10 e2e/run_e2e_full.py -- --workers 6
-  npm run test:e2e -- --workers 0
+Parallel TC*.py runs default to 6 workers from this entry point (omit --workers to use that).
+Override after --, e.g. py -3.10 e2e/run_e2e_full.py -- --workers 1 to serialize.
+Same Supabase user may flake with high parallelism; npm run test:e2e -- --workers 0 uses auto cap.
 
 --workers 0 picks an automatic cap (min 1, max 8, bounded by CPU and test count).
 
@@ -44,6 +44,8 @@ import webbrowser
 from pathlib import Path
 
 from e2e_env_loader import load_e2e_dotenv
+
+_DEFAULT_PARALLEL_WORKERS = 6
 
 
 def repo_root() -> Path:
@@ -71,6 +73,14 @@ def wait_for_http(url: str, total_timeout: float = 90.0) -> bool:
             return True
         time.sleep(0.5)
     return False
+
+
+def npx_serve_argv(port: int) -> list[str]:
+    """Argv to run `npx serve` from repo root. Windows needs cmd.exe for npx.cmd."""
+    tail = ["npx", "--yes", "serve", ".", "-p", str(port)]
+    if os.name == "nt":
+        return ["cmd", "/c", *tail]
+    return tail
 
 
 def report_output_path(report_args: list[str], default: Path) -> Path:
@@ -152,7 +162,7 @@ def main() -> int:
         else:
             print(f"Starting static server: npx serve . -p {args.port} (repo root) ...")
             subprocess.Popen(
-                ["npx", "--yes", "serve", ".", "-p", str(args.port)],
+                npx_serve_argv(args.port),
                 cwd=root,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -179,6 +189,9 @@ def main() -> int:
     else:
         if not args.headless and "--headed" not in report_args:
             cmd.append("--headed")
+
+    if "--workers" not in report_args:
+        cmd.extend(["--workers", str(_DEFAULT_PARALLEL_WORKERS)])
 
     print("Running report runner:", " ".join(cmd), "\n")
     rc = subprocess.call(cmd, cwd=root, env=run_env)

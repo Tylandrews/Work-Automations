@@ -87,7 +87,7 @@ jobs:
           )
           PY
           python e2e/run_e2e_full.py --no-open-report --static-report --headless -- \
-            --json-summary "${{ inputs.json_summary_path }}" --workers 1
+            --json-summary "${{ inputs.json_summary_path }}" --workers 6
 
       - name: Upload Website artifact for Pages deploy
         if: ${{ inputs.upload_website_artifact == true }}

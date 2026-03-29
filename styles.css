@@ -146,7 +146,9 @@ body[data-shell="auth"] .water-canvas {
     filter: blur(6px) saturate(var(--water-sat)) contrast(var(--water-contrast));
 }
 
-body[data-shell="app"] .water-canvas {
+body[data-shell="app"] .water-canvas,
+body[data-shell="account"] .water-canvas,
+body[data-shell="statistics"] .water-canvas {
     opacity: 0.18;
     filter: blur(10px) saturate(calc(var(--water-sat) - 0.10)) contrast(calc(var(--water-contrast) - 0.06));
 }
@@ -2157,8 +2159,10 @@ main .form-container {
     }
 }
 
-/* App shell: titlebar + workspace fill below */
-body[data-shell="app"] .app-shell {
+/* App shell: titlebar + workspace fill below (app, account, and statistics all use data-shell other than "app") */
+body[data-shell="app"] .app-shell,
+body[data-shell="account"] .app-shell,
+body[data-shell="statistics"] .app-shell {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -2181,6 +2185,13 @@ body[data-shell="app"] .app-shell {
 .app-workspace--stats {
     overflow: auto;
     -webkit-overflow-scrolling: touch;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.app-workspace--stats::-webkit-scrollbar {
+    width: 0;
+    height: 0;
 }
 
 /* Account page */
