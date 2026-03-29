@@ -664,7 +664,9 @@ def main() -> int:
         metavar="PATH",
         help="Write Shields-compatible E2E summary JSON (plus total/passed/failed, run URL) for README/Pages.",
     )
-    args = parser.parse_args()
+    # Drop standalone `--` (shell/npm forwarding); argparse does not treat it as special here.
+    argv_tail = [token for token in sys.argv[1:] if token != "--"]
+    args = parser.parse_args(argv_tail)
 
     load_e2e_dotenv()
 
