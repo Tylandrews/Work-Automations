@@ -258,7 +258,7 @@
                     <button class="btn-icon-only btn-search" id="searchBtn" title="Search (Ctrl+F)">
                         <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
                     </button>
-                    <button class="btn-icon-only btn-stats" id="statsBtn" title="View Statistics">
+                    <button class="btn-icon-only btn-stats" id="statsBtn" title="Open statistics" aria-label="Open statistics">
                         <svg class="icon" aria-hidden="true"><use href="#i-stats"></use></svg>
                     </button>
                     <button class="btn-icon-only btn-reports" id="reportsBtn" title="Reports">
@@ -378,6 +378,90 @@
                         <button type="button" class="btn btn-secondary" id="adminLoadMoreBtn" style="display: none;">Load more</button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="statsWorkspace" class="app-workspace app-workspace--stats hidden" aria-hidden="true">
+        <div class="stats-page">
+            <header class="account-page-header stats-page-header">
+                <div class="account-page-header-text">
+                    <h2 class="account-page-title" id="statsPageHeading">Statistics</h2>
+                    <p class="account-page-lead">Your logged calls. Date range uses your local timezone (midnight to midnight).</p>
+                </div>
+                <div class="stats-page-header-actions">
+                    <button type="button" class="btn btn-secondary" id="statsOpenReportsBtn">Scheduled reports</button>
+                    <button type="button" class="btn btn-secondary account-back-inline" id="statsBackInlineBtn" aria-label="Back to Call Log">Back to Call Log</button>
+                </div>
+            </header>
+
+            <div id="statsPageError" class="auth-error" role="alert" aria-live="polite"></div>
+
+            <section class="stats-filters account-card" aria-label="Statistics date range">
+                <div class="stats-filters-row">
+                    <div class="form-group stats-filter-field">
+                        <label for="statsRangePreset">Range</label>
+                        <select id="statsRangePreset" class="stats-select">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="all">All time</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div id="statsCustomRange" class="stats-custom-range hidden" role="group" aria-label="Custom date range">
+                        <div class="form-group stats-filter-field">
+                            <label for="statsRangeStart">From</label>
+                            <input type="date" id="statsRangeStart" autocomplete="off">
+                        </div>
+                        <div class="form-group stats-filter-field">
+                            <label for="statsRangeEnd">To</label>
+                            <input type="date" id="statsRangeEnd" autocomplete="off">
+                        </div>
+                        <button type="button" class="btn btn-primary" id="statsApplyCustomBtn">Apply range</button>
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="statsRefreshBtn">Refresh</button>
+                </div>
+            </section>
+
+            <div id="statsLoading" class="stats-loading hidden" aria-live="polite">Loading statistics…</div>
+
+            <div id="statsMainContent" class="stats-main hidden">
+                <div id="statsKpiRow" class="stats-kpi-grid" aria-label="Summary metrics"></div>
+                <div id="statsPace" class="stats-pace account-card hidden" aria-label="Recent pace"></div>
+                <div class="stats-chart-card account-card">
+                    <h3 class="account-card-title">Calls per day</h3>
+                    <div class="stats-chart-wrap" data-stats-chart>
+                        <canvas id="statsActivityCanvas" aria-label="Bar chart of calls per day"></canvas>
+                    </div>
+                </div>
+                <div class="stats-two-col">
+                    <div class="account-card stats-dow-card">
+                        <h3 class="account-card-title">By day of week</h3>
+                        <div id="statsDowBars" class="stats-dow-bars" role="img" aria-label="Call counts by weekday"></div>
+                    </div>
+                    <div class="account-card stats-org-card">
+                        <h3 class="account-card-title">Top organizations</h3>
+                        <div class="account-table-wrap">
+                            <table class="stats-org-table">
+                                <caption class="sr-only">Organizations ranked by number of calls in range</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">#</th>
+                                        <th scope="col">Organization</th>
+                                        <th scope="col">Calls</th>
+                                        <th scope="col">Share</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="statsOrgTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="statsEmptyState" class="stats-empty account-card hidden">
+                <p class="stats-empty-text">No calls in this range.</p>
             </div>
         </div>
     </div>
@@ -514,17 +598,6 @@
                     </div>
                 </div>
             </form>
-        </div>
-    </div>
-
-    <!-- Stats Modal -->
-    <div class="modal" id="statsModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
-        <div class="modal-content modal-small" role="document">
-            <div class="modal-header">
-                <h3 id="statsTitle">Statistics</h3>
-                <button class="modal-close" id="closeStatsModal" type="button" aria-label="Close statistics dialog">&times;</button>
-            </div>
-            <div class="stats-content" id="statsContent"></div>
         </div>
     </div>
 

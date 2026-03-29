@@ -747,9 +747,9 @@
   },
   {
     "id": "TC023",
-    "title": "Open statistics modal and close it",
-    "description": "Verifies that the statistics modal opens from the toolbar, shows summary stats for the selected day, and closes.",
-    "category": "Statistics modal",
+    "title": "Open statistics page and return to Call Log",
+    "description": "Verifies that the statistics page opens from the toolbar, shows summary metrics or a zero-data state, and returns to Call Log.",
+    "category": "Statistics page",
     "priority": "High",
     "steps": [
       {
@@ -762,23 +762,23 @@
       },
       {
         "type": "assertion",
-        "description": "Verify summary statistics for the selected day are displayed"
+        "description": "Verify summary statistics or a zero-data message is displayed"
       },
       {
         "type": "action",
-        "description": "Close the statistics modal"
+        "description": "Use Back to Call Log on the statistics page"
       },
       {
         "type": "assertion",
-        "description": "Verify the statistics modal is no longer visible"
+        "description": "Verify the statistics page is no longer visible"
       }
     ]
   },
   {
     "id": "TC024",
-    "title": "Statistics modal shows zero-data state when there are no calls",
-    "description": "Verifies that when the selected day has no calls, the statistics modal displays an explanatory zero-data state.",
-    "category": "Statistics modal",
+    "title": "Statistics page shows zero-data or metrics when the selected day has no calls",
+    "description": "Verifies that when the selected calendar day has no calls, the statistics page still loads and shows metrics for the chosen range or a zero-data state.",
+    "category": "Statistics page",
     "priority": "Medium",
     "steps": [
       {
@@ -795,11 +795,11 @@
       },
       {
         "type": "assertion",
-        "description": "Verify a zero-data or explanatory message is displayed in the statistics modal"
+        "description": "Verify a zero-data message or summary metrics is displayed on the statistics page"
       },
       {
         "type": "action",
-        "description": "Close the statistics modal"
+        "description": "Use Back to Call Log on the statistics page"
       }
     ]
   },

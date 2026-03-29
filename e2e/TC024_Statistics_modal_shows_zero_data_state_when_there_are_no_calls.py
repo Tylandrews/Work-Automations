@@ -1,9 +1,9 @@
 """
 TC024: Select a day with no calls in the list, open Statistics.
 
-Note: The modal summarizes all calls in the account, not only the selected day. We assert the list
-shows an empty-day message, then the statistics modal opens and shows either global metrics or
-“No data available” when the account has no rows.
+The statistics page summarizes your calls for the selected date range (default last 30 days), not only
+the selected calendar day. We assert the list shows an empty-day message, then the statistics page
+shows either metrics or "No data available" when there are no rows in range.
 """
 import asyncio
 import os
@@ -78,12 +78,13 @@ async def run_test() -> None:
         await expect(entries).to_contain_text("No calls for this day", timeout=30000)
 
         await page.locator("#statsBtn").click()
-        stats = page.locator("#statsModal")
+        stats = page.locator("#statsWorkspace")
         await expect(stats).to_be_visible()
-        body = await page.locator("#statsContent").inner_text()
+        await expect(page.locator("#statsLoading")).to_be_hidden(timeout=30000)
+        body = await stats.inner_text()
         assert "No data available" in body or "Total Calls" in body
 
-        await page.locator("#closeStatsModal").click()
+        await page.locator("#statsBackInlineBtn").click()
         await expect(stats).to_be_hidden()
 
     finally:

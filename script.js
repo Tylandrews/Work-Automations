@@ -23,26 +23,61 @@ let accountAdminLoadedOnce = false
 function setAppView(view) {
     const main = document.getElementById('mainWorkspace');
     const account = document.getElementById('accountWorkspace');
+    const stats = document.getElementById('statsWorkspace');
     const backBtn = document.getElementById('accountBackBtn');
     const profileBtn = document.getElementById('profileBtn');
     if (!main || !account) return;
+
+    const hideStats = () => {
+        if (stats) {
+            stats.classList.add('hidden');
+            stats.setAttribute('aria-hidden', 'true');
+        }
+        destroyStatsPageChart();
+    };
+
+    const showCallsShell = () => {
+        currentAppView = 'calls';
+        main.classList.remove('hidden');
+        main.setAttribute('aria-hidden', 'false');
+        account.classList.add('hidden');
+        account.setAttribute('aria-hidden', 'true');
+        hideStats();
+        if (backBtn) backBtn.style.display = 'none';
+        if (profileBtn && useSupabase() && getSupabase()) profileBtn.style.display = '';
+        document.body?.setAttribute('data-shell', 'app');
+    };
+
     if (view === 'account') {
         currentAppView = 'account';
         main.classList.add('hidden');
         main.setAttribute('aria-hidden', 'true');
         account.classList.remove('hidden');
         account.setAttribute('aria-hidden', 'false');
+        hideStats();
         if (backBtn) backBtn.style.display = '';
         if (profileBtn) profileBtn.style.display = 'none';
-    } else {
-        currentAppView = 'calls';
-        main.classList.remove('hidden');
-        main.setAttribute('aria-hidden', 'false');
+        document.body?.setAttribute('data-shell', 'account');
+        return;
+    }
+
+    if (view === 'statistics') {
+        currentAppView = 'statistics';
+        main.classList.add('hidden');
+        main.setAttribute('aria-hidden', 'true');
         account.classList.add('hidden');
         account.setAttribute('aria-hidden', 'true');
-        if (backBtn) backBtn.style.display = 'none';
-        if (profileBtn && useSupabase() && getSupabase()) profileBtn.style.display = '';
+        if (stats) {
+            stats.classList.remove('hidden');
+            stats.setAttribute('aria-hidden', 'false');
+        }
+        if (backBtn) backBtn.style.display = '';
+        if (profileBtn) profileBtn.style.display = 'none';
+        document.body?.setAttribute('data-shell', 'statistics');
+        return;
     }
+
+    showCallsShell();
 }
 
 const PII_KEY_NAME = 'calls_pii';
@@ -1548,6 +1583,7 @@ function subscribeRealtime() {
 
                 // Always refresh entries when a new call is inserted
                 await loadEntries();
+                refreshStatisticsPageIfVisible();
 
                 // Do not show a \"teammate\" notification for your own inserts
                 if (!user || !takerId || takerId === user.id) return;
@@ -1588,6 +1624,7 @@ async function initApp() {
     }
     setCurrentDateTime();
     setupEventListeners();
+    setupStatisticsPageListeners();
     setupKeyboardShortcuts();
     setupTitlebar();
 
@@ -1709,8 +1746,10 @@ function setupEventListeners() {
     document.getElementById('closeSearch').addEventListener('click', toggleSearch);
     document.getElementById('searchInput').addEventListener('input', handleSearch);
 
-    // Stats button
-    document.getElementById('statsBtn').addEventListener('click', showStats);
+    // Statistics page
+    document.getElementById('statsBtn').addEventListener('click', () => {
+        openStatisticsPage()
+    })
     document.getElementById('reportsBtn')?.addEventListener('click', openReportsModal);
 
     // Day / calendar controls
@@ -1748,7 +1787,6 @@ function setupEventListeners() {
     document.getElementById('editModalDeleteBtn').addEventListener('click', showEditModalDeleteConfirm);
     document.getElementById('editModalDeleteCancel').addEventListener('click', hideEditModalDeleteConfirm);
     document.getElementById('editModalDeleteConfirmBtn').addEventListener('click', confirmEditModalDelete);
-    document.getElementById('closeStatsModal').addEventListener('click', closeStatsModal);
     document.getElementById('closeReportsModal')?.addEventListener('click', closeReportsModal);
     document.getElementById('editForm').addEventListener('submit', handleEditSubmit);
 
@@ -1758,9 +1796,6 @@ function setupEventListeners() {
     // Keep Edit modal open on backdrop clicks to prevent accidental dismiss while editing.
     document.getElementById('editModal').addEventListener('click', (e) => {
         if (e.target.id === 'editModal') return;
-    });
-    document.getElementById('statsModal').addEventListener('click', (e) => {
-        if (e.target.id === 'statsModal') closeStatsModal();
     });
     document.getElementById('reportsModal')?.addEventListener('click', (e) => {
         if (e.target.id === 'reportsModal') closeReportsModal();
@@ -2002,15 +2037,13 @@ function setupKeyboardShortcuts() {
         if (e.key === 'Escape') {
             if (document.getElementById('editModal').classList.contains('show')) {
                 closeEditModal();
-            } else if (document.getElementById('statsModal').classList.contains('show')) {
-                closeStatsModal();
             } else if (document.getElementById('reportsModal')?.classList.contains('show')) {
                 closeReportsModal();
             } else if (document.getElementById('calendarModal')?.classList.contains('show')) {
                 closeCalendar();
             } else if (document.getElementById('confirmModal')?.classList.contains('show')) {
                 closeConfirm(false);
-            } else if (currentAppView === 'account') {
+            } else if (currentAppView === 'account' || currentAppView === 'statistics') {
                 setAppView('calls');
             } else if (document.getElementById('searchContainer').style.display !== 'none') {
                 toggleSearch();
@@ -2854,11 +2887,6 @@ function closeEditModal() {
     document.getElementById('editForm').reset();
 }
 
-// Close stats modal
-function closeStatsModal() {
-    document.getElementById('statsModal').classList.remove('show');
-}
-
 // ---------- Reports modal (Supabase) ----------
 function openReportsModal() {
     const modal = document.getElementById('reportsModal');
@@ -2900,6 +2928,482 @@ function formatPeriodLabel(periodStart, periodEnd) {
 
 /** Chart.js instances for report cards; destroyed on refresh */
 let reportCharts = [];
+
+/** Single Chart.js instance for statistics activity chart */
+let statsPageChart = null
+
+const STATS_DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function destroyStatsPageChart() {
+    if (statsPageChart) {
+        try { statsPageChart.destroy() } catch (_) {}
+        statsPageChart = null
+    }
+}
+
+function startOfLocalDay(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+function endOfLocalDay(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+}
+
+function localDayIndexFromDate(date) {
+    const day = date.getDay()
+    return day === 0 ? 6 : day - 1
+}
+
+function addLocalDays(d, delta) {
+    const x = new Date(d.getTime())
+    x.setDate(x.getDate() + delta)
+    return x
+}
+
+function parseDayKeyToLocalStart(dayKey) {
+    const [y, m, da] = dayKey.split('-').map(Number)
+    if (!y || !m || !da) return null
+    return new Date(y, m - 1, da)
+}
+
+function enumerateLocalDayKeys(fromDayKey, toDayKey) {
+    const start = parseDayKeyToLocalStart(fromDayKey)
+    const end = parseDayKeyToLocalStart(toDayKey)
+    if (!start || !end || start > end) return []
+    const out = []
+    let d = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+    const endT = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime()
+    while (d.getTime() <= endT) {
+        out.push(toLocalDayKey(d))
+        d = addLocalDays(d, 1)
+    }
+    return out
+}
+
+function calendarDaysInclusive(startDate, endDate) {
+    const s = startOfLocalDay(startDate)
+    const e = startOfLocalDay(endDate)
+    const msPerDay = 86400000
+    return Math.max(1, Math.round((e.getTime() - s.getTime()) / msPerDay) + 1)
+}
+
+/**
+ * @param {{ startIso: string|null, endIso: string|null }} range
+ * @returns {Promise<{ rows: Array<{ call_time: string, organization: string|null, device_name: string|null, support_request: string|null }>, error: Error|null }>}
+ */
+async function fetchMyCallsForStats(range) {
+    if (!useSupabase()) {
+        return { rows: [], error: new Error('Supabase is not configured.') }
+    }
+    const supabase = getSupabase()
+    if (!supabase) {
+        return { rows: [], error: new Error('Supabase client not available.') }
+    }
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+        return { rows: [], error: new Error('Sign in to load statistics.') }
+    }
+    let q = supabase
+        .from('calls')
+        .select('call_time, organization, device_name, support_request')
+        .order('call_time', { ascending: true })
+    if (range.startIso) q = q.gte('call_time', range.startIso)
+    if (range.endIso) q = q.lte('call_time', range.endIso)
+    const { data, error } = await q
+    if (error) {
+        console.error('fetchMyCallsForStats error:', error)
+        return { rows: [], error: new Error(error.message || 'Failed to load statistics.') }
+    }
+    return { rows: data || [], error: null }
+}
+
+/**
+ * @param {Array<{ call_time: string, organization: string|null, device_name: string|null }>} rows
+ * @param {{ fromDayKey: string, toDayKey: string, rangeDaysInclusive: number, showPace: boolean }} rangeMeta
+ */
+function computeStatsBundle(rows, rangeMeta) {
+    const total = rows.length
+    const orgCounts = new Map()
+    const deviceSet = new Set()
+    const perDay = new Map()
+    const dowCounts = [0, 0, 0, 0, 0, 0, 0]
+
+    let minTs = null
+    let maxTs = null
+
+    for (const r of rows) {
+        const org = (r.organization || '').trim() || '(Unknown)'
+        orgCounts.set(org, (orgCounts.get(org) || 0) + 1)
+        const dev = (r.device_name || '').trim()
+        if (dev) deviceSet.add(dev)
+
+        const dt = new Date(r.call_time)
+        if (Number.isNaN(dt.getTime())) continue
+        if (minTs == null || dt < minTs) minTs = dt
+        if (maxTs == null || dt > maxTs) maxTs = dt
+
+        const dk = toLocalDayKey(dt)
+        perDay.set(dk, (perDay.get(dk) || 0) + 1)
+        dowCounts[localDayIndexFromDate(dt)] += 1
+    }
+
+    const dayKeys = enumerateLocalDayKeys(rangeMeta.fromDayKey, rangeMeta.toDayKey)
+    const dailyTimeseries = dayKeys.map((day) => ({ day, calls: perDay.get(day) || 0 }))
+
+    const maxDow = Math.max(1, ...dowCounts)
+    const topOrgs = [...orgCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([name, count], i) => ({
+            rank: i + 1,
+            name,
+            count,
+            pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0
+        }))
+
+    const avgPerDay = total > 0 ? Math.round((total / rangeMeta.rangeDaysInclusive) * 10) / 10 : 0
+
+    let firstLabel = '—'
+    let lastLabel = '—'
+    if (minTs && maxTs) {
+        firstLabel = toLocalDayKey(minTs)
+        lastLabel = toLocalDayKey(maxTs)
+    }
+
+    let pace = null
+    if (rangeMeta.showPace && maxTs) {
+        const anchorEnd = startOfLocalDay(maxTs)
+        const lastStart = addLocalDays(anchorEnd, -6)
+        const prevEnd = addLocalDays(lastStart, -1)
+        const prevStart = addLocalDays(prevEnd, -6)
+
+        let last7 = 0
+        let prev7 = 0
+        for (const r of rows) {
+            const dt = new Date(r.call_time)
+            if (Number.isNaN(dt.getTime())) continue
+            const t = dt.getTime()
+            if (t >= lastStart.getTime() && t <= endOfLocalDay(anchorEnd).getTime()) last7 += 1
+            if (t >= prevStart.getTime() && t <= endOfLocalDay(prevEnd).getTime()) prev7 += 1
+        }
+        let pct = null
+        if (prev7 > 0) pct = Math.round(((last7 - prev7) / prev7) * 1000) / 10
+        pace = { last7, prev7, pct }
+    }
+
+    return {
+        total,
+        uniqueOrgs: orgCounts.size,
+        uniqueDevices: deviceSet.size,
+        firstLabel,
+        lastLabel,
+        avgPerDay,
+        dailyTimeseries,
+        dowCounts,
+        maxDow,
+        topOrgs,
+        pace
+    }
+}
+
+function renderStatisticsKpis(bundle) {
+    return `
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${bundle.total}</div>
+            <div class="stats-kpi-label">Total Calls</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${bundle.uniqueOrgs}</div>
+            <div class="stats-kpi-label">Organizations</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${bundle.uniqueDevices}</div>
+            <div class="stats-kpi-label">Devices named</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${escapeHtml(bundle.firstLabel)} – ${escapeHtml(bundle.lastLabel)}</div>
+            <div class="stats-kpi-label">First / last call</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${bundle.avgPerDay}</div>
+            <div class="stats-kpi-label">Avg / day in range</div>
+        </div>
+    `
+}
+
+function renderStatisticsDow(bundle) {
+    return STATS_DOW_LABELS.map((label, i) => {
+        const n = bundle.dowCounts[i] || 0
+        const w = bundle.maxDow > 0 ? Math.round((n / bundle.maxDow) * 100) : 0
+        return `
+            <div class="stats-dow-row">
+                <span class="stats-dow-label">${label}</span>
+                <div class="stats-dow-bar-track" role="presentation">
+                    <div class="stats-dow-bar-fill" style="width: ${w}%"></div>
+                </div>
+                <span class="stats-dow-count">${n}</span>
+            </div>
+        `
+    }).join('')
+}
+
+function renderStatisticsOrgsTable(bundle) {
+    if (!bundle.topOrgs.length) {
+        return '<tr><td colspan="4">No organizations in range</td></tr>'
+    }
+    return bundle.topOrgs.map((o) => `
+        <tr>
+            <td>${o.rank}</td>
+            <td>${escapeHtml(o.name)}</td>
+            <td>${o.count}</td>
+            <td>${o.pct}%</td>
+        </tr>
+    `).join('')
+}
+
+function attachStatsActivityChart(timeseries) {
+    destroyStatsPageChart()
+    const wrap = document.querySelector('[data-stats-chart]')
+    const canvas = document.getElementById('statsActivityCanvas')
+    if (!wrap || !canvas || typeof Chart === 'undefined') return
+    if (!Array.isArray(timeseries) || timeseries.length === 0) return
+    const config = makeReportChartConfig(timeseries)
+    statsPageChart = new Chart(canvas, config)
+}
+
+function getStatisticsRangeFromUI() {
+    const presetEl = document.getElementById('statsRangePreset')
+    const preset = presetEl ? presetEl.value : '30'
+    const today = new Date()
+    const todayStart = startOfLocalDay(today)
+
+    if (preset === 'all') {
+        return {
+            preset,
+            startIso: null,
+            endIso: null,
+            fromDayKey: null,
+            toDayKey: null,
+            rangeDaysInclusive: 1,
+            showPace: true
+        }
+    }
+
+    if (preset === 'custom') {
+        const startInp = document.getElementById('statsRangeStart')
+        const endInp = document.getElementById('statsRangeEnd')
+        const sk = (startInp && startInp.value) ? startInp.value : toLocalDayKey(today)
+        const ek = (endInp && endInp.value) ? endInp.value : toLocalDayKey(today)
+        const sDate = parseDayKeyToLocalStart(sk)
+        const eDate = parseDayKeyToLocalStart(ek)
+        if (!sDate || !eDate || sDate > eDate) {
+            return {
+                preset,
+                startIso: null,
+                endIso: null,
+                fromDayKey: toLocalDayKey(today),
+                toDayKey: toLocalDayKey(today),
+                rangeDaysInclusive: 1,
+                showPace: false,
+                invalid: true
+            }
+        }
+        const startIso = startOfLocalDay(sDate).toISOString()
+        const endIso = endOfLocalDay(eDate).toISOString()
+        const rangeDaysInclusive = calendarDaysInclusive(sDate, eDate)
+        return {
+            preset,
+            startIso,
+            endIso,
+            fromDayKey: sk,
+            toDayKey: ek,
+            rangeDaysInclusive,
+            showPace: rangeDaysInclusive >= 14
+        }
+    }
+
+    const days = preset === '7' ? 7 : preset === '90' ? 90 : 30
+    const startDate = addLocalDays(todayStart, -(days - 1))
+    const fromDayKey = toLocalDayKey(startDate)
+    const toDayKey = toLocalDayKey(today)
+    return {
+        preset,
+        startIso: startOfLocalDay(startDate).toISOString(),
+        endIso: endOfLocalDay(today).toISOString(),
+        fromDayKey,
+        toDayKey,
+        rangeDaysInclusive: days,
+        showPace: days >= 14
+    }
+}
+
+async function loadStatisticsPage() {
+    const errEl = document.getElementById('statsPageError')
+    const loadingEl = document.getElementById('statsLoading')
+    const mainEl = document.getElementById('statsMainContent')
+    const emptyEl = document.getElementById('statsEmptyState')
+    if (errEl) errEl.textContent = ''
+
+    const rangeSpec = getStatisticsRangeFromUI()
+    if (rangeSpec.invalid) {
+        if (errEl) errEl.textContent = 'Choose a valid custom range (from on or before to).'
+        if (loadingEl) loadingEl.classList.add('hidden')
+        if (mainEl) mainEl.classList.add('hidden')
+        if (emptyEl) emptyEl.classList.add('hidden')
+        return
+    }
+
+    if (loadingEl) loadingEl.classList.remove('hidden')
+    if (mainEl) mainEl.classList.add('hidden')
+    if (emptyEl) emptyEl.classList.add('hidden')
+
+    const fetchRange = rangeSpec.preset === 'all'
+        ? { startIso: null, endIso: null }
+        : { startIso: rangeSpec.startIso, endIso: rangeSpec.endIso }
+
+    const { rows, error } = await fetchMyCallsForStats(fetchRange)
+    if (loadingEl) loadingEl.classList.add('hidden')
+
+    if (error) {
+        if (errEl) errEl.textContent = error.message || 'Failed to load statistics.'
+        destroyStatsPageChart()
+        if (mainEl) mainEl.classList.add('hidden')
+        if (emptyEl) emptyEl.classList.add('hidden')
+        return
+    }
+
+    let fromDayKey = rangeSpec.fromDayKey
+    let toDayKey = rangeSpec.toDayKey
+    let rangeDaysInclusive = rangeSpec.rangeDaysInclusive
+    let showPace = rangeSpec.showPace
+
+    if (rangeSpec.preset === 'all') {
+        if (rows.length === 0) {
+            fromDayKey = toLocalDayKey(new Date())
+            toDayKey = fromDayKey
+            rangeDaysInclusive = 1
+            showPace = false
+        } else {
+            let minD = null
+            let maxD = null
+            for (const r of rows) {
+                const dt = new Date(r.call_time)
+                if (Number.isNaN(dt.getTime())) continue
+                if (!minD || dt < minD) minD = dt
+                if (!maxD || dt > maxD) maxD = dt
+            }
+            fromDayKey = minD ? toLocalDayKey(minD) : toLocalDayKey(new Date())
+            toDayKey = maxD ? toLocalDayKey(maxD) : fromDayKey
+            rangeDaysInclusive = calendarDaysInclusive(parseDayKeyToLocalStart(fromDayKey), parseDayKeyToLocalStart(toDayKey))
+            showPace = rangeDaysInclusive >= 14
+        }
+    }
+
+    const rangeMeta = { fromDayKey, toDayKey, rangeDaysInclusive, showPace }
+    const bundle = computeStatsBundle(rows, rangeMeta)
+
+    if (bundle.total === 0) {
+        if (emptyEl) {
+            emptyEl.classList.remove('hidden')
+            const p = emptyEl.querySelector('.stats-empty-text')
+            if (p) p.textContent = 'No data available'
+        }
+        destroyStatsPageChart()
+        return
+    }
+
+    if (emptyEl) emptyEl.classList.add('hidden')
+    if (mainEl) mainEl.classList.remove('hidden')
+
+    const kpi = document.getElementById('statsKpiRow')
+    if (kpi) kpi.innerHTML = renderStatisticsKpis(bundle)
+
+    const paceEl = document.getElementById('statsPace')
+    if (paceEl) {
+        if (bundle.pace && rangeMeta.showPace) {
+            paceEl.classList.remove('hidden')
+            const { last7, prev7, pct } = bundle.pace
+            let line = `<strong>Last 7 days:</strong> ${last7} calls · <strong>Previous 7:</strong> ${prev7} calls`
+            if (pct != null) {
+                const dir = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat'
+                const sign = pct > 0 ? '+' : ''
+                line += ` <span class="stats-pace-muted">(${sign}${pct}% vs prior week, ${dir})</span>`
+            }
+            paceEl.innerHTML = line
+        } else {
+            paceEl.classList.add('hidden')
+            paceEl.innerHTML = ''
+        }
+    }
+
+    const dowEl = document.getElementById('statsDowBars')
+    if (dowEl) dowEl.innerHTML = renderStatisticsDow(bundle)
+
+    const orgBody = document.getElementById('statsOrgTableBody')
+    if (orgBody) orgBody.innerHTML = renderStatisticsOrgsTable(bundle)
+
+    attachStatsActivityChart(bundle.dailyTimeseries)
+}
+
+function openStatisticsPage() {
+    setAppView('statistics')
+    const errEl = document.getElementById('statsPageError')
+    if (errEl) errEl.textContent = ''
+    loadStatisticsPage().catch((e) => {
+        console.error('loadStatisticsPage error:', e)
+        if (errEl) errEl.textContent = e?.message || 'Failed to load statistics.'
+    })
+}
+
+function refreshStatisticsPageIfVisible() {
+    if (currentAppView !== 'statistics') return
+    loadStatisticsPage().catch((e) => console.warn('refreshStatisticsPageIfVisible:', e))
+}
+
+function setupStatisticsPageListeners() {
+    const preset = document.getElementById('statsRangePreset')
+    const customWrap = document.getElementById('statsCustomRange')
+    const applyCustom = document.getElementById('statsApplyCustomBtn')
+    const refreshBtn = document.getElementById('statsRefreshBtn')
+    const backInline = document.getElementById('statsBackInlineBtn')
+    const openReports = document.getElementById('statsOpenReportsBtn')
+
+    const syncCustomVisibility = () => {
+        if (!preset || !customWrap) return
+        const isCustom = preset.value === 'custom'
+        customWrap.classList.toggle('hidden', !isCustom)
+        if (isCustom) {
+            const startInp = document.getElementById('statsRangeStart')
+            const endInp = document.getElementById('statsRangeEnd')
+            const t = new Date()
+            if (startInp && !startInp.value) startInp.value = toLocalDayKey(addLocalDays(startOfLocalDay(t), -29))
+            if (endInp && !endInp.value) endInp.value = toLocalDayKey(t)
+        }
+    }
+
+    preset?.addEventListener('change', () => {
+        syncCustomVisibility()
+        if (preset.value !== 'custom') {
+            loadStatisticsPage().catch((e) => console.error(e))
+        }
+    })
+
+    applyCustom?.addEventListener('click', () => {
+        loadStatisticsPage().catch((e) => console.error(e))
+    })
+
+    refreshBtn?.addEventListener('click', () => {
+        loadStatisticsPage().catch((e) => console.error(e))
+    })
+
+    backInline?.addEventListener('click', () => setAppView('calls'))
+
+    openReports?.addEventListener('click', () => {
+        openReportsModal()
+    })
+
+    syncCustomVisibility()
+}
 
 function getReportChartCssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '';
@@ -3655,49 +4159,6 @@ async function toggleSearch() {
 async function handleSearch(e) {
     currentFilter = e.target.value;
     await loadEntries();
-}
-
-// Show statistics
-async function showStats() {
-    const entries = await getEntries();
-    const statsContent = document.getElementById('statsContent');
-    
-    if (entries.length === 0) {
-        statsContent.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No data available</p>';
-    } else {
-        const orgs = new Set(entries.map(e => e.organization));
-        const today = new Date();
-        const last7Days = entries.filter(e => {
-            const entryDate = new Date(e.timestamp);
-            const diffDays = (today - entryDate) / (1000 * 60 * 60 * 24);
-            return diffDays <= 7;
-        });
-        const oldest = new Date(entries[entries.length - 1].timestamp);
-        const daysSpan = (today - oldest) / (1000 * 60 * 60 * 24);
-        const safeDays = Math.max(daysSpan, 1);
-        const avgPerDay = Math.round((entries.length / safeDays) * 10) / 10;
-        
-        statsContent.innerHTML = `
-            <div class="stat-card">
-                <div class="stat-value">${entries.length}</div>
-                <div class="stat-label">Total Calls</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">${orgs.size}</div>
-                <div class="stat-label">Organizations</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">${last7Days.length}</div>
-                <div class="stat-label">Last 7 Days</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">${avgPerDay}</div>
-                <div class="stat-label">Avg/Day</div>
-            </div>
-        `;
-    }
-    
-    document.getElementById('statsModal').classList.add('show');
 }
 
 // Update stats display
