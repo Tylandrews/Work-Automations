@@ -1,5 +1,5 @@
 """
-TC032: Open Account, type Unsaved Name, leave without saving — reopen account; name is not the unsaved string.
+TC039: On Account view, titlebar shows the Call Log back control; it hides again on the main workspace.
 """
 import asyncio
 import os
@@ -40,19 +40,18 @@ async def run_test() -> None:
             raise AssertionError(f"Login failed: {err or '(no authError)'}") from exc
         await expect(auth_screen).to_be_hidden()
 
-        await page.locator("#profileBtn").click()
-        await expect(page.locator("#accountWorkspace")).to_be_visible()
-        before = await page.locator("#profileName").input_value()
-        await page.locator("#profileName").fill("Unsaved Name")
-        await page.locator("#accountBackInlineBtn").click()
-        await expect(page.locator("#accountWorkspace")).to_be_hidden()
+        await expect(page.locator("#accountBackBtn")).to_be_hidden()
+        await expect(page.locator("#profileBtn")).to_be_visible()
 
         await page.locator("#profileBtn").click()
         await expect(page.locator("#accountWorkspace")).to_be_visible()
-        after = await page.locator("#profileName").input_value()
-        assert after != "Unsaved Name"
-        assert after == before
-        await page.locator("#accountBackInlineBtn").click()
+        await expect(page.locator("#accountBackBtn")).to_be_visible()
+        await expect(page.locator("#profileBtn")).to_be_hidden()
+
+        await page.locator("#accountBackBtn").click()
+        await expect(page.locator("#accountWorkspace")).to_be_hidden()
+        await expect(page.locator("#accountBackBtn")).to_be_hidden()
+        await expect(page.locator("#profileBtn")).to_be_visible()
 
     finally:
         if context:

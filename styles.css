@@ -2156,3 +2156,218 @@ main .form-container {
         box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.0);
     }
 }
+
+/* App shell: titlebar + workspace fill below */
+body[data-shell="app"] .app-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-workspace {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-workspace--account {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Account page */
+.account-page {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 20px 24px 32px;
+    width: 100%;
+}
+
+.account-page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.account-page-title {
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 6px;
+}
+
+.account-page-lead {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 42ch;
+}
+
+.account-back-inline {
+    flex-shrink: 0;
+}
+
+.account-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2px;
+}
+
+.account-tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.account-tab:hover {
+    color: var(--text-primary);
+    background: var(--hover-bg);
+}
+
+.account-tab[aria-selected="true"] {
+    color: var(--text-primary);
+    box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.account-panel {
+    outline: none;
+}
+
+.account-panel:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 4px;
+}
+
+.account-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px 22px;
+    box-shadow: 0 1px 2px var(--shadow);
+}
+
+.account-card--spaced {
+    margin-top: 20px;
+}
+
+.account-card-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0 0 14px;
+    color: var(--text-primary);
+}
+
+.account-form-actions {
+    margin-top: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.admin-invite-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: flex-end;
+}
+
+.admin-invite-email {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+.admin-invite-redirect {
+    flex: 1 1 260px;
+    min-width: 0;
+}
+
+.admin-invite-actions {
+    flex: 0 0 auto;
+    margin-top: 0;
+}
+
+.account-admin-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.account-admin-toolbar .account-card-title {
+    margin: 0;
+}
+
+.account-table-wrap {
+    overflow-x: auto;
+    margin: 0 -6px;
+    padding: 0 6px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.account-users-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.account-users-table th,
+.account-users-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.account-users-table th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.account-users-table tbody tr:hover {
+    background: var(--hover-bg);
+}
+
+.account-actions-cell {
+    white-space: normal;
+    min-width: 200px;
+}
+
+.admin-row-action {
+    margin: 2px 4px 2px 0;
+}
+
+.btn-sm {
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+}
+
+@media (max-width: 720px) {
+    .account-page {
+        padding: 16px 16px 28px;
+    }
+
+    .account-users-table th:nth-child(5),
+    .account-users-table td:nth-child(5) {
+        display: none;
+    }
+}

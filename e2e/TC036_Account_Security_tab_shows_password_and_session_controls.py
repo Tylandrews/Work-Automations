@@ -1,5 +1,5 @@
 """
-TC032: Open Account, type Unsaved Name, leave without saving — reopen account; name is not the unsaved string.
+TC036: Signed-in user opens Account, switches to Security — password fields and Sign out everywhere are visible.
 """
 import asyncio
 import os
@@ -42,17 +42,16 @@ async def run_test() -> None:
 
         await page.locator("#profileBtn").click()
         await expect(page.locator("#accountWorkspace")).to_be_visible()
-        before = await page.locator("#profileName").input_value()
-        await page.locator("#profileName").fill("Unsaved Name")
+        await page.locator("#accountTabSecurity").click()
+
+        await expect(page.locator("#accountTabSecurity")).to_have_attribute("aria-selected", "true")
+        await expect(page.locator("#securityNewPassword")).to_be_visible()
+        await expect(page.locator("#securityConfirmPassword")).to_be_visible()
+        await expect(page.locator("#securityPasswordSubmit")).to_be_visible()
+        await expect(page.locator("#securitySignOutEverywhereBtn")).to_be_visible()
+
         await page.locator("#accountBackInlineBtn").click()
         await expect(page.locator("#accountWorkspace")).to_be_hidden()
-
-        await page.locator("#profileBtn").click()
-        await expect(page.locator("#accountWorkspace")).to_be_visible()
-        after = await page.locator("#profileName").input_value()
-        assert after != "Unsaved Name"
-        assert after == before
-        await page.locator("#accountBackInlineBtn").click()
 
     finally:
         if context:

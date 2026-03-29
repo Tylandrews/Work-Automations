@@ -134,7 +134,10 @@
                     <svg class="icon theme-icon theme-icon-moon" aria-hidden="true"><use href="#i-moon"></use></svg>
                     <svg class="icon theme-icon theme-icon-sun" aria-hidden="true"><use href="#i-sun"></use></svg>
                 </button>
-                <button class="tb-btn" id="profileBtn" type="button" title="Account" aria-label="Update account" style="display: none;">
+                <button class="tb-btn" id="accountBackBtn" type="button" title="Back to Call Log" aria-label="Back to Call Log" style="display: none;">
+                    <span class="tb-label">Call Log</span>
+                </button>
+                <button class="tb-btn" id="profileBtn" type="button" title="Account" aria-label="Open account" style="display: none;">
                     <svg class="icon" aria-hidden="true"><use href="#i-user"></use></svg>
                     <span class="tb-label">Account</span>
                 </button>
@@ -149,6 +152,7 @@
         <div class="titlebar-divider"></div>
     </header>
 
+    <div id="mainWorkspace" class="app-workspace" aria-hidden="false">
     <div class="container">
         <main>
             <!-- Form Section -->
@@ -267,6 +271,115 @@
                 </div>
             </div>
         </aside>
+    </div>
+    </div>
+
+    <div id="accountWorkspace" class="app-workspace app-workspace--account hidden" aria-hidden="true">
+        <div class="account-page">
+            <header class="account-page-header">
+                <div class="account-page-header-text">
+                    <h2 class="account-page-title" id="accountPageHeading">Account</h2>
+                    <p class="account-page-lead">Profile, security, and (for administrators) user management.</p>
+                </div>
+                <button type="button" class="btn btn-secondary account-back-inline" id="accountBackInlineBtn" aria-label="Back to Call Log">Back to Call Log</button>
+            </header>
+
+            <div class="account-tabs" role="tablist" aria-label="Account sections">
+                <button type="button" class="account-tab" role="tab" id="accountTabProfile" aria-selected="true" aria-controls="accountPanelProfile" tabindex="0">Profile</button>
+                <button type="button" class="account-tab" role="tab" id="accountTabSecurity" aria-selected="false" aria-controls="accountPanelSecurity" tabindex="-1">Security</button>
+                <button type="button" class="account-tab hidden" role="tab" id="accountTabAdmin" aria-selected="false" aria-controls="accountPanelAdmin" tabindex="-1">Administration</button>
+            </div>
+
+            <div id="accountPanelProfile" class="account-panel" role="tabpanel" aria-labelledby="accountTabProfile" tabindex="0">
+                <form id="profileForm" class="profile-form account-card">
+                    <h3 class="account-card-title">Profile</h3>
+                    <div id="profileError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="form-group">
+                        <label for="profileName">Name</label>
+                        <input type="text" id="profileName" name="name" autocomplete="name" required placeholder="Your name">
+                    </div>
+                    <div class="form-group">
+                        <label for="profileEmail">Email</label>
+                        <input type="email" id="profileEmail" name="email" autocomplete="email" required placeholder="you@example.com">
+                    </div>
+                    <p class="profile-hint">Changing email may require you to confirm the new address. Your display name is used in call notifications.</p>
+                    <div class="account-form-actions">
+                        <button type="submit" class="btn btn-primary" id="profileSaveBtn">Save profile</button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="accountPanelSecurity" class="account-panel hidden" role="tabpanel" aria-labelledby="accountTabSecurity" tabindex="0" hidden>
+                <div class="account-card">
+                    <h3 class="account-card-title">Password</h3>
+                    <div id="securityPasswordError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <form id="securityPasswordForm">
+                        <div class="form-group">
+                            <label for="securityNewPassword">New password</label>
+                            <input type="password" id="securityNewPassword" name="newPassword" autocomplete="new-password" minlength="8" placeholder="At least 8 characters">
+                        </div>
+                        <div class="form-group">
+                            <label for="securityConfirmPassword">Confirm new password</label>
+                            <input type="password" id="securityConfirmPassword" name="confirmPassword" autocomplete="new-password" minlength="8" placeholder="Repeat new password">
+                        </div>
+                        <div class="account-form-actions">
+                            <button type="submit" class="btn btn-primary" id="securityPasswordSubmit">Update password</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="account-card account-card--spaced">
+                    <h3 class="account-card-title">Sessions</h3>
+                    <p class="profile-hint">Sign out of Call Log on all devices where you are logged in.</p>
+                    <div id="securitySignOutEverywhereError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <button type="button" class="btn btn-secondary" id="securitySignOutEverywhereBtn">Sign out everywhere</button>
+                </div>
+            </div>
+
+            <div id="accountPanelAdmin" class="account-panel hidden" role="tabpanel" aria-labelledby="accountTabAdmin" tabindex="0" hidden>
+                <div class="account-card">
+                    <h3 class="account-card-title">Invite user</h3>
+                    <div id="adminInviteError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <form id="adminInviteForm" class="admin-invite-row">
+                        <div class="form-group admin-invite-email">
+                            <label for="adminInviteEmail">Email</label>
+                            <input type="email" id="adminInviteEmail" name="email" autocomplete="off" placeholder="colleague@example.com">
+                        </div>
+                        <div class="form-group admin-invite-redirect">
+                            <label for="adminInviteRedirect">Redirect URL (optional)</label>
+                            <input type="url" id="adminInviteRedirect" name="redirectTo" autocomplete="off" placeholder="https://…">
+                        </div>
+                        <div class="account-form-actions admin-invite-actions">
+                            <button type="submit" class="btn btn-primary" id="adminInviteSubmit">Send invite</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="account-card account-card--spaced">
+                    <div class="account-admin-toolbar">
+                        <h3 class="account-card-title">Users</h3>
+                        <button type="button" class="btn btn-secondary btn-sm" id="adminUsersRefreshBtn">Refresh</button>
+                    </div>
+                    <div id="adminUsersError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="account-table-wrap">
+                        <table class="account-users-table" aria-label="User directory">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Email</th>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">Admin</th>
+                                    <th scope="col">Status</th>
+                                    <th scope="col">Last sign-in</th>
+                                    <th scope="col">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminUsersTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="account-form-actions">
+                        <button type="button" class="btn btn-secondary" id="adminLoadMoreBtn" style="display: none;">Load more</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Calendar Modal -->
@@ -435,32 +548,6 @@
                     <button type="button" class="btn btn-primary" id="runReportsNowBtn" style="display:none;">Run reports now</button>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Profile / Account Modal -->
-    <div class="modal" id="profileModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
-        <div class="modal-content modal-small" role="document">
-            <div class="modal-header">
-                <h3 id="profileTitle">Account</h3>
-                <button class="modal-close" id="closeProfileModal" type="button" aria-label="Close account dialog">&times;</button>
-            </div>
-            <form id="profileForm" class="profile-form">
-                <div id="profileError" class="auth-error" role="alert" aria-live="polite"></div>
-                <div class="form-group">
-                    <label for="profileName">Name</label>
-                    <input type="text" id="profileName" name="name" autocomplete="name" required placeholder="Your name">
-                </div>
-                <div class="form-group">
-                    <label for="profileEmail">Email</label>
-                    <input type="email" id="profileEmail" name="email" autocomplete="email" required placeholder="you@example.com">
-                </div>
-                <p class="profile-hint">Changing email may require you to confirm the new address. Your display name is used in call notifications.</p>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" id="profileCancelBtn">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="profileSaveBtn">Save</button>
-                </div>
-            </form>
         </div>
     </div>
 

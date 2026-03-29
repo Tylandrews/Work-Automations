@@ -1,5 +1,5 @@
 """
-TC032: Open Account, type Unsaved Name, leave without saving — reopen account; name is not the unsaved string.
+TC038: Account Security — mismatched new passwords show client-side validation error (no password change).
 """
 import asyncio
 import os
@@ -42,16 +42,16 @@ async def run_test() -> None:
 
         await page.locator("#profileBtn").click()
         await expect(page.locator("#accountWorkspace")).to_be_visible()
-        before = await page.locator("#profileName").input_value()
-        await page.locator("#profileName").fill("Unsaved Name")
-        await page.locator("#accountBackInlineBtn").click()
-        await expect(page.locator("#accountWorkspace")).to_be_hidden()
+        await page.locator("#accountTabSecurity").click()
 
-        await page.locator("#profileBtn").click()
-        await expect(page.locator("#accountWorkspace")).to_be_visible()
-        after = await page.locator("#profileName").input_value()
-        assert after != "Unsaved Name"
-        assert after == before
+        err_el = page.locator("#securityPasswordError")
+
+        await page.locator("#securityNewPassword").fill("abcdefgh")
+        await page.locator("#securityConfirmPassword").fill("abcdefgi")
+        await page.locator("#securityPasswordSubmit").click()
+
+        await expect(err_el).to_contain_text("do not match", timeout=10000)
+
         await page.locator("#accountBackInlineBtn").click()
 
     finally:

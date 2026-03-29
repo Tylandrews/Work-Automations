@@ -43,14 +43,14 @@ async def run_test() -> None:
         await expect(page.locator("#profileBtn")).to_be_visible()
         await page.locator("#profileBtn").click()
 
-        modal = page.locator("#profileModal")
-        await expect(modal).to_be_visible()
-        await expect(page.locator("#profileTitle")).to_have_text("Account")
+        account_ws = page.locator("#accountWorkspace")
+        await expect(account_ws).to_be_visible()
+        await expect(page.locator("#accountPageHeading")).to_have_text("Account")
         await expect(page.locator("#profileName")).to_be_visible()
         await expect(page.locator("#profileEmail")).to_be_visible()
 
-        await page.locator("#closeProfileModal").click()
-        await expect(modal).to_be_hidden()
+        await page.locator("#accountBackInlineBtn").click()
+        await expect(account_ws).to_be_hidden()
 
     finally:
         if context:

@@ -11,6 +11,40 @@ let supabaseRealtimeChannel = null;
 let currentUserProfile = null; // { id, full_name, is_admin } for logged-in user (Supabase)
 const profileCache = new Map(); // user_id -> full_name
 
+/** Deploy: `supabase functions deploy account-admin` (use `--no-verify-jwt` if JWT is verified inside the function). */
+const ACCOUNT_ADMIN_FUNCTION_SLUG = 'account-admin'
+const ADMIN_LIST_PER_PAGE = 50
+
+let currentAppView = 'calls'
+let logoutClickHandler = null
+let adminDirectoryPage = 1
+let accountAdminLoadedOnce = false
+
+function setAppView(view) {
+    const main = document.getElementById('mainWorkspace');
+    const account = document.getElementById('accountWorkspace');
+    const backBtn = document.getElementById('accountBackBtn');
+    const profileBtn = document.getElementById('profileBtn');
+    if (!main || !account) return;
+    if (view === 'account') {
+        currentAppView = 'account';
+        main.classList.add('hidden');
+        main.setAttribute('aria-hidden', 'true');
+        account.classList.remove('hidden');
+        account.setAttribute('aria-hidden', 'false');
+        if (backBtn) backBtn.style.display = '';
+        if (profileBtn) profileBtn.style.display = 'none';
+    } else {
+        currentAppView = 'calls';
+        main.classList.remove('hidden');
+        main.setAttribute('aria-hidden', 'false');
+        account.classList.add('hidden');
+        account.setAttribute('aria-hidden', 'true');
+        if (backBtn) backBtn.style.display = 'none';
+        if (profileBtn && useSupabase() && getSupabase()) profileBtn.style.display = '';
+    }
+}
+
 const PII_KEY_NAME = 'calls_pii';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -875,10 +909,12 @@ async function loadCurrentUserProfile() {
         if (error) {
             console.error('loadCurrentUserProfile error:', error);
             currentUserProfile = { id: session.user.id, full_name: session.user.email || 'You', is_admin: false };
+            updateAccountAdminTabVisibility();
             return;
         }
         currentUserProfile = { id: session.user.id, full_name: data.full_name || (session.user.email || 'You'), is_admin: !!data.is_admin };
         profileCache.set(session.user.id, currentUserProfile.full_name);
+        updateAccountAdminTabVisibility();
     } catch (err) {
         console.error('loadCurrentUserProfile exception:', err);
     }
@@ -1447,39 +1483,52 @@ function setupAuthListeners() {
     }
 }
 
+async function runAuthSignOutAndTeardown(signOutOptions) {
+    const supabase = getSupabase();
+    const logoutBtn = document.getElementById('logoutBtn');
+    const profileBtn = document.getElementById('profileBtn');
+    const accountBackBtn = document.getElementById('accountBackBtn');
+    if (supabase) {
+        await supabase.auth.signOut(signOutOptions);
+        if (supabaseRealtimeChannel) {
+            supabase.removeChannel(supabaseRealtimeChannel);
+            supabaseRealtimeChannel = null;
+        }
+    }
+
+    encryptionState.enabled = false
+    encryptionState.initialized = false
+    encryptionState.keyVersion = 1
+    encryptionState.dataKey = null
+    encryptionState.blindKey = null
+    encryptionState.initPromise = null
+
+    setAppView('calls');
+    if (logoutBtn) logoutBtn.style.display = 'none';
+    if (profileBtn) profileBtn.style.display = 'none';
+    if (accountBackBtn) accountBackBtn.style.display = 'none';
+    if (logoutClickHandler) {
+        logoutBtn?.removeEventListener('click', logoutClickHandler);
+        logoutClickHandler = null;
+    }
+    const authScreen = document.getElementById('authScreen');
+    const appShell = document.getElementById('appShell');
+    showAuth(authScreen, appShell);
+    setupAuthListeners();
+}
+
 function setupLogout() {
     const logoutBtn = document.getElementById('logoutBtn');
     const profileBtn = document.getElementById('profileBtn');
     if (logoutBtn) logoutBtn.style.display = '';
     if (profileBtn) profileBtn.style.display = '';
-    const handler = async () => {
-        const supabase = getSupabase();
-        if (supabase) {
-            await supabase.auth.signOut();
-            if (supabaseRealtimeChannel) {
-                supabase.removeChannel(supabaseRealtimeChannel);
-                supabaseRealtimeChannel = null;
-            }
-        }
+    const accountBackBtn = document.getElementById('accountBackBtn');
+    if (accountBackBtn) accountBackBtn.style.display = 'none';
 
-        // Reset in-memory encryption keys so next login always re-initializes.
-        encryptionState.enabled = false
-        encryptionState.initialized = false
-        encryptionState.keyVersion = 1
-        encryptionState.dataKey = null
-        encryptionState.blindKey = null
-        encryptionState.initPromise = null
-
-        if (logoutBtn) logoutBtn.style.display = 'none';
-        if (profileBtn) profileBtn.style.display = 'none';
-        logoutBtn?.removeEventListener('click', handler);
-        const authScreen = document.getElementById('authScreen');
-        const appShell = document.getElementById('appShell');
-        showAuth(authScreen, appShell);
-        // Re-setup auth listeners so the brand card is clickable again
-        setupAuthListeners();
+    logoutClickHandler = async () => {
+        await runAuthSignOutAndTeardown();
     };
-    logoutBtn?.addEventListener('click', handler);
+    logoutBtn?.addEventListener('click', logoutClickHandler);
 }
 
 function subscribeRealtime() {
@@ -1703,12 +1752,8 @@ function setupEventListeners() {
     document.getElementById('closeReportsModal')?.addEventListener('click', closeReportsModal);
     document.getElementById('editForm').addEventListener('submit', handleEditSubmit);
 
-    // Profile / Account modal (Supabase only)
-    document.getElementById('profileBtn')?.addEventListener('click', openProfileModal);
-    document.getElementById('closeProfileModal')?.addEventListener('click', closeProfileModal);
-    document.getElementById('profileCancelBtn')?.addEventListener('click', closeProfileModal);
-    document.getElementById('profileForm')?.addEventListener('submit', handleProfileSubmit);
-    
+    setupAccountPageListeners();
+
     // Close modals on outside click
     // Keep Edit modal open on backdrop clicks to prevent accidental dismiss while editing.
     document.getElementById('editModal').addEventListener('click', (e) => {
@@ -1719,9 +1764,6 @@ function setupEventListeners() {
     });
     document.getElementById('reportsModal')?.addEventListener('click', (e) => {
         if (e.target.id === 'reportsModal') closeReportsModal();
-    });
-    document.getElementById('profileModal')?.addEventListener('click', (e) => {
-        if (e.target.id === 'profileModal') closeProfileModal();
     });
 
     setupEntriesListClick();
@@ -1968,8 +2010,8 @@ function setupKeyboardShortcuts() {
                 closeCalendar();
             } else if (document.getElementById('confirmModal')?.classList.contains('show')) {
                 closeConfirm(false);
-            } else if (document.getElementById('profileModal')?.classList.contains('show')) {
-                closeProfileModal();
+            } else if (currentAppView === 'account') {
+                setAppView('calls');
             } else if (document.getElementById('searchContainer').style.display !== 'none') {
                 toggleSearch();
             }
@@ -2848,6 +2890,7 @@ function updateReportsAdminUI() {
     if (!runBtn) return;
     const isAdmin = !!currentUserProfile?.is_admin;
     runBtn.style.display = isAdmin ? '' : 'none';
+    updateAccountAdminTabVisibility();
 }
 
 function formatPeriodLabel(periodStart, periodEnd) {
@@ -3057,6 +3100,18 @@ async function refreshReports() {
     }
 }
 
+async function getSupabaseAccessToken() {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token && String(session.access_token).split('.').length === 3) return session.access_token;
+    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+    if (refreshErr) throw refreshErr;
+    const tok = refreshed?.session?.access_token;
+    if (tok && String(tok).split('.').length === 3) return tok;
+    return null;
+}
+
 async function runReportsNow() {
     if (!useSupabase()) return;
     if (!currentUserProfile?.is_admin) return;
@@ -3072,18 +3127,7 @@ async function runReportsNow() {
         btn.textContent = 'Running…';
     }
     try {
-        const getToken = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.access_token && String(session.access_token).split('.').length === 3) return session.access_token;
-            // Attempt refresh once (covers expired/invalid access token)
-            const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-            if (refreshErr) throw refreshErr;
-            const tok = refreshed?.session?.access_token;
-            if (tok && String(tok).split('.').length === 3) return tok;
-            return null;
-        };
-
-        const accessToken = await getToken();
+        const accessToken = await getSupabaseAccessToken();
         if (!accessToken) throw new Error('Session expired. Please log in again.');
 
         const url = (window.supabaseConfig?.SUPABASE_URL || '').trim();
@@ -3141,8 +3185,61 @@ async function runReportsNow() {
     }
 }
 
-// ---------- Profile / Account modal (Supabase) ----------
-function openProfileModal() {
+// ---------- Account page (Supabase) ----------
+function updateAccountAdminTabVisibility() {
+    const tab = document.getElementById('accountTabAdmin');
+    if (!tab) return;
+    const isAdmin = !!currentUserProfile?.is_admin;
+    if (isAdmin) {
+        tab.classList.remove('hidden');
+    } else {
+        tab.classList.add('hidden');
+        if (tab.getAttribute('aria-selected') === 'true') {
+            selectAccountTab('profile');
+        }
+    }
+}
+
+function selectAccountTab(tabId) {
+    const rows = [
+        { id: 'profile', tabEl: 'accountTabProfile', panelEl: 'accountPanelProfile' },
+        { id: 'security', tabEl: 'accountTabSecurity', panelEl: 'accountPanelSecurity' },
+        { id: 'admin', tabEl: 'accountTabAdmin', panelEl: 'accountPanelAdmin' },
+    ];
+    for (const row of rows) {
+        const active = row.id === tabId;
+        const te = document.getElementById(row.tabEl);
+        const pe = document.getElementById(row.panelEl);
+        if (te?.classList.contains('hidden')) {
+            if (pe) {
+                pe.classList.add('hidden');
+                pe.setAttribute('hidden', '');
+            }
+            continue;
+        }
+        if (te) {
+            te.setAttribute('aria-selected', active ? 'true' : 'false');
+            te.tabIndex = active ? 0 : -1;
+        }
+        if (pe) {
+            if (active) {
+                pe.classList.remove('hidden');
+                pe.removeAttribute('hidden');
+            } else {
+                pe.classList.add('hidden');
+                pe.setAttribute('hidden', '');
+            }
+        }
+    }
+    if (tabId === 'admin' && currentUserProfile?.is_admin) {
+        if (!accountAdminLoadedOnce) {
+            accountAdminLoadedOnce = true;
+            fetchAdminDirectory(true).catch((err) => console.error('fetchAdminDirectory', err));
+        }
+    }
+}
+
+function hydrateAccountProfileForm() {
     if (!useSupabase() || !currentUserProfile) return;
     const supabase = getSupabase();
     if (!supabase) return;
@@ -3150,22 +3247,234 @@ function openProfileModal() {
     const nameEl = document.getElementById('profileName');
     const emailEl = document.getElementById('profileEmail');
     if (!nameEl || !emailEl) return;
-    errEl.textContent = '';
+    if (errEl) errEl.textContent = '';
     nameEl.value = currentUserProfile.full_name || '';
     supabase.auth.getSession().then(({ data: { session } }) => {
         emailEl.value = session?.user?.email || '';
     });
-    document.getElementById('profileModal').classList.add('show');
-    document.getElementById('profileModal').setAttribute('aria-hidden', 'false');
-    setTimeout(() => nameEl.focus(), 0);
 }
 
-function closeProfileModal() {
-    const modal = document.getElementById('profileModal');
-    if (!modal) return;
-    modal.classList.remove('show');
-    modal.setAttribute('aria-hidden', 'true');
-    document.getElementById('profileError').textContent = '';
+function openAccountPage() {
+    if (!useSupabase() || !currentUserProfile) return;
+    hydrateAccountProfileForm();
+    document.getElementById('securityPasswordError').textContent = '';
+    document.getElementById('securitySignOutEverywhereError').textContent = '';
+    document.getElementById('adminInviteError').textContent = '';
+    document.getElementById('adminUsersError').textContent = '';
+    const np = document.getElementById('securityNewPassword');
+    const cp = document.getElementById('securityConfirmPassword');
+    if (np) np.value = '';
+    if (cp) cp.value = '';
+    updateAccountAdminTabVisibility();
+    selectAccountTab('profile');
+    setAppView('account');
+    setTimeout(() => document.getElementById('profileName')?.focus(), 0);
+}
+
+async function invokeAccountAdmin(body) {
+    if (!useSupabase()) throw new Error('Supabase is not configured.');
+    const accessToken = await getSupabaseAccessToken();
+    if (!accessToken) throw new Error('Session expired. Please log in again.');
+    const url = (window.supabaseConfig?.SUPABASE_URL || '').trim();
+    const anonKey = (window.supabaseConfig?.SUPABASE_ANON_KEY || '').trim();
+    if (!url || !anonKey) throw new Error('Supabase is not configured.');
+    const res = await fetch(`${url.replace(/\/+$/, '')}/functions/v1/${ACCOUNT_ADMIN_FUNCTION_SLUG}`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            apikey: anonKey,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    });
+    const responseText = await res.text().catch(() => '');
+    const payload = (() => {
+        try {
+            return responseText ? JSON.parse(responseText) : null;
+        } catch {
+            return null;
+        }
+    })();
+    if (!res.ok) {
+        const raw = payload?.error ?? payload?.detail ?? payload?.message ?? responseText;
+        const detail = raw == null ? '' : typeof raw === 'string' ? raw : JSON.stringify(raw);
+        throw new Error(detail || `HTTP ${res.status}`);
+    }
+    if (payload && payload.ok === false) {
+        throw new Error(payload.error || payload.detail || 'Request failed');
+    }
+    return payload;
+}
+
+function appendAdminUserRows(users) {
+    const tbody = document.getElementById('adminUsersTableBody');
+    if (!tbody) return;
+    const selfId = currentUserProfile?.id;
+    for (const u of users) {
+        const tr = document.createElement('tr');
+        tr.dataset.userId = u.id;
+        tr.dataset.isAdmin = u.is_admin ? '1' : '0';
+        tr.dataset.banned = u.banned ? '1' : '0';
+        const isSelf = u.id === selfId;
+        const tdEmail = document.createElement('td');
+        tdEmail.textContent = u.email || '';
+        const tdName = document.createElement('td');
+        tdName.textContent = u.full_name || '';
+        const tdAdmin = document.createElement('td');
+        tdAdmin.textContent = u.is_admin ? 'Yes' : 'No';
+        const tdStatus = document.createElement('td');
+        tdStatus.textContent = u.banned ? 'Banned' : 'Active';
+        const tdLast = document.createElement('td');
+        tdLast.textContent = u.last_sign_in_at
+            ? new Date(u.last_sign_in_at).toLocaleString()
+            : '—';
+        const tdAct = document.createElement('td');
+        tdAct.className = 'account-actions-cell';
+
+        const mkBtn = (label, action, extraClass) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = `btn btn-secondary btn-sm admin-row-action ${extraClass || ''}`;
+            b.textContent = label;
+            b.dataset.action = action;
+            b.dataset.userId = u.id;
+            if (isSelf && (action === 'ban' || action === 'delete')) {
+                b.disabled = true;
+                b.title = 'Not available for your own account';
+            }
+            return b;
+        };
+
+        tdAct.appendChild(mkBtn(u.is_admin ? 'Remove admin' : 'Make admin', 'toggleAdmin', ''));
+        tdAct.appendChild(document.createTextNode(' '));
+        tdAct.appendChild(mkBtn(u.banned ? 'Enable' : 'Disable', 'toggleBan', ''));
+        tdAct.appendChild(document.createTextNode(' '));
+        tdAct.appendChild(mkBtn('Delete', 'deleteUser', 'btn-danger-outline'));
+
+        tr.appendChild(tdEmail);
+        tr.appendChild(tdName);
+        tr.appendChild(tdAdmin);
+        tr.appendChild(tdStatus);
+        tr.appendChild(tdLast);
+        tr.appendChild(tdAct);
+        tbody.appendChild(tr);
+    }
+}
+
+async function fetchAdminDirectory(reset) {
+    if (!currentUserProfile?.is_admin) return;
+    const errEl = document.getElementById('adminUsersError');
+    const tbody = document.getElementById('adminUsersTableBody');
+    const loadMoreBtn = document.getElementById('adminLoadMoreBtn');
+    if (errEl) errEl.textContent = '';
+    let pageToFetch;
+    if (reset) {
+        adminDirectoryPage = 1;
+        if (tbody) tbody.innerHTML = '';
+        pageToFetch = 1;
+    } else {
+        pageToFetch = adminDirectoryPage;
+    }
+    try {
+        const payload = await invokeAccountAdmin({
+            action: 'list',
+            page: pageToFetch,
+            perPage: ADMIN_LIST_PER_PAGE,
+        });
+        const users = payload.users || [];
+        appendAdminUserRows(users);
+        adminDirectoryPage = pageToFetch + 1;
+        const hasMore = users.length >= ADMIN_LIST_PER_PAGE;
+        if (loadMoreBtn) loadMoreBtn.style.display = hasMore ? '' : 'none';
+    } catch (err) {
+        if (errEl) errEl.textContent = err?.message || 'Failed to load users.';
+    }
+}
+
+async function handleAdminTableAction(action, userId, sourceBtn) {
+    const errEl = document.getElementById('adminUsersError');
+    if (errEl) errEl.textContent = '';
+    const tr = sourceBtn?.closest?.('tr');
+    const rowIsAdmin = tr?.dataset.isAdmin === '1';
+    const rowBanned = tr?.dataset.banned === '1';
+    try {
+        if (action === 'toggleAdmin') {
+            const next = !rowIsAdmin;
+            const ok = await openConfirm({
+                title: next ? 'Grant administrator' : 'Remove administrator',
+                message: next
+                    ? 'This user will be able to manage accounts and run privileged actions.'
+                    : 'This user will lose administrator access.',
+                detail: 'You can change this again later.',
+                okLabel: next ? 'Grant' : 'Remove',
+            });
+            if (!ok) return;
+            await invokeAccountAdmin({ action: 'setAdmin', userId, is_admin: next });
+        } else if (action === 'toggleBan') {
+            const nextBan = !rowBanned;
+            const ok = await openConfirm({
+                title: nextBan ? 'Disable user' : 'Enable user',
+                message: nextBan
+                    ? 'The user will not be able to sign in until re-enabled.'
+                    : 'The user will be able to sign in again.',
+                detail: nextBan ? 'They remain in the directory until deleted.' : '',
+                okLabel: nextBan ? 'Disable' : 'Enable',
+            });
+            if (!ok) return;
+            await invokeAccountAdmin({ action: 'setBanned', userId, banned: nextBan });
+        } else if (action === 'deleteUser') {
+            const ok = await openConfirm({
+                title: 'Delete user',
+                message: 'Permanently delete this user and their auth record?',
+                detail: 'This cannot be undone. Profile data for this user will be removed.',
+                okLabel: 'Delete user',
+            });
+            if (!ok) return;
+            await invokeAccountAdmin({ action: 'deleteUser', userId });
+        }
+        await fetchAdminDirectory(true);
+        accountAdminLoadedOnce = true;
+    } catch (err) {
+        const msg = err?.message || String(err);
+        if (errEl) {
+            if (msg.includes('last_admin')) {
+                errEl.textContent = 'Cannot remove the last administrator.';
+            } else {
+                errEl.textContent = msg;
+            }
+        }
+    }
+}
+
+function setupAccountPageListeners() {
+    document.getElementById('profileBtn')?.addEventListener('click', openAccountPage);
+    document.getElementById('accountBackBtn')?.addEventListener('click', () => setAppView('calls'));
+    document.getElementById('accountBackInlineBtn')?.addEventListener('click', () => setAppView('calls'));
+
+    document.getElementById('accountTabProfile')?.addEventListener('click', () => selectAccountTab('profile'));
+    document.getElementById('accountTabSecurity')?.addEventListener('click', () => selectAccountTab('security'));
+    document.getElementById('accountTabAdmin')?.addEventListener('click', () => selectAccountTab('admin'));
+
+    document.getElementById('profileForm')?.addEventListener('submit', handleProfileSubmit);
+    document.getElementById('securityPasswordForm')?.addEventListener('submit', handleSecurityPasswordSubmit);
+    document.getElementById('securitySignOutEverywhereBtn')?.addEventListener('click', handleSecuritySignOutEverywhere);
+    document.getElementById('adminInviteForm')?.addEventListener('submit', handleAdminInviteSubmit);
+    document.getElementById('adminUsersRefreshBtn')?.addEventListener('click', () => {
+        accountAdminLoadedOnce = true;
+        fetchAdminDirectory(true).catch((e) => console.error(e));
+    });
+    document.getElementById('adminLoadMoreBtn')?.addEventListener('click', () => {
+        fetchAdminDirectory(false).catch((e) => console.error(e));
+    });
+
+    document.getElementById('adminUsersTableBody')?.addEventListener('click', (e) => {
+        const btn = e.target.closest?.('.admin-row-action');
+        if (!btn || btn.disabled) return;
+        const action = btn.dataset.action;
+        const userId = btn.dataset.userId;
+        if (!action || !userId) return;
+        handleAdminTableAction(action, userId, btn);
+    });
 }
 
 async function handleProfileSubmit(e) {
@@ -3203,7 +3512,7 @@ async function handleProfileSubmit(e) {
             .from('profiles')
             .upsert(
                 { id: session.user.id, full_name: fullName, updated_at: new Date().toISOString() },
-                { onConflict: 'id' }
+                { onConflict: 'id' },
             );
         if (profileError) {
             errEl.textContent = profileError.message || 'Failed to update name.';
@@ -3218,14 +3527,112 @@ async function handleProfileSubmit(e) {
         }
         currentUserProfile = { id: session.user.id, full_name: fullName, is_admin: !!currentUserProfile?.is_admin };
         profileCache.set(session.user.id, fullName);
-        closeProfileModal();
+        updateAccountAdminTabVisibility();
         showNotification('Account updated.');
     } catch (err) {
         errEl.textContent = err?.message || 'Update failed.';
     } finally {
         if (saveBtn) {
             saveBtn.disabled = false;
-            saveBtn.textContent = originalText || 'Save';
+            saveBtn.textContent = originalText || 'Save profile';
+        }
+    }
+}
+
+async function handleSecurityPasswordSubmit(e) {
+    e.preventDefault();
+    if (!useSupabase()) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const errEl = document.getElementById('securityPasswordError');
+    const np = document.getElementById('securityNewPassword')?.value || '';
+    const cp = document.getElementById('securityConfirmPassword')?.value || '';
+    const btn = document.getElementById('securityPasswordSubmit');
+    errEl.textContent = '';
+    if (np.length < 8) {
+        errEl.textContent = 'Password must be at least 8 characters.';
+        return;
+    }
+    if (np !== cp) {
+        errEl.textContent = 'Passwords do not match.';
+        return;
+    }
+    const orig = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Updating…';
+    }
+    try {
+        const { error } = await supabase.auth.updateUser({ password: np });
+        if (error) {
+            errEl.textContent = error.message || 'Failed to update password.';
+            return;
+        }
+        document.getElementById('securityNewPassword').value = '';
+        document.getElementById('securityConfirmPassword').value = '';
+        showNotification('Password updated.');
+    } catch (err) {
+        errEl.textContent = err?.message || 'Update failed.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = orig || 'Update password';
+        }
+    }
+}
+
+async function handleSecuritySignOutEverywhere() {
+    const errEl = document.getElementById('securitySignOutEverywhereError');
+    if (errEl) errEl.textContent = '';
+    const ok = await openConfirm({
+        title: 'Sign out everywhere',
+        message: 'End all sessions for this account on every device?',
+        detail: 'You will need to sign in again on this device.',
+        okLabel: 'Sign out everywhere',
+    });
+    if (!ok) return;
+    try {
+        await runAuthSignOutAndTeardown({ scope: 'global' });
+    } catch (err) {
+        if (errEl) errEl.textContent = err?.message || 'Sign out failed.';
+    }
+}
+
+async function handleAdminInviteSubmit(e) {
+    e.preventDefault();
+    const errEl = document.getElementById('adminInviteError');
+    const emailEl = document.getElementById('adminInviteEmail');
+    const redirEl = document.getElementById('adminInviteRedirect');
+    const btn = document.getElementById('adminInviteSubmit');
+    const email = (emailEl?.value || '').trim().toLowerCase();
+    const redirectTo = (redirEl?.value || '').trim();
+    if (errEl) errEl.textContent = '';
+    if (!email) {
+        if (errEl) errEl.textContent = 'Enter an email address.';
+        return;
+    }
+    const orig = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+    }
+    try {
+        await invokeAccountAdmin({
+            action: 'invite',
+            email,
+            redirectTo: redirectTo || undefined,
+        });
+        if (emailEl) emailEl.value = '';
+        if (redirEl) redirEl.value = '';
+        showNotification('Invite sent.');
+        await fetchAdminDirectory(true);
+        accountAdminLoadedOnce = true;
+    } catch (err) {
+        if (errEl) errEl.textContent = err?.message || 'Invite failed.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = orig || 'Send invite';
         }
     }
 }

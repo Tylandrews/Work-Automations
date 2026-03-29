@@ -1,8 +1,13 @@
 """
-TC032: Open Account, type Unsaved Name, leave without saving — reopen account; name is not the unsaved string.
+TC040: When CALLLOG_TEST_EXPECT_ADMIN=1, Administration tab is visible and opens invite + users UI.
+
+Skip (exit 0) when the env flag is not set so default CI/non-admin accounts do not fail.
+Set CALLLOG_TEST_EXPECT_ADMIN=1 only for runs where CALLLOG_TEST_EMAIL is an admin user and
+the account-admin Edge Function is deployed.
 """
 import asyncio
 import os
+import sys
 
 from tc_browser import launch_test_browser
 from playwright.async_api import async_playwright, expect
@@ -12,7 +17,16 @@ LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "")
 LOGIN_PASSWORD = os.environ.get("CALLLOG_TEST_PASSWORD", "")
 
 
+def _expect_admin_enabled() -> bool:
+    v = (os.environ.get("CALLLOG_TEST_EXPECT_ADMIN") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
+
 async def run_test() -> None:
+    if not _expect_admin_enabled():
+        print("TC040: SKIP — set CALLLOG_TEST_EXPECT_ADMIN=1 with an admin test user to run.", file=sys.stderr)
+        return
+
     pw = None
     browser = None
     context = None
@@ -42,16 +56,15 @@ async def run_test() -> None:
 
         await page.locator("#profileBtn").click()
         await expect(page.locator("#accountWorkspace")).to_be_visible()
-        before = await page.locator("#profileName").input_value()
-        await page.locator("#profileName").fill("Unsaved Name")
-        await page.locator("#accountBackInlineBtn").click()
-        await expect(page.locator("#accountWorkspace")).to_be_hidden()
 
-        await page.locator("#profileBtn").click()
-        await expect(page.locator("#accountWorkspace")).to_be_visible()
-        after = await page.locator("#profileName").input_value()
-        assert after != "Unsaved Name"
-        assert after == before
+        admin_tab = page.locator("#accountTabAdmin")
+        await expect(admin_tab).to_be_visible()
+        await admin_tab.click()
+
+        await expect(page.locator("#adminInviteEmail")).to_be_visible()
+        await expect(page.locator("#adminUsersTableBody")).to_be_visible()
+        await expect(page.locator("#adminUsersRefreshBtn")).to_be_visible()
+
         await page.locator("#accountBackInlineBtn").click()
 
     finally:

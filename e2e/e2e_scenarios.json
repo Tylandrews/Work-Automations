@@ -1113,5 +1113,66 @@
         "description": "Verify the first autocomplete item is visible within CALLLOG_TEST_ORG_INSTANT_MAX_MS (default 900ms)"
       }
     ]
+  },
+  {
+    "id": "TC036",
+    "title": "Account Security tab shows password and session controls",
+    "description": "Verifies the Security tab exposes new-password fields, update action, and Sign out everywhere.",
+    "category": "Account profile",
+    "priority": "High",
+    "steps": [
+      { "type": "action", "description": "Sign in" },
+      { "type": "action", "description": "Open Account and select Security tab" },
+      { "type": "assertion", "description": "Password and session controls are visible" }
+    ]
+  },
+  {
+    "id": "TC037",
+    "title": "Account Escape key returns to Call Log",
+    "description": "Verifies Escape leaves the Account view and restores the main workspace.",
+    "category": "Account profile",
+    "priority": "Medium",
+    "steps": [
+      { "type": "action", "description": "Sign in and open Account" },
+      { "type": "action", "description": "Press Escape" },
+      { "type": "assertion", "description": "Main Call Log workspace is visible" }
+    ]
+  },
+  {
+    "id": "TC038",
+    "title": "Account password mismatch shows validation error",
+    "description": "Verifies mismatched new passwords show a client-side error without changing the account password.",
+    "category": "Account profile",
+    "priority": "Medium",
+    "steps": [
+      { "type": "action", "description": "Sign in, Account, Security tab" },
+      { "type": "action", "description": "Enter two different new passwords and submit" },
+      { "type": "assertion", "description": "Validation error mentions passwords do not match" }
+    ]
+  },
+  {
+    "id": "TC039",
+    "title": "Titlebar Call Log back control on Account view",
+    "description": "Verifies the titlebar back button appears on Account and hides Profile; reverses on return.",
+    "category": "Account profile",
+    "priority": "Medium",
+    "steps": [
+      { "type": "action", "description": "Sign in; open Account" },
+      { "type": "assertion", "description": "Call Log titlebar control visible; Account button hidden" },
+      { "type": "action", "description": "Click Call Log in titlebar" },
+      { "type": "assertion", "description": "Account button visible again" }
+    ]
+  },
+  {
+    "id": "TC040",
+    "title": "Administration tab when CALLLOG_TEST_EXPECT_ADMIN is set",
+    "description": "Optional: with CALLLOG_TEST_EXPECT_ADMIN=1 and an admin user, Administration tab shows invite and user table.",
+    "category": "Account profile",
+    "priority": "Low",
+    "steps": [
+      { "type": "action", "description": "Set CALLLOG_TEST_EXPECT_ADMIN=1 (optional)" },
+      { "type": "action", "description": "Sign in as admin; open Account; Administration tab" },
+      { "type": "assertion", "description": "Invite email field and users table region are visible" }
+    ]
   }
 ]
