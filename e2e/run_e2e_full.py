@@ -120,6 +120,10 @@ def main() -> int:
         help="Do not open any browser tab (for live mode: pass --no-open-live to the runner)",
     )
     args, report_args = parser.parse_known_args()
+    # Shell / npm use `--` before forwarded args; argparse keeps that token in report_args,
+    # but run_playwright_report.py does not accept `--` as an argument.
+    while report_args and report_args[0] == "--":
+        report_args = report_args[1:]
 
     load_e2e_dotenv()
 
