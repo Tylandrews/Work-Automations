@@ -17,13 +17,24 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  # Needed to delete duplicate `github-pages` artifacts (upload-artifact finalize retry bug; see actions/upload-pages-artifact#97)
+  actions: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
+  e2e:
+    uses: ./.github/workflows/e2e-playwright.yml
+    secrets: inherit
+    with:
+      json_summary_path: Website/e2e-stats.json
+      browser: chromium
+      upload_website_artifact: true
+
   deploy:
+    needs: e2e
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -32,64 +43,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Download Website with e2e-stats.json
+        uses: actions/download-artifact@v4
         with:
-          node-version: 18
-          cache: npm
-
-      - name: Install npm dependencies
-        run: npm ci
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install Playwright
-        run: |
-          pip install -r e2e/requirements-ci.txt
-          playwright install chromium
-
-      - name: Run E2E and write Website/e2e-stats.json
-        id: e2e_stats
-        continue-on-error: true
-        env:
-          CALLLOG_TEST_EMAIL: ${{ secrets.CALLLOG_TEST_EMAIL }}
-          CALLLOG_TEST_PASSWORD: ${{ secrets.CALLLOG_TEST_PASSWORD }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          CALLLOG_TEST_BASE_URL: http://localhost:4173
-        run: |
-          set -e
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ] \
-            || [ -z "${CALLLOG_TEST_EMAIL:-}" ] || [ -z "${CALLLOG_TEST_PASSWORD:-}" ]; then
-            echo "Skipping full E2E (missing CALLLOG_TEST_* or Supabase secrets)."
-            exit 0
-          fi
-          python - <<'PY'
-          import json
-          import os
-          import pathlib
-
-          cfg = {
-              "SUPABASE_URL": os.environ["SUPABASE_URL"],
-              "SUPABASE_ANON_KEY": os.environ["SUPABASE_ANON_KEY"],
-          }
-          pathlib.Path("supabaseConfig.js").write_text(
-              "window.supabaseConfig = " + json.dumps(cfg, indent=2) + ";\n",
-              encoding="utf-8",
-          )
-          PY
-          python e2e/run_e2e_full.py --no-open-report --static-report --headless -- \
-            --json-summary Website/e2e-stats.json
-
-      - name: Fallback inventory-only e2e-stats.json
-        if: always()
-        run: |
-          if [ ! -f Website/e2e-stats.json ]; then
-            python e2e/write_e2e_inventory_stats.py --output Website/e2e-stats.json
-          fi
+          name: website-for-pages
+          path: Website
 
       - name: Ensure GitHub Pages site exists (GitHub Actions / workflow)
         env:
@@ -117,9 +75,35 @@ jobs:
           exit 1
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v4.0.0
         with:
           path: Website
+
+      # deploy-pages requires exactly one artifact named `github-pages`. A known upload-artifact
+      # finalize retry can create two with the same name (issue #97); keep the newest ID.
+      - name: Deduplicate github-pages artifacts (if any)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          json=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts")
+          ids=$(echo "$json" | jq -r '.artifacts[] | select(.name == "github-pages") | .id' | sort -n)
+          if [ -z "$ids" ]; then
+            echo "No github-pages artifacts found."
+            exit 0
+          fi
+          n=$(echo "$ids" | wc -l | tr -d ' ')
+          if [ "$n" -le 1 ]; then
+            echo "Single github-pages artifact (ok)."
+            exit 0
+          fi
+          keep=$(echo "$ids" | tail -n1)
+          echo "Found $n github-pages artifacts; keeping id=$keep, removing older duplicates."
+          echo "$ids" | head -n -1 | while read -r aid; do
+            [ -z "$aid" ] && continue
+            echo "Deleting artifact id=$aid"
+            gh api --method DELETE "repos/${{ github.repository }}/actions/artifacts/${aid}" --silent
+          done
 
       - name: Deploy to GitHub Pages
         id: deployment

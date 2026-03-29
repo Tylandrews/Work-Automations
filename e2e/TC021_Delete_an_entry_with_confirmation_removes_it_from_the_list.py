@@ -5,7 +5,8 @@ import asyncio
 import os
 from datetime import datetime
 
-from tc_browser import is_headless_browser
+from calllog_e2e_cleanup import e2e_notes_with_run_id, new_e2e_run_id, run_supabase_e2e_cleanup
+from tc_browser import launch_test_browser
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -19,13 +20,11 @@ async def run_test() -> None:
     pw = None
     browser = None
     context = None
+    e2e_run_id = new_e2e_run_id()
 
     try:
         pw = await async_playwright().start()
-        browser = await pw.chromium.launch(
-            headless=is_headless_browser(),
-            args=["--window-size=1280,720", "--disable-dev-shm-usage"],
-        )
+        browser = await launch_test_browser(pw)
         context = await browser.new_context()
         context.set_default_timeout(25000)
         page = await context.new_page()
@@ -51,6 +50,7 @@ async def run_test() -> None:
         await page.locator("#organization").fill("TC021 Org")
         await page.locator("#mobile").fill("555-0210")
         await page.locator("#supportRequest").fill("Delete test")
+        await page.locator("#notes").fill(e2e_notes_with_run_id(e2e_run_id, "TC021 delete"))
         await page.locator("#callDate").fill(datetime.now().strftime("%Y-%m-%dT%H:%M"))
         await page.get_by_role("button", name="Save Call").click()
 
@@ -69,6 +69,7 @@ async def run_test() -> None:
         await expect(entries).not_to_contain_text(MARKER, timeout=30000)
 
     finally:
+        run_supabase_e2e_cleanup(e2e_run_id=e2e_run_id)
         if context:
             await context.close()
         if browser:

@@ -4,7 +4,8 @@ TC031: Set display name to Test Display Name, save — field reflects value and 
 import asyncio
 import os
 
-from tc_browser import is_headless_browser
+from calllog_e2e_cleanup import run_supabase_e2e_cleanup
+from tc_browser import launch_test_browser
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -21,10 +22,7 @@ async def run_test() -> None:
 
     try:
         pw = await async_playwright().start()
-        browser = await pw.chromium.launch(
-            headless=is_headless_browser(),
-            args=["--window-size=1280,720", "--disable-dev-shm-usage"],
-        )
+        browser = await launch_test_browser(pw)
         context = await browser.new_context()
         context.set_default_timeout(25000)
         page = await context.new_page()
@@ -59,6 +57,7 @@ async def run_test() -> None:
         await page.locator("#closeProfileModal").click()
 
     finally:
+        run_supabase_e2e_cleanup(reset_profile_full_name=True)
         if context:
             await context.close()
         if browser:

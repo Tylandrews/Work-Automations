@@ -461,6 +461,21 @@
         text-transform: uppercase;
       }
 
+      .quality__fail-line {
+        margin: 0.65rem 0 0;
+        font-size: 0.9375rem;
+        font-weight: 600;
+        color: #b91c1c;
+        line-height: 1.45;
+      }
+
+      .quality__inventory-hint {
+        margin: 0.5rem 0 0;
+        font-size: 0.875rem;
+        color: var(--ink-muted);
+        line-height: 1.5;
+      }
+
       footer {
         margin-top: 3rem;
         padding-top: 1.75rem;
@@ -872,12 +887,22 @@
                 passed +
                 " of " +
                 total +
-                " end-to-end scenarios passed on the last deploy.";
+                " end-to-end scenarios passed on the last deploy" +
+                (ok ? "." : "; " + failed + " failed.");
             }
+            var failHtml =
+              failed > 0
+                ? '<p class="quality__fail-line" role="status">' +
+                  failed +
+                  " scenario" +
+                  (failed === 1 ? "" : "s") +
+                  " failed on the last deploy. Open the workflow run for logs.</p>"
+                : "";
             summaryEl.innerHTML =
               '<span class="quality__counts" id="qPassed">0</span> of <span class="quality__counts">' +
               total +
-              "</span> Playwright scenarios passed on the last Pages deploy.";
+              "</span> Playwright scenarios passed on the last Pages deploy." +
+              failHtml;
             animateCount(0, passed, 700, function (v) {
               var el = document.getElementById("qPassed");
               if (el) el.textContent = String(v);
@@ -895,12 +920,20 @@
             ringPct.textContent = total ? String(total) : "—";
             if (titleEl) {
               titleEl.textContent =
+                "Scenario count only: " +
                 (total || 0) +
-                " automated scenarios are defined in the repository.";
+                " Playwright tests are defined (pass/fail not recorded for this deploy).";
             }
-            summaryEl.textContent =
-              (data.message || (total ? total + " scenarios" : "Scenarios")) +
-              ". Full pass/fail counts appear here when CI runs the suite with test credentials.";
+            summaryEl.textContent = "";
+            var strongEl = document.createElement("strong");
+            strongEl.textContent =
+              data.message || (total ? total + " scenarios" : "Scenarios");
+            summaryEl.appendChild(strongEl);
+            var hintEl = document.createElement("p");
+            hintEl.className = "quality__inventory-hint";
+            hintEl.textContent =
+              "The number in the ring is how many scenarios exist in the repo, not how many failed. When e2e-stats.json includes a full Playwright run, open the workflow run link for pass/fail details. Inventory-only JSON (no run) shows counts only.";
+            summaryEl.appendChild(hintEl);
             var m = [];
             if (data.lastRunAt)
               m.push(

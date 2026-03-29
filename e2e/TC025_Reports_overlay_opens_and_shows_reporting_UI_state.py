@@ -4,7 +4,7 @@ TC025: Open Reports — overlay visible with either report cards or an error lin
 import asyncio
 import os
 
-from tc_browser import is_headless_browser
+from tc_browser import launch_test_browser
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -19,10 +19,7 @@ async def run_test() -> None:
 
     try:
         pw = await async_playwright().start()
-        browser = await pw.chromium.launch(
-            headless=is_headless_browser(),
-            args=["--window-size=1280,720", "--disable-dev-shm-usage"],
-        )
+        browser = await launch_test_browser(pw)
         context = await browser.new_context()
         context.set_default_timeout(25000)
         page = await context.new_page()

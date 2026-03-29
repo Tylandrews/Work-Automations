@@ -177,6 +177,17 @@ function clearAll() {
     save();
 }
 
+/** Close DB state so tests can call init() again (Node unit tests only). */
+function resetDbForTests() {
+    if (db) {
+        try {
+            db.close();
+        } catch (_) {}
+    }
+    db = null;
+    dbPath = null;
+}
+
 function importFromLocalStorage(entries) {
     if (!db || !Array.isArray(entries)) return;
     const now = new Date().toISOString();
@@ -209,5 +220,6 @@ module.exports = {
     updateEntry,
     deleteEntry,
     clearAll,
-    importFromLocalStorage
+    importFromLocalStorage,
+    resetDbForTests
 };
