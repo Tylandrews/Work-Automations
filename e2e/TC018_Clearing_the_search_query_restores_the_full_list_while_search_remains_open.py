@@ -8,7 +8,7 @@ from datetime import datetime
 
 from calllog_e2e_cleanup import e2e_notes_with_run_id, new_e2e_run_id, run_supabase_e2e_cleanup
 from tc_browser import launch_test_browser
-from tc_selectors import ENTRY_CARD
+from tc_selectors import APP_NOTIFICATION, ENTRY_CARD
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -52,6 +52,11 @@ async def run_test() -> None:
             await expect(auth_screen).to_be_hidden()
 
         await expect(page.locator("#callForm")).to_be_visible(timeout=10000)
+        # App may open history on the newest day with rows, not today; align with the form date we save.
+        day_label = page.locator("#historyDayLabel")
+        await page.locator("#historyTodayBtn").click()
+        await expect(day_label).to_have_text("Today", timeout=15000)
+
         today_dt = datetime.now().strftime("%Y-%m-%dT%H:%M")
         entries = page.locator("#entriesList")
 
@@ -65,7 +70,11 @@ async def run_test() -> None:
             )
             await page.locator("#callDate").fill(today_dt)
             await page.get_by_role("button", name="Save Call").click()
-            await expect(entries).to_contain_text(caller_label, timeout=45000)
+            # handleFormSubmit is async; toast is shown after save completes and before list refresh.
+            await expect(page.locator(APP_NOTIFICATION)).to_contain_text(
+                "Call logged", timeout=90000
+            )
+            await expect(entries).to_contain_text(caller_label, timeout=60000)
 
         await save_row(f"Caller {T_A}")
         await save_row(f"Caller {T_B}")
