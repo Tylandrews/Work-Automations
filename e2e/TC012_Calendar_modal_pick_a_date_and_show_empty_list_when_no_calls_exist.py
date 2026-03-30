@@ -8,6 +8,7 @@ import asyncio
 import os
 
 from tc_browser import launch_test_browser
+from tc_selectors import ENTRY_CARD, calendar_grid_day
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -64,7 +65,7 @@ async def run_test() -> None:
         calendar_modal = page.locator("#calendarModal")
         await expect(calendar_modal).to_be_visible()
 
-        day_btn = page.locator(f'#calendarGrid button.cal-day[data-day="{empty_day}"]')
+        day_btn = page.locator(calendar_grid_day(empty_day))
         month_label = page.locator("#calendarMonthLabel")
         cal_next = page.locator("#calNextMonth")
         for _ in range(48):
@@ -81,7 +82,7 @@ async def run_test() -> None:
         await expect(calendar_modal).to_be_hidden(timeout=15000)
 
         entries = page.locator("#entriesList")
-        await expect(entries.locator(".entry-card")).to_have_count(0, timeout=30000)
+        await expect(entries.locator(ENTRY_CARD)).to_have_count(0, timeout=30000)
         await expect(entries).to_contain_text("No calls", timeout=10000)
 
     finally:

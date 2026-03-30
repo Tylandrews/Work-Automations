@@ -53,7 +53,7 @@
 
                 <section class="auth-card" id="authFormCard" aria-label="Account access" aria-hidden="true">
                     <div class="auth-card-header">
-                        <h1 class="auth-title">Sign in</h1>
+                        <h1 class="auth-title" data-testid="auth-title">Sign in</h1>
                         <p class="auth-subtitle">Use your work email to continue.</p>
                     </div>
 
@@ -81,7 +81,7 @@
 
                 <div id="authNoConfig" class="auth-no-config hidden">
                     <div class="auth-no-config-card">
-                        <p class="auth-no-config-title">Supabase configuration required</p>
+                        <p class="auth-no-config-title" data-testid="auth-no-config-title">Supabase configuration required</p>
                         <p class="auth-no-config-body">Call Log requires Supabase. Add your project URL and anon key in supabaseConfig.js.</p>
                     </div>
                 </div>
@@ -576,7 +576,7 @@
                 </div>
                 <div class="modal-actions modal-actions-edit" id="editModalActions">
                     <div class="modal-actions-left">
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary" data-testid="edit-save-changes-btn">
                             <svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>
                             <span>Save Changes</span>
                         </button>

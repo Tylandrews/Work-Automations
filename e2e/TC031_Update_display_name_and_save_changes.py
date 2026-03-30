@@ -6,6 +6,7 @@ import os
 
 from calllog_e2e_cleanup import run_supabase_e2e_cleanup
 from tc_browser import launch_test_browser
+from tc_selectors import APP_NOTIFICATION
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -49,7 +50,9 @@ async def run_test() -> None:
         await page.locator("#profileName").fill(DISPLAY)
         await page.locator("#profileSaveBtn").click()
 
-        await expect(page.locator(".notification")).to_contain_text("Account updated", timeout=20000)
+        await expect(page.locator(APP_NOTIFICATION)).to_contain_text(
+            "Account updated", timeout=20000
+        )
 
         await page.locator("#accountBackInlineBtn").click()
         await expect(page.locator("#mainWorkspace")).to_be_visible()

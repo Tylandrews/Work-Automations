@@ -685,7 +685,7 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
         dropdown.innerHTML = ranked.map((org, index) => {
             const escapedName = escapeHtml(org.name);
             return `
-                <div class="autocomplete-item" role="option" data-index="${index}" data-value="${escapeHtmlAttr(org.name)}" aria-selected="false">
+                <div class="autocomplete-item" data-testid="autocomplete-item" role="option" data-index="${index}" data-value="${escapeHtmlAttr(org.name)}" aria-selected="false">
                     ${escapedName}
                 </div>
             `;
@@ -1961,7 +1961,7 @@ async function renderCalendar(monthDate) {
         ].filter(Boolean).join(' ');
 
         cells.push(`
-            <button class="${classes}" type="button" data-day="${key}" aria-label="${key}">
+            <button class="${classes}" type="button" data-testid="calendar-day" data-day="${key}" aria-label="${key}">
                 ${d.getDate()}
             </button>
         `);
@@ -1970,7 +1970,7 @@ async function renderCalendar(monthDate) {
     grid.innerHTML = cells.join('');
 
     // Day click handlers
-    grid.querySelectorAll('.cal-day').forEach((btn) => {
+    grid.querySelectorAll('[data-testid="calendar-day"]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const key = btn.getAttribute('data-day');
             if (key) setSelectedDay(key, true);
@@ -2632,7 +2632,7 @@ function createEntryCard(entry) {
         : escapeHtml(rawPhone);
     
     return `
-        <div class="entry-card" data-id="${escapeHtmlAttr(String(entry.id))}" role="button" tabindex="0" title="Click to edit">
+        <div class="entry-card" data-testid="entry-card" data-id="${escapeHtmlAttr(String(entry.id))}" role="button" tabindex="0" title="Click to edit">
             <div class="entry-header">
                 <div class="entry-name">${escapeHtml(entry.name)}</div>
                 <span class="entry-date">${formattedDate}</span>
@@ -3471,7 +3471,7 @@ function makeReportChartConfig(timeseries) {
 function renderReportCard({ title, subtitle, callsTotal, orgsUnique, timeseries }, chartIndex) {
     const chartPlaceholder = `<div class="report-chart" data-chart-id="${chartIndex}" role="img" aria-label="Bar chart"></div>`;
     return `
-        <div class="report-card">
+        <div class="report-card" data-testid="report-card">
             <div class="report-card-header">
                 <div class="report-card-title">${escapeHtml(title)}</div>
                 <div class="report-card-subtitle">${escapeHtml(subtitle || '')}</div>
@@ -3537,10 +3537,10 @@ async function refreshReports() {
     }
 
     const loadingCardsHtml = `
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card" data-testid="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card" data-testid="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card" data-testid="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card" data-testid="report-card"><div class="report-card-title">Loading…</div></div>
     `;
     grid.innerHTML = loadingCardsHtml;
 
@@ -4213,6 +4213,7 @@ function clearForm() {
 function showNotification(message) {
     const notification = document.createElement('div');
     notification.className = 'notification';
+    notification.setAttribute('data-testid', 'app-notification');
     notification.textContent = message;
     document.body.appendChild(notification);
 

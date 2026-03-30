@@ -9,6 +9,7 @@ import asyncio
 import os
 
 from tc_browser import launch_test_browser
+from tc_selectors import calendar_grid_any_day, calendar_grid_day
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -60,12 +61,12 @@ async def run_test() -> None:
 
         await page.locator("#historyCalendarBtn").click()
         await expect(page.locator("#calendarModal")).to_be_visible()
-        day_btn = page.locator(f'#calendarGrid button.cal-day[data-day="{empty_day}"]')
+        day_btn = page.locator(calendar_grid_day(empty_day))
         for _ in range(48):
             if await day_btn.count() > 0:
                 break
             await page.locator("#calNextMonth").click()
-            await expect(page.locator("#calendarGrid button.cal-day").first).to_be_visible(
+            await expect(page.locator(calendar_grid_any_day()).first).to_be_visible(
                 timeout=15000
             )
         else:

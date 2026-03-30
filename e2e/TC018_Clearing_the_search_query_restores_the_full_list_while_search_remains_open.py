@@ -8,6 +8,7 @@ from datetime import datetime
 
 from calllog_e2e_cleanup import e2e_notes_with_run_id, new_e2e_run_id, run_supabase_e2e_cleanup
 from tc_browser import launch_test_browser
+from tc_selectors import ENTRY_CARD
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -78,7 +79,7 @@ async def run_test() -> None:
         await inp.evaluate(
             """el => el.dispatchEvent(new Event('input', { bubbles: true }))"""
         )
-        await expect(entries.locator(".entry-card")).to_have_count(1, timeout=45000)
+        await expect(entries.locator(ENTRY_CARD)).to_have_count(1, timeout=45000)
         await expect(entries).to_contain_text(T_A)
         await expect(entries).not_to_contain_text(T_B)
 

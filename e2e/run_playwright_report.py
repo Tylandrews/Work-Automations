@@ -701,9 +701,10 @@ def main() -> int:
         os.environ.get("CALLLOG_TEST_PASSWORD") or ""
     ).strip():
         print(
-            "Note: CALLLOG_TEST_EMAIL and/or CALLLOG_TEST_PASSWORD are unset. "
-            "Copy e2e/.env.example to e2e/.env and fill in values, "
-            "or export those variables. Sign-in tests need both.",
+            "WARNING: CALLLOG_TEST_EMAIL and/or CALLLOG_TEST_PASSWORD are unset. "
+            "Most TCs sign in with a real Supabase user: copy e2e/.env.example to e2e/.env "
+            "and set matching credentials. Without them you will see 'Invalid login credentials' "
+            "or hidden #appShell in many tests.",
             file=sys.stderr,
         )
 

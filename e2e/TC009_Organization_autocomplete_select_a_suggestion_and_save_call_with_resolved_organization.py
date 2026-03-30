@@ -11,6 +11,7 @@ import os
 
 from calllog_e2e_cleanup import e2e_notes_with_run_id, new_e2e_run_id, run_supabase_e2e_cleanup
 from tc_browser import launch_test_browser
+from tc_selectors import ORG_AUTOCOMPLETE_ITEM
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -101,7 +102,7 @@ async def run_test() -> None:
         await org_input.fill("")
         await org_input.fill(ORG_QUERY)
 
-        first_suggestion = page.locator("#organization-autocomplete-list .autocomplete-item").first
+        first_suggestion = page.locator(ORG_AUTOCOMPLETE_ITEM).first
         try:
             await expect(first_suggestion).to_be_visible(timeout=25000)
         except AssertionError as exc:

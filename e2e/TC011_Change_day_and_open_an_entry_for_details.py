@@ -9,6 +9,7 @@ from datetime import datetime
 
 from calllog_e2e_cleanup import e2e_notes_with_run_id, new_e2e_run_id, run_supabase_e2e_cleanup
 from tc_browser import launch_test_browser
+from tc_selectors import history_entry_card
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -78,10 +79,10 @@ async def run_test() -> None:
         await expect(day_label).not_to_have_text(label_mid, timeout=15000)
         await expect(entries).to_contain_text(CALLER, timeout=15000)
 
-        await page.locator(".entry-card").filter(has_text=CALLER).first.click()
+        await history_entry_card(page, CALLER).locator(".entry-name").click()
 
         edit_modal = page.locator("#editModal")
-        await expect(edit_modal).to_be_visible()
+        await expect(edit_modal).to_be_visible(timeout=15000)
 
         await expect(page.locator("#editName")).to_have_value(CALLER)
         await expect(page.locator("#editOrganization")).to_have_value(ORG)

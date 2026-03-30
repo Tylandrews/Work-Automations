@@ -9,6 +9,7 @@ supabaseConfig.js
 
 # E2E: never commit secrets, machine-generated reports, or proxy creds
 e2e/.env
+e2e/playwright-e2e-report.html
 e2e/tmp/
 e2e/__pycache__/
 **/__pycache__/

@@ -8,6 +8,7 @@ import asyncio
 import os
 
 from tc_browser import launch_test_browser
+from tc_selectors import AUTH_NO_CONFIG_TITLE
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -45,7 +46,7 @@ async def run_test() -> None:
 
         await expect(page.locator("#authScreen")).to_be_visible(timeout=10000)
         await expect(page.locator("#authNoConfig")).to_be_visible()
-        await expect(page.get_by_text("Supabase configuration required")).to_be_visible()
+        await expect(page.locator(AUTH_NO_CONFIG_TITLE)).to_be_visible()
         await expect(page.locator("#appShell")).to_be_hidden()
 
     finally:

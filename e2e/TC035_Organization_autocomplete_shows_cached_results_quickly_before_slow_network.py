@@ -13,6 +13,7 @@ import os
 import time
 
 from tc_browser import launch_test_browser
+from tc_selectors import ORG_AUTOCOMPLETE_ITEM
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -106,7 +107,7 @@ async def run_test() -> None:
         await expect(page.locator("#callForm")).to_be_visible(timeout=10000)
 
         org_input = page.locator("#organization")
-        first_suggestion = page.locator("#organization-autocomplete-list .autocomplete-item").first
+        first_suggestion = page.locator(ORG_AUTOCOMPLETE_ITEM).first
 
         t0 = time.perf_counter()
         await org_input.fill("")

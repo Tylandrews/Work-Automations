@@ -7,6 +7,7 @@ from datetime import datetime
 
 from calllog_e2e_cleanup import e2e_notes_with_run_id, new_e2e_run_id, run_supabase_e2e_cleanup
 from tc_browser import launch_test_browser
+from tc_selectors import history_entry_card
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -57,8 +58,8 @@ async def run_test() -> None:
         entries = page.locator("#entriesList")
         await expect(entries).to_contain_text(MARKER, timeout=30000)
 
-        await page.locator(".entry-card").filter(has_text=MARKER).first.click()
-        await expect(page.locator("#editModal")).to_be_visible()
+        await history_entry_card(page, MARKER).locator(".entry-name").click()
+        await expect(page.locator("#editModal")).to_be_visible(timeout=15000)
         await page.locator("#editModalDeleteBtn").click()
         await expect(page.locator("#editModalDeleteConfirm")).to_have_attribute(
             "aria-hidden", "false"

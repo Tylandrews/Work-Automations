@@ -5,6 +5,7 @@ import asyncio
 import os
 
 from tc_browser import launch_test_browser
+from tc_selectors import REPORT_CARD
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -54,14 +55,14 @@ async def run_test() -> None:
         await page.wait_for_function(
             """() => {
                 const err = (document.getElementById('reportsError')?.textContent || '').trim();
-                const n = document.querySelectorAll('#reportsGrid .report-card').length;
+                const n = document.querySelectorAll('#reportsGrid [data-testid="report-card"], #reportsGrid .report-card').length;
                 return err.length > 0 || n > 0;
             }""",
             timeout=30000,
         )
 
         err_text = (await page.locator("#reportsError").inner_text()).strip()
-        n_cards = await page.locator("#reportsGrid .report-card").count()
+        n_cards = await page.locator("#reportsGrid").locator(REPORT_CARD).count()
         assert err_text or n_cards >= 1, "Expected reports error text or at least one report card"
 
     finally:

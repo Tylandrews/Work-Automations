@@ -7,6 +7,7 @@ import asyncio
 import os
 
 from tc_browser import launch_test_browser
+from tc_selectors import REPORT_CARD
 from playwright.async_api import async_playwright, expect
 
 BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
@@ -50,7 +51,7 @@ async def run_test() -> None:
 
         err_text = (await page.locator("#reportsError").inner_text()).strip()
         grid_text = await page.locator("#reportsGrid").inner_text()
-        card_count = await page.locator("#reportsGrid .report-card").count()
+        card_count = await page.locator("#reportsGrid").locator(REPORT_CARD).count()
         degraded = bool(err_text) or "No report yet" in grid_text
         healthy_cards = card_count >= 4 and not err_text
         assert degraded or healthy_cards, (
