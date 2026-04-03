@@ -1,6 +1,6 @@
 {
   "name": "call-log",
-  "version": "3.2.6",
+  "version": "3.3.0",
   "description": "Call Log - Desktop Application",
   "main": "main.js",
   "scripts": {
