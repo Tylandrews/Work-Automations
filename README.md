@@ -70,6 +70,16 @@ On Windows, `npm run build-win` produces an NSIS installer and a portable execut
 
 To attach Chromium DevTools during local development, enable the appropriate call in `main.js` (see Electron documentation for `openDevTools`).
 
+### End-to-end tests (Playwright)
+
+| Command | Purpose |
+| ------- | ------- |
+| `npm run test:e2e` | Default local runner (live dashboard; higher parallelism unless you pass `-- --workers 1`). |
+| `npm run test:e2e:ci` | **Same argv as GitHub Actions** (static HTML report, headless, `--workers 1`, Chromium). Implemented via `e2e/ci_e2e_shared.py`, shared with `run_github_actions_e2e.py`. |
+| `npm run test:e2e:ci:firefox` | Same as Validate’s Firefox matrix job. |
+
+Configure `e2e/.env` from `e2e/.env.example` for local credentials. CI uses repository secrets instead.
+
 ### Automated release pipeline
 
 This repository uses GitHub Actions for validation and release automation.

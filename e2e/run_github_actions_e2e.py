@@ -11,6 +11,8 @@ import pathlib
 import subprocess
 import sys
 
+from ci_e2e_shared import argv_run_e2e_full_like_github
+
 _SECRET_KEYS = (
     "SUPABASE_URL",
     "SUPABASE_ANON_KEY",
@@ -45,18 +47,7 @@ def main() -> int:
 
     workers = (os.environ.get("E2E_PARALLEL_WORKERS") or "1").strip()
     json_summary = (os.environ.get("E2E_JSON_SUMMARY") or "Website/e2e-stats.json").strip()
-    cmd = [
-        sys.executable,
-        str(root / "e2e" / "run_e2e_full.py"),
-        "--no-open-report",
-        "--static-report",
-        "--headless",
-        "--",
-        "--json-summary",
-        json_summary,
-        "--workers",
-        workers,
-    ]
+    cmd = argv_run_e2e_full_like_github(root, json_summary=json_summary, workers=workers)
     return subprocess.run(cmd, cwd=root, env=os.environ).returncode
 
 

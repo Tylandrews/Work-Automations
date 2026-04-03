@@ -5,15 +5,20 @@ From repo root:
   py -3.10 e2e/run_e2e_full.py
   npm run test:e2e
 
+Same tests and CLI flags as GitHub Actions (see e2e/ci_e2e_shared.py):
+  py -3.10 e2e/run_like_github_ci.py
+  npm run test:e2e:ci
+  npm run test:e2e:ci:firefox   # matches Validate matrix browser
+
 The default UI is a local live dashboard (Call Log E2E report layout) that updates
 as each test finishes. Playwright runs headless.
 
 Static HTML + visible Chromium per test instead:
   py -3.10 e2e/run_e2e_full.py --static-report
 
-CI (no browser tabs, headless, JSON for GitHub Pages):
+CI (no browser tabs, headless, JSON for GitHub Pages) — equivalent to test:e2e:ci:
   py -3.10 e2e/run_e2e_full.py --no-open-report --static-report --headless -- \\
-    --json-summary Website/e2e-stats.json
+    --json-summary Website/e2e-stats.json --workers 1
 
 CI (no browser tabs, default live dashboard):
   py -3.10 e2e/run_e2e_full.py --no-open-report

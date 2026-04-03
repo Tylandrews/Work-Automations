@@ -1,6 +1,9 @@
 # Reusable Playwright E2E against the repo-root static server (supabaseConfig.js at root).
 # Callers must pass secrets: inherit and supply repository secrets:
 # SUPABASE_URL, SUPABASE_ANON_KEY, CALLLOG_TEST_EMAIL, CALLLOG_TEST_PASSWORD
+#
+# Local parity: `npm run test:e2e:ci` uses e2e/ci_e2e_shared.py for the same argv as
+# `e2e/run_github_actions_e2e.py` (same TC###_*.py discovery as CI).
 name: E2E Playwright
 
 on:
@@ -92,6 +95,14 @@ jobs:
             exit 1
           fi
           python e2e/run_github_actions_e2e.py
+
+      - name: Upload Playwright E2E report (for debugging CI vs local)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-playwright-report-${{ inputs.browser }}
+          path: e2e/playwright-e2e-report.html
+          if-no-files-found: ignore
 
       - name: Upload Website artifact for Pages deploy
         if: ${{ inputs.upload_website_artifact == true }}
