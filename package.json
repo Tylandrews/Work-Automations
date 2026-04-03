@@ -36,6 +36,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "gsap": "^3.14.2"
   },
   "devDependencies": {
@@ -46,6 +47,14 @@
   "build": {
     "appId": "com.calllog.app",
     "productName": "Call Log",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Tylandrews",
+        "repo": "Work-Automations",
+        "releaseType": "release"
+      }
+    ],
     "directories": {
       "output": "dist"
     },

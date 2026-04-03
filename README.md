@@ -36,6 +36,14 @@ The application is designed for help-desk and IT support workflows. Signed-in us
 
 Download the latest installer or portable executable for your platform from the [Releases](https://github.com/Tylandrews/Work-Automations/releases/latest) page. Executables produced by this project bundle the Electron runtime; end users do not install Node.js separately.
 
+### Auto-updates (Windows)
+
+- **NSIS installer:** After you install from the setup executable, the app checks [Releases](https://github.com/Tylandrews/Work-Automations/releases/latest) for a newer version (first check a few seconds after launch, then about once every 24 hours). When an update finishes downloading, you get a prompt to restart and complete the install.
+- **Portable `.exe`:** In-app auto-update is not supported. Download a newer build from Releases when you want to upgrade.
+- **macOS and Linux:** Release automation in this repo currently publishes Windows artifacts only, so auto-update is not enabled for those platforms in the packaged app.
+- **Forks or renamed repositories:** Set `build.publish` in `package.json` to your GitHub `owner` and `repo` so update metadata points at the correct Releases page.
+- **Private repositories:** Reading release assets may require configuring a GitHub token for `electron-updater` (see upstream documentation). Public repositories do not need this.
+
 ## Development
 
 ### Clone and run
@@ -66,7 +74,7 @@ To attach Chromium DevTools during local development, enable the appropriate cal
 
 This repository uses GitHub Actions for validation and release automation.
 
-- [`.github/workflows/validate.yml`](.github/workflows/validate.yml) validates JavaScript syntax, runs Node unit tests, and runs the Playwright suite (Chromium and Firefox) on pull requests and pushes to `main` when repository secrets are available
+- [`.github/workflows/validate.yml`](.github/workflows/validate.yml) validates JavaScript syntax, runs `npm run test:unit` (lightweight Node tests), and runs the Playwright suite (Chromium and Firefox) on pull requests and pushes to `main` when repository secrets are available
 - [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml) builds and publishes Windows release assets when a tag in the format `vX.Y.Z` is pushed
 - [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) runs the full Playwright suite (required repository secrets below), writes `Website/e2e-stats.json`, then deploys the static `Website/` folder to GitHub Pages for the marketing site and the README badge
 

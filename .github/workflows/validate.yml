@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Unit tests (db.js)
+      - name: Unit tests
         run: npm run test:unit
 
       - name: Validate JavaScript syntax

@@ -2,7 +2,84 @@ const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const vm = require('vm');
+const { autoUpdater } = require('electron-updater');
 // Local SQL database removed - using Supabase only
+
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
+const UPDATE_CHECK_START_DELAY_MS = 8000
+
+/** Windows portable builds from electron-builder set this; NSIS installs do not. */
+const isWindowsPortableBuild = () =>
+    process.platform === 'win32' && !!process.env.PORTABLE_EXECUTABLE_DIR
+
+/**
+ * Auto-update is enabled for packaged Windows NSIS installs only.
+ * Releases currently publish Windows assets only; portable/macOS/Linux are out of scope.
+ */
+const shouldRunAutoUpdater = () =>
+    app.isPackaged && process.platform === 'win32' && !isWindowsPortableBuild()
+
+const setupAutoUpdater = () => {
+    if (!shouldRunAutoUpdater()) return
+
+    autoUpdater.autoDownload = true
+
+    autoUpdater.on('update-available', (info) => {
+        const ver = info && info.version ? info.version : ''
+        showTrayNotification(
+            'Call Log update',
+            ver ? `Version ${ver} is downloading.` : 'A new version is downloading.'
+        )
+    })
+
+    autoUpdater.on('update-downloaded', (info) => {
+        const ver = info && info.version ? info.version : ''
+        const parent =
+            mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
+        dialog
+            .showMessageBox(parent, {
+                type: 'info',
+                title: 'Update ready',
+                message: 'A new version of Call Log has been downloaded.',
+                detail: ver
+                    ? `Version ${ver} is ready to install. Restart now to finish the update.`
+                    : 'Restart now to finish the update.',
+                buttons: ['Restart now', 'Later'],
+                defaultId: 0,
+                cancelId: 1
+            })
+            .then(({ response }) => {
+                if (response !== 0) return
+                setImmediate(() => autoUpdater.quitAndInstall(false, true))
+            })
+            .catch((err) => {
+                console.error('update-downloaded dialog error:', err)
+            })
+    })
+
+    autoUpdater.on('error', (err) => {
+        const msg = err && err.message ? String(err.message) : String(err)
+        if (
+            /net::ERR_/i.test(msg) ||
+            /ENOTFOUND/i.test(msg) ||
+            /ETIMEDOUT/i.test(msg) ||
+            /ECONNRESET/i.test(msg)
+        ) {
+            console.warn('autoUpdater (network):', msg)
+            return
+        }
+        console.error('autoUpdater:', err)
+    })
+
+    const runCheck = () => {
+        autoUpdater.checkForUpdates().catch((err) => {
+            console.warn('checkForUpdates:', err && err.message ? err.message : err)
+        })
+    }
+
+    setTimeout(runCheck, UPDATE_CHECK_START_DELAY_MS)
+    setInterval(runCheck, UPDATE_CHECK_INTERVAL_MS)
+}
 
 // Allow opening DevTools via keyboard even with frameless windows / no menu.
 // This is helpful for debugging production issues (e.g., Edge Function 401s).
@@ -296,6 +373,7 @@ ipcMain.handle('get-app-version', () => {
 app.whenReady().then(async () => {
     // Local SQL database initialization removed - using Supabase only
     createWindow();
+    setupAutoUpdater();
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
