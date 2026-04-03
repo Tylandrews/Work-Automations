@@ -89,7 +89,7 @@ async def run_test() -> None:
 
         await page.locator("#mobile").fill("555-0188")
         await page.locator("#supportRequest").fill("Network access request")
-        await page.locator("#notes").fill(e2e_notes_with_run_id(e2e_run_id, "TC009 autocomplete"))
+        await page.locator("#ticketNumber").fill(e2e_notes_with_run_id(e2e_run_id, "TC009 autocomplete"))
 
         await page.get_by_role("button", name="Save Call").click()
 

@@ -53,7 +53,7 @@ async def run_test() -> None:
         await page.locator("#mobile").fill("555-0177")
         await page.locator("#supportRequest").fill("Password reset request")
         await page.locator("#deviceName").fill("TC010 device")
-        await page.locator("#notes").fill("should clear")
+        await page.locator("#ticketNumber").fill("should clear")
 
         await page.get_by_role("button", name="Clear").click()
 
@@ -62,7 +62,7 @@ async def run_test() -> None:
         await expect(page.locator("#mobile")).to_have_value("")
         await expect(page.locator("#supportRequest")).to_have_value("")
         await expect(page.locator("#deviceName")).to_have_value("")
-        await expect(page.locator("#notes")).to_have_value("")
+        await expect(page.locator("#ticketNumber")).to_have_value("")
 
         call_date = page.locator("#callDate")
         await expect(call_date).not_to_have_value("")

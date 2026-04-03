@@ -1,7 +1,7 @@
 """
 Remove Supabase rows created by Playwright E2E tests.
 
-Each test run uses a unique id embedded in the call `notes` field so cleanup is targeted
+Each test run uses a unique id embedded in the call ticket number field (stored as `notes` in the API) so cleanup is targeted
 and safe when multiple tests run in parallel against the same test account.
 """
 from __future__ import annotations

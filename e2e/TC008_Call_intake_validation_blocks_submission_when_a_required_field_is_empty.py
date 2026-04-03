@@ -52,7 +52,7 @@ async def run_test() -> None:
         await page.locator("#organization").fill("Test Org")
         await page.locator("#mobile").fill("555-0199")
         await page.locator("#supportRequest").fill("")
-        await page.locator("#notes").fill("")
+        await page.locator("#ticketNumber").fill("")
 
         await page.get_by_role("button", name="Save Call").click()
 

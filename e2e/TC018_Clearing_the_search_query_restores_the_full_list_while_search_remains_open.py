@@ -65,7 +65,7 @@ async def run_test() -> None:
             await page.locator("#organization").fill("Org TC018")
             await page.locator("#mobile").fill("555-0180")
             await page.locator("#supportRequest").fill("TC018 clear search")
-            await page.locator("#notes").fill(
+            await page.locator("#ticketNumber").fill(
                 e2e_notes_with_run_id(e2e_run_id, "TC018 clear search")
             )
             await page.locator("#callDate").fill(today_dt)

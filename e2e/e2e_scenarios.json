@@ -206,7 +206,7 @@
       },
       {
         "type": "action",
-        "description": "Fill Added via UI test into the notes field"
+        "description": "Fill Added via UI test into the ticket number field"
       },
       {
         "type": "action",

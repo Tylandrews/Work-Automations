@@ -64,7 +64,7 @@ async def run_test() -> None:
         await page.locator("#organization").fill(ORG)
         await page.locator("#mobile").fill(PHONE)
         await page.locator("#supportRequest").fill(SUPPORT)
-        await page.locator("#notes").fill(e2e_notes_with_run_id(e2e_run_id, "TC013 day list"))
+        await page.locator("#ticketNumber").fill(e2e_notes_with_run_id(e2e_run_id, "TC013 day list"))
 
         await page.get_by_role("button", name="Save Call").click()
 

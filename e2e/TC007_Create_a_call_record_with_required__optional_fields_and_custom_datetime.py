@@ -56,7 +56,7 @@ async def run_test() -> None:
         await page.locator("#mobile").fill("555-0100")
         await page.locator("#deviceName").fill("Test Device")
         await page.locator("#supportRequest").fill("Printer not working")
-        await page.locator("#notes").fill(
+        await page.locator("#ticketNumber").fill(
             e2e_notes_with_run_id(e2e_run_id, "Added via UI test")
         )
 

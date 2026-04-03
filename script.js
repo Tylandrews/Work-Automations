@@ -2117,7 +2117,7 @@ async function handleFormSubmit(e) {
         organization: document.getElementById('organization').value.trim(),
         deviceName: (document.getElementById('deviceName') && document.getElementById('deviceName').value) ? document.getElementById('deviceName').value.trim() : '',
         supportRequest: document.getElementById('supportRequest').value.trim(),
-        notes: (document.getElementById('notes') && document.getElementById('notes').value) ? document.getElementById('notes').value.trim() : '',
+        notes: (document.getElementById('ticketNumber') && document.getElementById('ticketNumber').value) ? document.getElementById('ticketNumber').value.trim() : '',
         timestamp: entryDate.toISOString()
     };
     if (formData.organization) {
@@ -2633,7 +2633,7 @@ function createEntryCard(entry) {
             <div class="entry-request copyable-request" data-copy-text="${escapeHtmlAttr((entry.supportRequest || '').trim() + (entry.deviceName ? '\n' + (entry.deviceName || '').trim() : ''))}" title="Click to copy request and device">
                 <strong>Request:</strong> ${escapeHtml(entry.supportRequest)}
             </div>
-            ${entry.notes ? `<div class="entry-notes"><strong>Notes:</strong> ${escapeHtml(entry.notes)}</div>` : ''}
+            ${entry.notes ? `<div class="entry-ticket-number"><strong>Ticket number:</strong> ${escapeHtml(entry.notes)}</div>` : ''}
         </div>
     `;
 }
@@ -2697,8 +2697,8 @@ async function editEntry(id) {
     const editDeviceEl = document.getElementById('editDeviceName');
     if (editDeviceEl) editDeviceEl.value = entry.deviceName || '';
     document.getElementById('editSupportRequest').value = entry.supportRequest || '';
-    const notesEl = document.getElementById('editNotes');
-    if (notesEl) notesEl.value = entry.notes || '';
+    const ticketNumberEl = document.getElementById('editTicketNumber');
+    if (ticketNumberEl) ticketNumberEl.value = entry.notes || '';
     
     // Set date
     const date = new Date(entry.timestamp);
@@ -2724,7 +2724,7 @@ async function handleEditSubmit(e) {
         organization: document.getElementById('editOrganization').value.trim(),
         deviceName: (document.getElementById('editDeviceName') && document.getElementById('editDeviceName').value) ? document.getElementById('editDeviceName').value.trim() : '',
         supportRequest: document.getElementById('editSupportRequest').value.trim(),
-        notes: document.getElementById('editNotes') ? document.getElementById('editNotes').value.trim() : ''
+        notes: document.getElementById('editTicketNumber') ? document.getElementById('editTicketNumber').value.trim() : ''
     };
     const editDateVal = document.getElementById('editDate').value;
     if (editDateVal) fields.callTime = new Date(editDateVal).toISOString();
