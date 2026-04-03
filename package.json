@@ -100,11 +100,15 @@
       "category": "Utility"
     },
     "nsis": {
+      "artifactName": "CallLog-Setup-${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "include": "nsis/installer-shortcut-icon.nsh"
+    },
+    "portable": {
+      "artifactName": "CallLog-Portable-${version}.${ext}"
     }
   }
 }
