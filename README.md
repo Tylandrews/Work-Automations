@@ -68,6 +68,8 @@ Production builds include the Electron runtime. Installers and portable packages
 
 On Windows, `npm run build-win` produces an NSIS installer and a portable executable. Close any running instance of the application before rebuilding if file locks occur.
 
+**Windows NSIS artwork:** Branded wizard images live under [`nsis/branding/`](nsis/branding/) (`installer-sidebar.bmp`, `installer-header.bmp`). NSIS expects **uncompressed BMP** files at **164×314** (welcome/finish sidebar) and **150×57** (header strip on inner pages). They are regenerated during `prebuild` from [`Images/BigFish_Centered_Logo_Inverted.png`](Images/BigFish_Centered_Logo_Inverted.png) via [`scripts/generate-nsis-installer-assets.js`](scripts/generate-nsis-installer-assets.js); you can also run `npm run build:installer-assets` alone. Custom NSIS hooks are in [`nsis/installer.nsh`](nsis/installer.nsh).
+
 To attach Chromium DevTools during local development, enable the appropriate call in `main.js` (see Electron documentation for `openDevTools`).
 
 ### End-to-end tests (Playwright)

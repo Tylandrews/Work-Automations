@@ -1,5 +1,8 @@
 """
-TC030: Sign in, open Account — profile name and email fields visible.
+TC030: Sign in, open Account — tabbed layout with Profile panel, name/email, save control.
+
+Account uses a tablist (Profile, Updates, Security; Administration if admin). Profile opens
+by default; email is filled asynchronously from Supabase session — wait for value.
 """
 import asyncio
 import os
@@ -45,9 +48,34 @@ async def run_test() -> None:
 
         account_ws = page.locator("#accountWorkspace")
         await expect(account_ws).to_be_visible()
+        await expect(account_ws).to_have_attribute("aria-hidden", "false")
         await expect(page.locator("#accountPageHeading")).to_have_text("Account")
+        lead = page.locator("#accountWorkspace .account-page-lead")
+        await expect(lead).to_be_visible()
+        await expect(lead).to_contain_text("Profile, app updates, security")
+
+        profile_tab = page.get_by_role("tab", name="Profile")
+        await expect(profile_tab).to_be_visible()
+        await expect(profile_tab).to_have_attribute("aria-selected", "true")
+        await expect(page.get_by_role("tab", name="Updates")).to_be_visible()
+        await expect(page.get_by_role("tab", name="Security")).to_be_visible()
+
+        profile_panel = page.locator("#accountPanelProfile")
+        await expect(profile_panel).to_be_visible()
+
+        await expect(page.get_by_role("heading", name="Profile", level=3)).to_be_visible()
+        await expect(page.locator("#profileForm")).to_be_visible()
         await expect(page.locator("#profileName")).to_be_visible()
         await expect(page.locator("#profileEmail")).to_be_visible()
+        await expect(page.locator("#profileSaveBtn")).to_be_visible()
+        await expect(page.locator("#profileSaveBtn")).to_have_text("Save profile")
+
+        # hydrateAccountProfileForm sets email via getSession() — avoid racing the assertion
+        if LOGIN_EMAIL:
+            await expect(page.locator("#profileEmail")).to_have_value(
+                LOGIN_EMAIL,
+                timeout=15000,
+            )
 
         await page.locator("#accountBackBtn").click()
         await expect(account_ws).to_be_hidden()

@@ -927,7 +927,7 @@
   {
     "id": "TC030",
     "title": "Sign in and open Account profile page",
-    "description": "Verifies a user can sign in and access the Account profile UI.",
+    "description": "Verifies a user can sign in, open Account, see the tabbed layout (Profile selected), profile form, save control, and hydrated email.",
     "category": "Account profile",
     "priority": "High",
     "steps": [

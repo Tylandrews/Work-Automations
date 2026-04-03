@@ -10,7 +10,8 @@
     "start:3": "electron . --user-data-dir=./.test-userdata/user3",
     "start:4": "electron . --user-data-dir=./.test-userdata/user4",
     "start:5": "electron . --user-data-dir=./.test-userdata/user5",
-    "prebuild": "node scripts/validate-config.js && node scripts/build-icon.js",
+    "prebuild": "node scripts/validate-config.js && node scripts/build-icon.js && node scripts/generate-nsis-installer-assets.js",
+    "build:installer-assets": "node scripts/generate-nsis-installer-assets.js",
     "prebuild-win": "npm run prebuild",
     "prebuild-mac": "npm run prebuild",
     "prebuild-linux": "npm run prebuild",
@@ -45,6 +46,7 @@
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
     "electron-icon-builder": "^2.0.1",
+    "jimp": "^0.22.12",
     "rcedit": "^4.0.1"
   },
   "build": {
@@ -107,7 +109,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "include": "nsis/installer-shortcut-icon.nsh"
+      "installerSidebar": "nsis/branding/installer-sidebar.bmp",
+      "installerHeader": "nsis/branding/installer-header.bmp",
+      "uninstallerSidebar": "nsis/branding/installer-sidebar.bmp",
+      "include": "nsis/installer.nsh"
     },
     "portable": {
       "artifactName": "CallLog-Portable-${version}.${ext}"

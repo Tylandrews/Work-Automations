@@ -40,6 +40,10 @@ jobs:
           node --check scripts/build-icon.js
           node --check scripts/clean-dist.js
           node --check scripts/validate-config.js
+          node --check scripts/generate-nsis-installer-assets.js
 
       - name: Build icon assets
         run: node scripts/build-icon.js
+
+      - name: Generate NSIS installer bitmaps
+        run: node scripts/generate-nsis-installer-assets.js

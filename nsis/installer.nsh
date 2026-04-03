@@ -1,6 +1,5 @@
-; electron-builder defaults shortcuts to use the .exe as the icon source. If the embedded
-; icon is missing or wrong, the shell shows the generic Electron icon. We ship icon.ico via
-; extraResources and point shortcuts (and Add/Remove Programs) at that file instead.
+; NSIS customization entrypoint (see package.json build.nsis.include).
+; Keeps shortcut and Add/Remove Programs icons on the packaged icon.ico.
 
 !macro customInstall
   ${if} ${FileExists} "$INSTDIR\resources\icon.ico"
