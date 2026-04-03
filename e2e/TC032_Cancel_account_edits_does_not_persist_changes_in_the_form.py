@@ -44,7 +44,7 @@ async def run_test() -> None:
         await expect(page.locator("#accountWorkspace")).to_be_visible()
         before = await page.locator("#profileName").input_value()
         await page.locator("#profileName").fill("Unsaved Name")
-        await page.locator("#accountBackInlineBtn").click()
+        await page.locator("#accountBackBtn").click()
         await expect(page.locator("#accountWorkspace")).to_be_hidden()
 
         await page.locator("#profileBtn").click()
@@ -52,7 +52,7 @@ async def run_test() -> None:
         after = await page.locator("#profileName").input_value()
         assert after != "Unsaved Name"
         assert after == before
-        await page.locator("#accountBackInlineBtn").click()
+        await page.locator("#accountBackBtn").click()
 
     finally:
         if context:

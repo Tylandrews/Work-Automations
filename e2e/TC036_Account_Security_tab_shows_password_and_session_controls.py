@@ -50,7 +50,7 @@ async def run_test() -> None:
         await expect(page.locator("#securityPasswordSubmit")).to_be_visible()
         await expect(page.locator("#securitySignOutEverywhereBtn")).to_be_visible()
 
-        await page.locator("#accountBackInlineBtn").click()
+        await page.locator("#accountBackBtn").click()
         await expect(page.locator("#accountWorkspace")).to_be_hidden()
 
     finally:

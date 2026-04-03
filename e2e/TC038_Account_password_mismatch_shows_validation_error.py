@@ -52,7 +52,7 @@ async def run_test() -> None:
 
         await expect(err_el).to_contain_text("do not match", timeout=10000)
 
-        await page.locator("#accountBackInlineBtn").click()
+        await page.locator("#accountBackBtn").click()
 
     finally:
         if context:

@@ -65,7 +65,7 @@ async def run_test() -> None:
         await expect(page.locator("#adminUsersTableBody")).to_be_visible()
         await expect(page.locator("#adminUsersRefreshBtn")).to_be_visible()
 
-        await page.locator("#accountBackInlineBtn").click()
+        await page.locator("#accountBackBtn").click()
 
     finally:
         if context:

@@ -49,7 +49,7 @@ async def run_test() -> None:
         await expect(page.locator("#profileName")).to_be_visible()
         await expect(page.locator("#profileEmail")).to_be_visible()
 
-        await page.locator("#accountBackInlineBtn").click()
+        await page.locator("#accountBackBtn").click()
         await expect(account_ws).to_be_hidden()
 
     finally:

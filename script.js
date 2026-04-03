@@ -3934,7 +3934,6 @@ async function handleAdminTableAction(action, userId, sourceBtn) {
 function setupAccountPageListeners() {
     document.getElementById('profileBtn')?.addEventListener('click', openAccountPage);
     document.getElementById('accountBackBtn')?.addEventListener('click', () => setAppView('calls'));
-    document.getElementById('accountBackInlineBtn')?.addEventListener('click', () => setAppView('calls'));
 
     document.getElementById('accountTabProfile')?.addEventListener('click', () => selectAccountTab('profile'));
     document.getElementById('accountTabSecurity')?.addEventListener('click', () => selectAccountTab('security'));

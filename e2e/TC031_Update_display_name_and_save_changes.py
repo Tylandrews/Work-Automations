@@ -54,12 +54,12 @@ async def run_test() -> None:
             "Account updated", timeout=20000
         )
 
-        await page.locator("#accountBackInlineBtn").click()
+        await page.locator("#accountBackBtn").click()
         await expect(page.locator("#mainWorkspace")).to_be_visible()
         await page.locator("#profileBtn").click()
         await expect(page.locator("#accountWorkspace")).to_be_visible()
         await expect(page.locator("#profileName")).to_have_value(DISPLAY)
-        await page.locator("#accountBackInlineBtn").click()
+        await page.locator("#accountBackBtn").click()
 
     finally:
         run_supabase_e2e_cleanup(reset_profile_full_name=True)
