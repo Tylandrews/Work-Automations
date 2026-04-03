@@ -55,3 +55,4 @@ jobs:
       json_summary_path: Website/e2e-stats.json
       browser: ${{ matrix.browser }}
       upload_website_artifact: false
+      e2e_workers: 1

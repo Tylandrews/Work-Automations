@@ -32,6 +32,7 @@ jobs:
       json_summary_path: Website/e2e-stats.json
       browser: chromium
       upload_website_artifact: true
+      e2e_workers: 1
 
   deploy:
     needs: e2e
