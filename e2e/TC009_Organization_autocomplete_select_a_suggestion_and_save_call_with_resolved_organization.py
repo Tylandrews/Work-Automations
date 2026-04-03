@@ -1,16 +1,17 @@
 """
 TC009: Type in Organization, pick an autocomplete suggestion, save the call, list shows that org.
 
-Stubs GETs to Supabase Edge Function autotask-search-companies* so the test is deterministic
-without real Autotask data. Set CALLLOG_TEST_NO_AUTOTASK_MOCK=1 to hit the real edge function
-(use CALLLOG_TEST_ORG_QUERY for a partial name that returns suggestions).
+Stubs Supabase REST (cached_autotask_companies + sync meta) and autotask-sync-all-companies
+so org hydration is deterministic without real Autotask data.
+Set CALLLOG_TEST_NO_AUTOTASK_MOCK=1 to use your real Supabase project (apply migrations;
+CALLLOG_TEST_ORG_QUERY must match a company name substring in cached_autotask_companies).
 """
 import asyncio
-import json
 import os
 
 from calllog_e2e_cleanup import e2e_notes_with_run_id, new_e2e_run_id, run_supabase_e2e_cleanup
 from tc_browser import launch_test_browser
+from tc_org_cache_supabase_stubs import register_org_cache_supabase_stubs
 from tc_selectors import ORG_AUTOCOMPLETE_ITEM
 from playwright.async_api import async_playwright, expect
 
@@ -39,42 +40,10 @@ async def run_test() -> None:
         page = await context.new_page()
 
         if not NO_MOCK:
-            payload = json.dumps(
-                {"organizations": [{"id": "e2e-tc009", "name": MOCK_ORG_NAME}]},
+            await register_org_cache_supabase_stubs(
+                page,
+                [{"autotask_id": "e2e-tc009", "company_name": MOCK_ORG_NAME}],
             )
-
-            def _is_autotask_search_url(url: str) -> bool:
-                u = url.lower()
-                return "/functions/v1/" in u and "autotask-search-companies" in u
-
-            # Browser preflights cross-origin GET (Authorization + apikey). Mock must answer
-            # OPTIONS and echo Access-Control-Allow-Origin or fetch fails → empty autocomplete.
-            async def fulfill_autotask_search(route):
-                req = route.request
-                origin = (req.headers.get("origin") or "").strip()
-                allow_origin = origin if origin else "*"
-                acrh = (req.headers.get("access-control-request-headers") or "").strip()
-                allow_headers = (
-                    acrh
-                    if acrh
-                    else "authorization, apikey, content-type, x-client-info, prefer"
-                )
-                base_cors = {
-                    "Access-Control-Allow-Origin": allow_origin,
-                    "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-                    "Access-Control-Allow-Headers": allow_headers,
-                    "Access-Control-Max-Age": "86400",
-                }
-                if req.method.upper() == "OPTIONS":
-                    await route.fulfill(status=204, headers=base_cors)
-                    return
-                headers = {
-                    **base_cors,
-                    "Content-Type": "application/json; charset=utf-8",
-                }
-                await route.fulfill(status=200, headers=headers, body=payload)
-
-            await page.route(_is_autotask_search_url, fulfill_autotask_search)
 
         await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30000)
 

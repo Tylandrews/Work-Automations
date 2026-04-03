@@ -1096,13 +1096,13 @@
   {
     "id": "TC035",
     "title": "Organization autocomplete shows cached companies quickly before slow network",
-    "description": "Verifies suggestions from persisted cached_autotask_companies appear within a short deadline while the edge function is artificially delayed.",
+    "description": "Verifies suggestions from the org cache appear within a short deadline; Supabase REST and sync Edge URL are stubbed so behavior does not depend on network latency.",
     "category": "Call intake and organization autocomplete",
     "priority": "Medium",
     "steps": [
       {
         "type": "action",
-        "description": "Seed cached_autotask_companies in localStorage and stub autotask search with a long delay"
+        "description": "Seed localStorage, stub cached_autotask_companies REST, autotask_org_sync_meta, and autotask-sync-all-companies"
       },
       {
         "type": "action",

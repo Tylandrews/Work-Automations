@@ -1,9 +1,8 @@
 """
-TC035: Organization autocomplete shows suggestions from cached_autotask_companies quickly,
-before a slow edge-function response would arrive.
+TC035: Organization autocomplete shows suggestions from cached_autotask_companies quickly.
 
-Seeds localStorage via init script, stubs autotask search with a long delay, then measures
-wall time from filling the organization query to the first visible suggestion.
+Seeds localStorage via init script, stubs Supabase REST (org cache + sync meta) and the
+weekly sync Edge URL so hydration is deterministic. Autocomplete is local-only with debounce.
 
 Override strictness with CALLLOG_TEST_ORG_INSTANT_MAX_MS (default 900).
 """
@@ -13,6 +12,7 @@ import os
 import time
 
 from tc_browser import launch_test_browser
+from tc_org_cache_supabase_stubs import register_org_cache_supabase_stubs
 from tc_selectors import ORG_AUTOCOMPLETE_ITEM
 from playwright.async_api import async_playwright, expect
 
@@ -20,7 +20,6 @@ BASE_URL = os.environ.get("CALLLOG_TEST_BASE_URL", "http://localhost:4173")
 LOGIN_EMAIL = os.environ.get("CALLLOG_TEST_EMAIL", "")
 LOGIN_PASSWORD = os.environ.get("CALLLOG_TEST_PASSWORD", "")
 MAX_MS = float(os.environ.get("CALLLOG_TEST_ORG_INSTANT_MAX_MS", "900"))
-NETWORK_DELAY_SEC = float(os.environ.get("CALLLOG_TEST_ORG_SLOW_NETWORK_SEC", "8"))
 
 CACHED_ORG_NAME = "ZZTC035_Cached_Org_SpeedTest"
 # Two-character query matching the cached name (autocomplete requires min 2 chars)
@@ -40,39 +39,7 @@ async def run_test() -> None:
         context = await browser.new_context()
         context.set_default_timeout(25000)
 
-        payload_empty = json.dumps({"organizations": []})
-
-        def _is_autotask_search_url(url: str) -> bool:
-            u = url.lower()
-            return "/functions/v1/" in u and "autotask-search-companies" in u
-
-        async def fulfill_delayed(route):
-            await asyncio.sleep(NETWORK_DELAY_SEC)
-            req = route.request
-            origin = (req.headers.get("origin") or "").strip()
-            allow_origin = origin if origin else "*"
-            acrh = (req.headers.get("access-control-request-headers") or "").strip()
-            allow_headers = (
-                acrh
-                if acrh
-                else "authorization, apikey, content-type, x-client-info, prefer"
-            )
-            base_cors = {
-                "Access-Control-Allow-Origin": allow_origin,
-                "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-                "Access-Control-Allow-Headers": allow_headers,
-                "Access-Control-Max-Age": "86400",
-            }
-            if req.method.upper() == "OPTIONS":
-                await route.fulfill(status=204, headers=base_cors)
-                return
-            headers = {
-                **base_cors,
-                "Content-Type": "application/json; charset=utf-8",
-            }
-            await route.fulfill(status=200, headers=headers, body=payload_empty)
-
-        await context.add_init_script(
+        context.add_init_script(
             f"""
             try {{
                 localStorage.setItem(
@@ -84,7 +51,10 @@ async def run_test() -> None:
         )
 
         page = await context.new_page()
-        await page.route(_is_autotask_search_url, fulfill_delayed)
+        await register_org_cache_supabase_stubs(
+            page,
+            [{"autotask_id": "e2e-tc035", "company_name": CACHED_ORG_NAME}],
+        )
 
         await page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30000)
 
@@ -124,7 +94,7 @@ async def run_test() -> None:
             raise AssertionError(
                 f"Autocomplete from cache took {elapsed_ms:.0f}ms; "
                 f"max allowed CALLLOG_TEST_ORG_INSTANT_MAX_MS={MAX_MS:g}ms. "
-                "Ensure instant path (localStorage + in-memory cache) runs before debounced network."
+                "Ensure local org list + debounced filter stay fast."
             )
 
     finally:

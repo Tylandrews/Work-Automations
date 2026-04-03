@@ -74,9 +74,11 @@ The application presents **in-app statistics** for the current context (e.g., co
 
 ### 5.6 Organization lookup (optional)
 
-When the Edge Function `autotask-search-companies-v3` and secrets are configured, the UI can suggest or resolve **organization names** via Autotask.
+When Supabase, migration `008_autotask_org_sync_meta`, table `cached_autotask_companies`, and the Edge Function **`autotask-sync-all-companies`** are configured, the UI loads **organization names** from Supabase into a local cache. A **weekly** (or first-open-after-seven-days) job pulls active companies from Autotask **read-only** (`Companies/query` only) into that table; autocomplete filters the local list with no per-keystroke Autotask calls.
 
-**Expected behavior:** Without integration, organization remains a free-text field; with integration, search/autocomplete works within rate and security constraints of the backend.
+**Autotask rule:** The product must not create, update, or delete data in Autotask; Autotask is used only as a read-only directory.
+
+**Expected behavior:** Without integration, organization remains a free-text field. With integration, names appear after sync; companies added in Autotask after the last sync are not listed until the next sync window (unless a future manual refresh is added). The legacy `autotask-search-companies-v3` function is not required for the main autocomplete path.
 
 ### 5.7 Reporting snapshots (backend)
 

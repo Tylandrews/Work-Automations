@@ -106,10 +106,15 @@ const AUTOCACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 /** Debounce before hitting the network; instant path uses localStorage + memory cache first */
 const AUTOCOMPLETE_DEBOUNCE_MS = 150
 let autocompleteDebounceTimer = null;
-let autocompleteAbortController = null;
 let autocompleteActiveInstance = null; // Currently active autocomplete instance
 const ORG_SELECTION_CACHE_PREFIX = 'calllog-org-selection-';
 const CACHED_AUTOTASK_COMPANIES_KEY = 'cached_autotask_companies';
+/** Align with Edge Function autotask-sync-all-companies (weekly full sync). */
+const ORG_FULL_SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Upper bound for local org list (localStorage / memory). */
+const CACHED_AUTOTASK_COMPANIES_LOCAL_MAX = 50000;
+/** Parsed org list from localStorage; null means not loaded yet. */
+let persistentAutotaskCompaniesMemory = null;
 
 function getCachedOrganizationSelection(inputId) {
     try {
@@ -142,33 +147,19 @@ function addToCachedAutotaskCompanies(organizations) {
         .filter((org) => org.name);
     if (normalizedIncoming.length === 0) return;
 
+    const existing = loadPersistentAutotaskCompanies();
+    const byName = new Map(
+        existing.map((org) => [org.name.toLowerCase(), org])
+    );
+    normalizedIncoming.forEach((org) => {
+        byName.set(org.name.toLowerCase(), org);
+    });
+    let merged = Array.from(byName.values());
+    if (merged.length > CACHED_AUTOTASK_COMPANIES_LOCAL_MAX) {
+        merged = merged.slice(0, CACHED_AUTOTASK_COMPANIES_LOCAL_MAX);
+    }
+    persistentAutotaskCompaniesMemory = merged;
     try {
-        const existingRaw = localStorage.getItem(CACHED_AUTOTASK_COMPANIES_KEY);
-        const existing = (() => {
-            if (!existingRaw) return [];
-            try {
-                const parsed = JSON.parse(existingRaw);
-                return Array.isArray(parsed) ? parsed : [];
-            } catch (err) {
-                return [];
-            }
-        })();
-
-        const byName = new Map(
-            existing
-                .map((org) => ({
-                    id: String(org?.id || ''),
-                    name: String(org?.name || '').trim()
-                }))
-                .filter((org) => org.name)
-                .map((org) => [org.name.toLowerCase(), org])
-        );
-
-        normalizedIncoming.forEach((org) => {
-            byName.set(org.name.toLowerCase(), org);
-        });
-
-        const merged = Array.from(byName.values()).slice(0, 500);
         localStorage.setItem(CACHED_AUTOTASK_COMPANIES_KEY, JSON.stringify(merged));
     } catch (err) {
         // Ignore localStorage errors
@@ -176,20 +167,180 @@ function addToCachedAutotaskCompanies(organizations) {
 }
 
 function loadPersistentAutotaskCompanies() {
+    if (persistentAutotaskCompaniesMemory !== null) {
+        return persistentAutotaskCompaniesMemory;
+    }
     try {
         const raw = localStorage.getItem(CACHED_AUTOTASK_COMPANIES_KEY);
-        if (!raw) return [];
+        if (!raw) {
+            persistentAutotaskCompaniesMemory = [];
+            return persistentAutotaskCompaniesMemory;
+        }
         const parsed = JSON.parse(raw);
-        if (!Array.isArray(parsed)) return [];
-        return parsed
+        if (!Array.isArray(parsed)) {
+            persistentAutotaskCompaniesMemory = [];
+            return persistentAutotaskCompaniesMemory;
+        }
+        persistentAutotaskCompaniesMemory = parsed
             .map((org) => ({
                 id: String(org?.id || ''),
                 name: String(org?.name || '').trim()
             }))
             .filter((org) => org.name);
+        return persistentAutotaskCompaniesMemory;
     } catch (err) {
-        return [];
+        persistentAutotaskCompaniesMemory = [];
+        return persistentAutotaskCompaniesMemory;
     }
+}
+
+/**
+ * Replace local org cache from a full server list (dedupe by autotask id or name).
+ */
+function replaceAllCachedAutotaskCompaniesLocal(organizations) {
+    const byKey = new Map();
+    for (const org of organizations) {
+        const id = String(org?.id || '').trim();
+        const name = String(org?.name || '').trim();
+        if (!name) continue;
+        const key = id || `name:${name.toLowerCase()}`;
+        byKey.set(key, { id, name });
+    }
+    let list = Array.from(byKey.values());
+    if (list.length > CACHED_AUTOTASK_COMPANIES_LOCAL_MAX) {
+        list = list.slice(0, CACHED_AUTOTASK_COMPANIES_LOCAL_MAX);
+    }
+    persistentAutotaskCompaniesMemory = list;
+    try {
+        localStorage.setItem(CACHED_AUTOTASK_COMPANIES_KEY, JSON.stringify(list));
+    } catch (err) {
+        // Ignore localStorage errors
+    }
+    autocompleteCache.clear();
+}
+
+function isAutotaskOrgFullSyncStale(lastFullSyncAtIso) {
+    if (!lastFullSyncAtIso) return true;
+    const t = new Date(lastFullSyncAtIso).getTime();
+    return Number.isNaN(t) || (Date.now() - t > ORG_FULL_SYNC_INTERVAL_MS);
+}
+
+async function loadAllCachedAutotaskCompaniesFromSupabaseIntoLocal(supabase) {
+    const pageSize = 1000;
+    let from = 0;
+    const all = [];
+    for (;;) {
+        const { data, error } = await supabase
+            .from('cached_autotask_companies')
+            .select('autotask_id, company_name')
+            .order('autotask_id', { ascending: true })
+            .range(from, from + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        for (const row of data) {
+            const name = String(row.company_name || '').trim();
+            if (!name) continue;
+            all.push({ id: String(row.autotask_id || ''), name });
+        }
+        if (data.length < pageSize) break;
+        from += pageSize;
+    }
+    replaceAllCachedAutotaskCompaniesLocal(all);
+}
+
+/**
+ * Invoke read-only full Autotask sync into Supabase (Edge Function).
+ * @returns {Promise<boolean>} false if request failed hard; true otherwise (including skipped).
+ */
+async function invokeAutotaskFullCompanySyncEdgeFunction(supabase, force = false) {
+    let { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        console.warn('No session; skipping Autotask full org sync.');
+        return false;
+    }
+    const expiresAtMs = typeof session.expires_at === 'number' ? session.expires_at * 1000 : null;
+    const isExpiringSoon = typeof expiresAtMs === 'number' ? expiresAtMs < (Date.now() + 30 * 1000) : false;
+    if (isExpiringSoon) {
+        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+        if (refreshErr || !refreshed?.session?.access_token) {
+            console.warn('Session refresh failed; skipping Autotask full org sync.');
+            return false;
+        }
+        session = refreshed.session;
+    }
+    if (!session?.access_token) return false;
+
+    const config = window.supabaseConfig || {};
+    const supabaseUrl = (config.SUPABASE_URL || '').trim();
+    const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
+    if (!supabaseUrl || !anonKey) return false;
+
+    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
+    const suffix = force ? '?force=1' : '';
+    const response = await fetch(`${baseFunctionsUrl}/autotask-sync-all-companies${suffix}`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': anonKey,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (response.status === 503) {
+        console.warn('Autotask API not configured on server; org list not synced from PSA.');
+        return true;
+    }
+    if (response.status === 401) {
+        console.warn('Session expired during org sync.');
+        return false;
+    }
+    if (!response.ok) {
+        const txt = await response.text().catch(() => '');
+        console.warn('[autotask-sync-all-companies] failed:', response.status, txt);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Load orgs from Supabase into local cache; if weekly sync is due, run Edge full sync then reload.
+ * Non-blocking for callers (uses internal async IIFE).
+ */
+function refreshAutotaskOrgCacheAfterAuth() {
+    if (!useSupabase()) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const run = async () => {
+        try {
+            let stale = true;
+            try {
+                const { data: meta, error: metaErr } = await supabase
+                    .from('autotask_org_sync_meta')
+                    .select('last_full_sync_at')
+                    .eq('id', 1)
+                    .maybeSingle();
+                if (!metaErr && meta) {
+                    stale = isAutotaskOrgFullSyncStale(meta.last_full_sync_at);
+                }
+            } catch (metaReadErr) {
+                console.warn('[org-cache] sync meta unreadable; apply migration 008 if missing.', metaReadErr);
+            }
+
+            await loadAllCachedAutotaskCompaniesFromSupabaseIntoLocal(supabase);
+
+            if (stale) {
+                const ok = await invokeAutotaskFullCompanySyncEdgeFunction(supabase, false);
+                if (ok) {
+                    await loadAllCachedAutotaskCompaniesFromSupabaseIntoLocal(supabase);
+                }
+            }
+        } catch (err) {
+            console.warn('[org-cache] refresh failed:', err);
+        }
+    };
+
+    void run();
 }
 
 function filterOrganizationsByQuerySubstring(organizations, queryLower, limit) {
@@ -220,7 +371,9 @@ function getInstantAutocompleteResults(query, limit = 20) {
     if (cached && (Date.now() - cached.timestamp) < AUTOCACHE_TTL_MS) {
         return cached.results;
     }
-    return filterOrganizationsByQuerySubstring(loadPersistentAutotaskCompanies(), cacheKey, limit);
+    const results = filterOrganizationsByQuerySubstring(loadPersistentAutotaskCompanies(), cacheKey, limit);
+    autocompleteCache.set(cacheKey, { results, timestamp: Date.now() });
+    return results;
 }
 
 function useSupabase() {
@@ -453,166 +606,8 @@ async function initializeEncryption() {
 }
 
 // ========== Autotask Organization Autocomplete ==========
-// SECURITY: This function NEVER contains or sends API keys.
-// All API calls go through a Supabase Edge Function which stores Autotask credentials server-side.
-
-/**
- * Search organizations via Supabase Edge Function (secure proxy)
- * @param {string} query - Search query (minimum 2 characters)
- * @param {number} limit - Maximum number of results (default: 20)
- * @returns {Promise<Array<{id: string, name: string}>>}
- */
-async function searchOrganizationsViaProxy(query, limit = 20) {
-    if (!query || query.trim().length < 2) {
-        return [];
-    }
-
-    const cacheKey = query.toLowerCase().trim();
-    const cached = autocompleteCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < AUTOCACHE_TTL_MS) {
-        return cached.results;
-    }
-
-    const supabase = getSupabase();
-    if (!supabase) {
-        console.warn('Supabase not configured. Autocomplete disabled.');
-        return [];
-    }
-
-    // Get Supabase session for authentication
-    let { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-        console.warn('No active session. Autocomplete requires authentication.');
-        return [];
-    }
-    const expiresAtMs = typeof session.expires_at === 'number' ? session.expires_at * 1000 : null;
-    const isExpiringSoon = typeof expiresAtMs === 'number' ? expiresAtMs < (Date.now() + 30 * 1000) : false;
-    if (isExpiringSoon) {
-        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-        if (refreshErr || !refreshed?.session?.access_token) {
-            console.warn('Session expired. Please log in again.');
-            return [];
-        }
-        session = refreshed.session;
-    }
-    if (!session?.access_token) {
-        console.warn('Session expired. Please log in again.');
-        return [];
-    }
-
-    // Get Supabase project URL
-    const config = window.supabaseConfig || {};
-    const supabaseUrl = (config.SUPABASE_URL || '').trim();
-    if (!supabaseUrl) {
-        console.warn('Supabase URL not configured.');
-        return [];
-    }
-
-    // Call Edge Function (never sends API key - it's stored server-side)
-    // Prefer the canonical function that performs Supabase cache writes.
-    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
-    const edgeFunctionCandidates = [
-        `${baseFunctionsUrl}/autotask-search-companies-v3`,
-        `${baseFunctionsUrl}/autotask-search-companies`
-    ];
-    const searchParams = new URLSearchParams({
-        q: query.trim(),
-        limit: String(Math.min(Math.max(limit, 1), 50))
-    });
-
-    try {
-        const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
-        const isJwtLike = (token) => typeof token === 'string' && token.split('.').length === 3;
-        let response = null;
-        for (const endpoint of edgeFunctionCandidates) {
-            const candidateResponse = await fetch(`${endpoint}?${searchParams}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${session.access_token}`,
-                    // Supabase Edge Functions expect the project anon/publishable key as `apikey`
-                    // This is safe to include client-side (as with the rest of the app).
-                    'apikey': anonKey,
-                    'Content-Type': 'application/json'
-                }
-            });
-            if (candidateResponse.ok || candidateResponse.status !== 404) {
-                response = candidateResponse;
-                break;
-            }
-        }
-        if (!response) {
-            throw new Error('No deployed Autotask search edge function found.');
-        }
-
-        if (response.status === 401) {
-            const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-            const refreshedToken = refreshed?.session?.access_token;
-            if (!refreshErr && isJwtLike(refreshedToken)) {
-                session = refreshed.session;
-                response = null;
-                for (const endpoint of edgeFunctionCandidates) {
-                    const candidateResponse = await fetch(`${endpoint}?${searchParams}`, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${session.access_token}`,
-                            // Supabase Edge Functions expect the project anon/publishable key as `apikey`
-                            // This is safe to include client-side (as with the rest of the app).
-                            'apikey': anonKey,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    if (candidateResponse.ok || candidateResponse.status !== 404) {
-                        response = candidateResponse;
-                        break;
-                    }
-                }
-                if (!response) {
-                    throw new Error('No deployed Autotask search edge function found.');
-                }
-            }
-        }
-
-        if (!response.ok) {
-            const txt = await response.text().catch(() => '');
-            let errorDetails = '';
-            let fullError = '';
-            try {
-                const errorJson = JSON.parse(txt);
-                errorDetails = errorJson.details || errorJson.error || '';
-                fullError = JSON.stringify(errorJson, null, 2);
-            } catch {
-                errorDetails = txt;
-                fullError = txt;
-            }
-            console.warn('[autotask-autocomplete] non-2xx', response.status);
-            console.warn('[autotask-autocomplete] Full error response:', fullError);
-            if (response.status === 401) {
-                console.warn('Session expired. Please log in again.');
-                return [];
-            }
-            if (response.status === 503) {
-                console.warn('Autotask API not configured on server.');
-                return [];
-            }
-            throw new Error(`Edge Function returned ${response.status}: ${errorDetails || 'See console for details'}`);
-        }
-
-        const data = await response.json();
-        const organizations = Array.isArray(data.organizations) ? data.organizations : [];
-        addToCachedAutotaskCompanies(organizations);
-
-        // Cache results
-        autocompleteCache.set(cacheKey, {
-            results: organizations,
-            timestamp: Date.now()
-        });
-
-        return organizations;
-    } catch (err) {
-        console.error('Failed to search organizations:', err);
-        return [];
-    }
-}
+// Organization names are served from a local cache hydrated from Supabase `cached_autotask_companies`
+// (weekly full sync via Edge Function `autotask-sync-all-companies`). No per-keystroke Autotask calls.
 
 /**
  * Setup autocomplete for an organization input field
@@ -730,35 +725,20 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
         }
     }
 
-    // Debounced search
-    async function performSearch(query) {
-        // Cancel previous request
-        if (autocompleteAbortController) {
-            autocompleteAbortController.abort();
-        }
-        autocompleteAbortController = new AbortController();
-
-        // Clear previous timer
+    // Debounced local filter (Supabase-backed list loaded at startup / after weekly sync)
+    function performSearch(query) {
         if (autocompleteDebounceTimer) {
             clearTimeout(autocompleteDebounceTimer);
         }
 
-        autocompleteDebounceTimer = setTimeout(async () => {
+        autocompleteDebounceTimer = setTimeout(() => {
             if (query.length < 2) {
                 hideDropdown();
                 return;
             }
-
-            try {
-                const orgs = await searchOrganizationsViaProxy(query, 20);
-                if (autocompleteActiveInstance === inputId) {
-                    renderSuggestions(orgs, query);
-                }
-            } catch (err) {
-                if (err.name !== 'AbortError') {
-                    console.error('Autocomplete search error:', err);
-                    hideDropdown();
-                }
+            const orgs = getInstantAutocompleteResults(query, 20);
+            if (autocompleteActiveInstance === inputId) {
+                renderSuggestions(orgs, query);
             }
         }, AUTOCOMPLETE_DEBOUNCE_MS);
     }
@@ -1636,6 +1616,7 @@ async function initApp() {
     if (useSupabase()) {
         setupOrganizationAutocomplete('organization', 'organization-autocomplete-list');
         setupOrganizationAutocomplete('editOrganization', 'editOrganization-autocomplete-list');
+        refreshAutotaskOrgCacheAfterAuth();
     }
 
     await initializeHistoryDay();

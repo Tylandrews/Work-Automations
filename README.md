@@ -131,7 +131,13 @@ cp supabaseConfig.example.js supabaseConfig.js
 
 The build pipeline validates configuration where applicable. Release builds intended for distribution should embed the configuration required for production use.
 
-For organization autocomplete, deploy the Edge Function under `supabase/functions/autotask-search-companies-v3` and configure required function secrets (`AUTOTASK_INTEGRATION_CODE`, `AUTOTASK_USERNAME`, `AUTOTASK_SECRET`, plus project secrets including `SUPABASE_SERVICE_ROLE_KEY`).
+For organization autocomplete, apply migrations through `008_autotask_org_sync_meta.sql`. Deploy **`autotask-sync-all-companies`** for a weekly read-only full sync of active Autotask companies into `cached_autotask_companies` (see `supabase/functions/autotask-sync-all-companies/README.md`). The app loads org names from Supabase only; it does not call Autotask on each keystroke.
+
+**Autotask is read-only from this app:** only zone lookup and `Companies/query` are used; nothing writes back to Autotask.
+
+The legacy Edge Function `autotask-search-companies-v3` (per-query search) is optional and no longer required for the main UI autocomplete path.
+
+Configure the same Autotask secrets for the sync function (`AUTOTASK_INTEGRATION_CODE`, `AUTOTASK_USERNAME`, `AUTOTASK_SECRET`, optional `AUTOTASK_ZONE_URL`, plus `SUPABASE_SERVICE_ROLE_KEY`).
 
 ### Project layout
 
