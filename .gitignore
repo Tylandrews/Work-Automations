@@ -11,6 +11,9 @@ supabaseConfig.js
 e2e/.env
 e2e/playwright-e2e-report.html
 e2e/tmp/
+
+# TestSprite / tooling duplicates (not part of the suite)
+testsprite_tests/
 e2e/__pycache__/
 **/__pycache__/
 *.pyc
