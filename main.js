@@ -80,12 +80,6 @@ const setupAutoUpdater = () => {
         updaterAvailableVersion = ver || null
         updaterLastError = null
         emitUpdaterState()
-        showTrayNotification(
-            'Call Log update',
-            ver
-                ? `Version ${ver} is available. Open Account to download and install.`
-                : 'An update is available. Open Account to download and install.'
-        )
     })
 
     autoUpdater.on('update-not-available', () => {

@@ -279,34 +279,18 @@
             <header class="account-page-header">
                 <div class="account-page-header-text">
                     <h2 class="account-page-title" id="accountPageHeading">Account</h2>
-                    <p class="account-page-lead">Profile, security, and (for administrators) user management.</p>
+                    <p class="account-page-lead">Profile, app updates, security, and (for administrators) user management.</p>
                 </div>
             </header>
 
             <div class="account-tabs" role="tablist" aria-label="Account sections">
                 <button type="button" class="account-tab" role="tab" id="accountTabProfile" aria-selected="true" aria-controls="accountPanelProfile" tabindex="0">Profile</button>
+                <button type="button" class="account-tab" role="tab" id="accountTabUpdates" aria-selected="false" aria-controls="accountPanelUpdates" tabindex="-1">Updates</button>
                 <button type="button" class="account-tab" role="tab" id="accountTabSecurity" aria-selected="false" aria-controls="accountPanelSecurity" tabindex="-1">Security</button>
                 <button type="button" class="account-tab hidden" role="tab" id="accountTabAdmin" aria-selected="false" aria-controls="accountPanelAdmin" tabindex="-1">Administration</button>
             </div>
 
             <div id="accountPanelProfile" class="account-panel" role="tabpanel" aria-labelledby="accountTabProfile" tabindex="0">
-                <div id="accountUpdateCard" class="account-card account-card--spaced">
-                    <h3 class="account-card-title">App updates</h3>
-                    <p class="profile-hint" id="accountUpdateHint">Checking update settings…</p>
-                    <div id="accountUpdateStatus" class="account-update-status" role="status" aria-live="polite"></div>
-                    <div id="accountUpdateProgressWrap" class="account-update-progress-wrap hidden">
-                        <div class="account-update-progress-bar" role="progressbar" id="accountUpdateProgressBar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Download progress">
-                            <div id="accountUpdateProgressFill" class="account-update-progress-fill"></div>
-                        </div>
-                        <p id="accountUpdateProgressLabel" class="profile-hint account-update-progress-label"></p>
-                    </div>
-                    <div id="accountUpdateError" class="auth-error" role="alert" aria-live="polite"></div>
-                    <div class="account-form-actions account-update-actions">
-                        <button type="button" class="btn btn-secondary" id="accountUpdateCheckBtn">Check for updates</button>
-                        <button type="button" class="btn btn-primary" id="accountUpdateDownloadBtn" style="display: none;">Download update</button>
-                        <button type="button" class="btn btn-primary" id="accountUpdateInstallBtn" style="display: none;">Install and restart</button>
-                    </div>
-                </div>
                 <form id="profileForm" class="profile-form account-card">
                     <h3 class="account-card-title">Profile</h3>
                     <div id="profileError" class="auth-error" role="alert" aria-live="polite"></div>
@@ -323,6 +307,26 @@
                         <button type="submit" class="btn btn-primary" id="profileSaveBtn">Save profile</button>
                     </div>
                 </form>
+            </div>
+
+            <div id="accountPanelUpdates" class="account-panel hidden" role="tabpanel" aria-labelledby="accountTabUpdates" tabindex="0" hidden>
+                <div id="accountUpdateCard" class="account-card">
+                    <h3 class="account-card-title">App updates</h3>
+                    <p class="profile-hint" id="accountUpdateHint">Checking update settings…</p>
+                    <div id="accountUpdateStatus" class="account-update-status" role="status" aria-live="polite"></div>
+                    <div id="accountUpdateProgressWrap" class="account-update-progress-wrap hidden">
+                        <div class="account-update-progress-bar" role="progressbar" id="accountUpdateProgressBar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Download progress">
+                            <div id="accountUpdateProgressFill" class="account-update-progress-fill"></div>
+                        </div>
+                        <p id="accountUpdateProgressLabel" class="profile-hint account-update-progress-label"></p>
+                    </div>
+                    <div id="accountUpdateError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="account-form-actions account-update-actions">
+                        <button type="button" class="btn btn-secondary" id="accountUpdateCheckBtn">Check for updates</button>
+                        <button type="button" class="btn btn-primary" id="accountUpdateDownloadBtn" style="display: none;">Download update</button>
+                        <button type="button" class="btn btn-primary" id="accountUpdateInstallBtn" style="display: none;">Install and restart</button>
+                    </div>
+                </div>
             </div>
 
             <div id="accountPanelSecurity" class="account-panel hidden" role="tabpanel" aria-labelledby="accountTabSecurity" tabindex="0" hidden>

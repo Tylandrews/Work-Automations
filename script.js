@@ -3689,14 +3689,14 @@ function maybeToastAccountUpdater(state) {
         const v = String(state.availableVersion)
         if (accountUpdaterToastVersion !== v) {
             accountUpdaterToastVersion = v
-            showNotification(`Update available: v${v}. Open Account to download when you are ready.`)
+            showNotification(`Update available: v${v}. Open Account, Updates tab, to download when you are ready.`)
         }
     }
     if (state.phase === 'downloaded' && state.downloadedVersion) {
         const v = String(state.downloadedVersion)
         if (accountUpdaterToastDownloadedVersion !== v) {
             accountUpdaterToastDownloadedVersion = v
-            showNotification(`Update v${v} is ready. Open Account to install and restart.`)
+            showNotification(`Update v${v} is ready. Open Account, Updates tab, to install and restart.`)
         }
     }
 }
@@ -3896,6 +3896,7 @@ function updateAccountAdminTabVisibility() {
 function selectAccountTab(tabId) {
     const rows = [
         { id: 'profile', tabEl: 'accountTabProfile', panelEl: 'accountPanelProfile' },
+        { id: 'updates', tabEl: 'accountTabUpdates', panelEl: 'accountPanelUpdates' },
         { id: 'security', tabEl: 'accountTabSecurity', panelEl: 'accountPanelSecurity' },
         { id: 'admin', tabEl: 'accountTabAdmin', panelEl: 'accountPanelAdmin' },
     ];
@@ -3923,6 +3924,9 @@ function selectAccountTab(tabId) {
                 pe.setAttribute('hidden', '');
             }
         }
+    }
+    if (tabId === 'updates') {
+        window.electronAPI?.updater?.getState().then(renderAccountUpdater).catch(() => {});
     }
     if (tabId === 'admin' && currentUserProfile?.is_admin) {
         if (!accountAdminLoadedOnce) {
@@ -4145,6 +4149,7 @@ function setupAccountPageListeners() {
     document.getElementById('accountBackBtn')?.addEventListener('click', () => setAppView('calls'));
 
     document.getElementById('accountTabProfile')?.addEventListener('click', () => selectAccountTab('profile'));
+    document.getElementById('accountTabUpdates')?.addEventListener('click', () => selectAccountTab('updates'));
     document.getElementById('accountTabSecurity')?.addEventListener('click', () => selectAccountTab('security'));
     document.getElementById('accountTabAdmin')?.addEventListener('click', () => selectAccountTab('admin'));
 
