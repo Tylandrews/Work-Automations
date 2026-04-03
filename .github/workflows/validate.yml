@@ -43,16 +43,3 @@ jobs:
 
       - name: Build icon assets
         run: node scripts/build-icon.js
-
-  e2e:
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [chromium, firefox]
-    uses: ./.github/workflows/e2e-playwright.yml
-    secrets: inherit
-    with:
-      json_summary_path: Website/e2e-stats.json
-      browser: ${{ matrix.browser }}
-      upload_website_artifact: false
-      e2e_workers: 1

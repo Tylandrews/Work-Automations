@@ -17,6 +17,3 @@ testsprite_tests/
 e2e/__pycache__/
 **/__pycache__/
 *.pyc
-
-# Generated on CI for GitHub Pages / Shields (optional local runs)
-Website/e2e-stats.json

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "label": "E2E",
+  "message": "40 scenarios (run locally)",
+  "color": "lightgrey",
+  "total": 40,
+  "passed": null,
+  "failed": null,
+  "lastRunAt": "2026-04-03T00:00:00Z",
+  "commitSha": null,
+  "commitShaFull": null,
+  "runUrl": null,
+  "source": "local"
+}

@@ -3,9 +3,9 @@
 Call Log is an Electron desktop application for logging and reviewing telephone support interactions. It provides a dedicated intake form, calendar-based history, search, in-app statistics, and optional cloud synchronization through Supabase. A static marketing site is included under [`Website/`](Website/) for GitHub Pages.
 
 [![Validate](https://github.com/Tylandrews/Work-Automations/actions/workflows/validate.yml/badge.svg)](https://github.com/Tylandrews/Work-Automations/actions/workflows/validate.yml)
-[![E2E (Pages)](https://img.shields.io/endpoint?url=https%3A%2F%2Ftylandrews.github.io%2FWork-Automations%2Fe2e-stats.json)](https://tylandrews.github.io/Work-Automations/)
+[![E2E scenarios](https://img.shields.io/endpoint?url=https%3A%2F%2Ftylandrews.github.io%2FWork-Automations%2Fe2e-stats.json)](https://tylandrews.github.io/Work-Automations/)
 
-The **E2E** badge reads [`e2e-stats.json`](https://tylandrews.github.io/Work-Automations/e2e-stats.json) produced on each deploy after a full Playwright run (pass/fail counts).
+The **E2E** badge reads [`Website/e2e-stats.json`](Website/e2e-stats.json) (static scenario count for the docs site). Playwright runs **locally** only; it is not executed in GitHub Actions. When you add or remove `e2e/TC*.py` files, update the `total` field (and `message` if you like) in that JSON.
 
 | Resource | Link |
 | -------- | ---- |
@@ -75,18 +75,18 @@ To attach Chromium DevTools during local development, enable the appropriate cal
 | Command | Purpose |
 | ------- | ------- |
 | `npm run test:e2e` | Default local runner (live dashboard; higher parallelism unless you pass `-- --workers 1`). |
-| `npm run test:e2e:ci` | **Same argv as GitHub Actions** (static HTML report, headless, `--workers 1`, Chromium). Implemented via `e2e/ci_e2e_shared.py`, shared with `run_github_actions_e2e.py`. |
-| `npm run test:e2e:ci:firefox` | Same as Validate’s Firefox matrix job. |
+| `npm run test:e2e:ci` | Headless static HTML report, `--workers 1`, Chromium (`e2e/ci_e2e_shared.py`). |
+| `npm run test:e2e:ci:firefox` | Same flags with Firefox. |
 
-Configure `e2e/.env` from `e2e/.env.example` for local credentials. CI uses repository secrets instead.
+Configure `e2e/.env` from `e2e/.env.example` for local credentials.
 
 ### Automated release pipeline
 
 This repository uses GitHub Actions for validation and release automation.
 
-- [`.github/workflows/validate.yml`](.github/workflows/validate.yml) validates JavaScript syntax, runs `npm run test:unit` (lightweight Node tests), and runs the Playwright suite (Chromium and Firefox) on pull requests and pushes to `main` when repository secrets are available
+- [`.github/workflows/validate.yml`](.github/workflows/validate.yml) validates JavaScript syntax, runs `npm run test:unit`, and builds icon assets on pull requests and pushes to `main` / `release/**`
 - [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml) builds and publishes Windows release assets when a tag in the format `vX.Y.Z` is pushed
-- [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) runs the full Playwright suite (required repository secrets below), writes `Website/e2e-stats.json`, then deploys the static `Website/` folder to GitHub Pages for the marketing site and the README badge
+- [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) deploys the committed [`Website/`](Website/) folder to GitHub Pages (no Playwright on Actions)
 
 #### Release policy (version and tag alignment)
 
@@ -110,17 +110,6 @@ Set these GitHub repository secrets before running release builds:
 - `SUPABASE_ANON_KEY`
 
 The release workflow creates `supabaseConfig.js` from these secrets at build time, then runs the existing build scripts.
-
-#### Required repository secrets (GitHub Pages deploy E2E)
-
-The Pages deploy workflow fails if any of these are missing. Use the same dedicated test account as local Playwright (`e2e/.env` or the process environment; never commit real passwords):
-
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `CALLLOG_TEST_EMAIL`
-- `CALLLOG_TEST_PASSWORD`
-
-A failing Playwright run blocks the deploy. Pull-request validation runs the same suite (Chromium and Firefox) when secrets are available; fork PRs without secrets fail the E2E jobs until you add an org-level escape hatch or run from a branch on the same repository.
 
 #### Release outputs and recovery
 

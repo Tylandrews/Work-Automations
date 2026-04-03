@@ -1,16 +1,16 @@
 """
-Run the same E2E suite the same way as GitHub Actions (Validate / Deploy Pages).
+Run E2E with CI-style flags (static HTML report, headless, default `--workers 1`).
 
-- Same `run_e2e_full.py` flags as `run_github_actions_e2e.py` (static report, headless, workers).
-- Same test discovery: `run_playwright_report.py` and all `e2e/TC###_*.py` files.
-- Does not trim secrets or overwrite `supabaseConfig.js` (use `e2e/.env` and your local config).
+Playwright is not executed in GitHub Actions anymore; use this locally for a reproducible,
+headless run. Same test discovery as always: `run_playwright_report.py` and `e2e/TC###_*.py`.
+
+Loads `e2e/.env`; does not overwrite `supabaseConfig.js`.
 
 From repo root:
   py -3.10 e2e/run_like_github_ci.py
   npm run test:e2e:ci
 
-Match Validate Firefox matrix:
-  py -3.10 e2e/run_like_github_ci.py --browser firefox
+Firefox (same as the old Validate matrix):
   npm run test:e2e:ci:firefox
 """
 from __future__ import annotations
@@ -29,12 +29,12 @@ def main() -> int:
     load_e2e_dotenv()
     root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(
-        description="Run E2E with the same CLI as GitHub Actions (reusable e2e-playwright.yml).",
+        description="Run E2E with headless/static-report argv (former CI style).",
     )
     parser.add_argument(
         "--browser",
         default="chromium",
-        help="CALLLOG_TEST_BROWSER (default chromium, same as Deploy GitHub Pages)",
+        help="CALLLOG_TEST_BROWSER (default chromium)",
     )
     parser.add_argument(
         "--workers",

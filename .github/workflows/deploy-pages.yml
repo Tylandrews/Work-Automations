@@ -5,6 +5,9 @@
 #
 # "Ensure GitHub Pages site" tries POST build_type=workflow with GITHUB_TOKEN. If that
 # fails, a repo admin must set Settings → Pages → Source → GitHub Actions, then re-run.
+#
+# Playwright E2E is local-only (npm run test:e2e). Website/e2e-stats.json is committed
+# as a static scenario count for the docs site and README badge.
 name: Deploy GitHub Pages
 
 on:
@@ -25,17 +28,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  e2e:
-    uses: ./.github/workflows/e2e-playwright.yml
-    secrets: inherit
-    with:
-      json_summary_path: Website/e2e-stats.json
-      browser: chromium
-      upload_website_artifact: true
-      e2e_workers: 1
-
   deploy:
-    needs: e2e
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -43,12 +36,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Download Website with e2e-stats.json
-        uses: actions/download-artifact@v4
-        with:
-          name: website-for-pages
-          path: Website
 
       - name: Ensure GitHub Pages site exists (GitHub Actions / workflow)
         env:

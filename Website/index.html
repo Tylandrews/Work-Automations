@@ -932,7 +932,7 @@
             var hintEl = document.createElement("p");
             hintEl.className = "quality__inventory-hint";
             hintEl.textContent =
-              "The number in the ring is how many scenarios exist in the repo, not how many failed. When e2e-stats.json includes a full Playwright run, open the workflow run link for pass/fail details. Inventory-only JSON (no run) shows counts only.";
+              "The number in the ring is how many scenarios exist in the repo. Pass/fail is not published from GitHub Actions; run npm run test:e2e or npm run test:e2e:ci locally. Update Website/e2e-stats.json if you add or remove TC*.py files.";
             summaryEl.appendChild(hintEl);
             var m = [];
             if (data.lastRunAt)
@@ -952,7 +952,7 @@
             titleEl.textContent = "End-to-end test status unavailable.";
           }
           summaryEl.textContent =
-            "Results are loaded from e2e-stats.json after each deploy. Use the links below to open GitHub Actions and the Playwright tests folder.";
+            "e2e-stats.json was not found. Ensure Website/e2e-stats.json exists in the repo.";
           metaEl.textContent = "";
         }
 

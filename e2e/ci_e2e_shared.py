@@ -1,7 +1,7 @@
 """
-Single source of truth for the `run_e2e_full.py` argv used by GitHub Actions E2E.
+Headless/static argv for `run_e2e_full.py` (used by `run_like_github_ci.py` / `npm run test:e2e:ci`).
 
-Keeps `.github/workflows/e2e-playwright.yml` and local `run_like_github_ci.py` aligned.
+Playwright E2E is not run in GitHub Actions; use this locally to match the old CI-style flags.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def argv_run_e2e_full_like_github(
     json_summary: str,
     workers: str,
 ) -> list[str]:
-    """Same flags as `python e2e/run_github_actions_e2e.py` after secrets + supabaseConfig."""
+    """Flags: static report, headless, json summary path, worker count (CI-style)."""
     return [
         sys.executable,
         str(root / "e2e" / "run_e2e_full.py"),
