@@ -19,56 +19,126 @@ const isWindowsPortableBuild = () =>
 const shouldRunAutoUpdater = () =>
     app.isPackaged && process.platform === 'win32' && !isWindowsPortableBuild()
 
+let updaterPhase = 'idle'
+let updaterAvailableVersion = null
+let updaterDownloadedVersion = null
+let updaterProgress = null
+let updaterLastError = null
+
+const isNetworkUpdaterError = (msg) =>
+    /net::ERR_/i.test(msg) ||
+    /ENOTFOUND/i.test(msg) ||
+    /ETIMEDOUT/i.test(msg) ||
+    /ECONNRESET/i.test(msg)
+
+const buildUpdaterSnapshot = () => {
+    if (!shouldRunAutoUpdater()) {
+        return {
+            supported: false,
+            phase: 'idle',
+            currentVersion: app.getVersion(),
+            availableVersion: null,
+            downloadedVersion: null,
+            progress: null,
+            errorMessage: null,
+        }
+    }
+    return {
+        supported: true,
+        phase: updaterPhase,
+        currentVersion: app.getVersion(),
+        availableVersion: updaterAvailableVersion,
+        downloadedVersion: updaterDownloadedVersion,
+        progress: updaterProgress,
+        errorMessage: updaterLastError,
+    }
+}
+
+const emitUpdaterState = () => {
+    if (!shouldRunAutoUpdater()) return
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('updater-event', {
+        type: 'state',
+        ...buildUpdaterSnapshot(),
+    })
+}
+
 const setupAutoUpdater = () => {
     if (!shouldRunAutoUpdater()) return
 
-    autoUpdater.autoDownload = true
+    autoUpdater.autoDownload = false
+
+    autoUpdater.on('checking-for-update', () => {
+        updaterPhase = 'checking'
+        updaterLastError = null
+        emitUpdaterState()
+    })
 
     autoUpdater.on('update-available', (info) => {
-        const ver = info && info.version ? info.version : ''
+        const ver = info && info.version ? String(info.version) : ''
+        updaterPhase = 'available'
+        updaterAvailableVersion = ver || null
+        updaterLastError = null
+        emitUpdaterState()
         showTrayNotification(
             'Call Log update',
-            ver ? `Version ${ver} is downloading.` : 'A new version is downloading.'
+            ver
+                ? `Version ${ver} is available. Open Account to download and install.`
+                : 'An update is available. Open Account to download and install.'
         )
     })
 
+    autoUpdater.on('update-not-available', () => {
+        if (updaterPhase === 'downloaded' && updaterDownloadedVersion) {
+            emitUpdaterState()
+            return
+        }
+        updaterPhase = 'idle'
+        updaterAvailableVersion = null
+        updaterProgress = null
+        emitUpdaterState()
+    })
+
+    autoUpdater.on('download-progress', (progress) => {
+        updaterPhase = 'downloading'
+        const pct =
+            typeof progress.percent === 'number'
+                ? Math.round(progress.percent)
+                : progress.total > 0
+                  ? Math.round((100 * progress.transferred) / progress.total)
+                  : 0
+        updaterProgress = {
+            percent: Math.min(100, Math.max(0, pct)),
+            transferred: progress.transferred,
+            total: progress.total,
+        }
+        emitUpdaterState()
+    })
+
     autoUpdater.on('update-downloaded', (info) => {
-        const ver = info && info.version ? info.version : ''
-        const parent =
-            mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined
-        dialog
-            .showMessageBox(parent, {
-                type: 'info',
-                title: 'Update ready',
-                message: 'A new version of Call Log has been downloaded.',
-                detail: ver
-                    ? `Version ${ver} is ready to install. Restart now to finish the update.`
-                    : 'Restart now to finish the update.',
-                buttons: ['Restart now', 'Later'],
-                defaultId: 0,
-                cancelId: 1
-            })
-            .then(({ response }) => {
-                if (response !== 0) return
-                setImmediate(() => autoUpdater.quitAndInstall(false, true))
-            })
-            .catch((err) => {
-                console.error('update-downloaded dialog error:', err)
-            })
+        const ver = info && info.version ? String(info.version) : updaterAvailableVersion || ''
+        updaterPhase = 'downloaded'
+        updaterDownloadedVersion = ver || null
+        updaterAvailableVersion = ver || updaterAvailableVersion
+        updaterProgress = null
+        updaterLastError = null
+        emitUpdaterState()
     })
 
     autoUpdater.on('error', (err) => {
         const msg = err && err.message ? String(err.message) : String(err)
-        if (
-            /net::ERR_/i.test(msg) ||
-            /ENOTFOUND/i.test(msg) ||
-            /ETIMEDOUT/i.test(msg) ||
-            /ECONNRESET/i.test(msg)
-        ) {
+        if (isNetworkUpdaterError(msg)) {
             console.warn('autoUpdater (network):', msg)
+            if (updaterPhase === 'checking') {
+                updaterPhase = 'idle'
+                emitUpdaterState()
+            }
             return
         }
         console.error('autoUpdater:', err)
+        updaterPhase = 'error'
+        updaterLastError = msg
+        emitUpdaterState()
     })
 
     const runCheck = () => {
@@ -364,6 +434,62 @@ ipcMain.handle('get-master-key', () => {
 
 ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+});
+
+ipcMain.handle('updater-get-state', () => buildUpdaterSnapshot());
+
+ipcMain.handle('updater-check-for-updates', async () => {
+    if (!shouldRunAutoUpdater()) {
+        return { ok: false, reason: 'unsupported' };
+    }
+    updaterLastError = null;
+    updaterPhase = 'checking';
+    emitUpdaterState();
+    try {
+        const result = await autoUpdater.checkForUpdates();
+        return { ok: true, updateInfo: result && result.updateInfo ? result.updateInfo : null };
+    } catch (err) {
+        const msg = err && err.message ? String(err.message) : String(err);
+        if (!isNetworkUpdaterError(msg)) {
+            updaterPhase = 'error';
+            updaterLastError = msg;
+            emitUpdaterState();
+        } else {
+            updaterPhase = 'idle';
+            emitUpdaterState();
+        }
+        return { ok: false, message: msg };
+    }
+});
+
+ipcMain.handle('updater-download-update', async () => {
+    if (!shouldRunAutoUpdater()) {
+        return { ok: false, reason: 'unsupported' };
+    }
+    try {
+        await autoUpdater.downloadUpdate();
+        return { ok: true };
+    } catch (err) {
+        const msg = err && err.message ? String(err.message) : String(err);
+        updaterPhase = 'error';
+        updaterLastError = msg;
+        emitUpdaterState();
+        return { ok: false, message: msg };
+    }
+});
+
+ipcMain.handle('updater-quit-and-install', () => {
+    if (!shouldRunAutoUpdater()) {
+        return { ok: false, reason: 'unsupported' };
+    }
+    setImmediate(() => {
+        try {
+            autoUpdater.quitAndInstall(false, true);
+        } catch (err) {
+            console.error('quitAndInstall:', err);
+        }
+    });
+    return { ok: true };
 });
 
 // Local SQL database handlers removed - app now uses Supabase only

@@ -2286,6 +2286,45 @@ body[data-shell="statistics"] .app-shell {
     margin-top: 20px;
 }
 
+.account-update-status {
+    margin-top: 8px;
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+}
+
+.account-update-progress-wrap {
+    margin-top: 12px;
+}
+
+.account-update-progress-wrap.hidden {
+    display: none;
+}
+
+.account-update-progress-bar {
+    height: 8px;
+    border-radius: var(--radius-sm);
+    background: var(--border);
+    overflow: hidden;
+}
+
+.account-update-progress-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--primary-dark), var(--primary));
+    transition: width 0.2s var(--ease-out-quart);
+}
+
+.account-update-progress-label {
+    margin-top: 6px;
+}
+
+.account-update-actions {
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 .account-card-title {
     font-size: 1.05rem;
     font-weight: 600;

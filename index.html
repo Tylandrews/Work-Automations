@@ -290,6 +290,23 @@
             </div>
 
             <div id="accountPanelProfile" class="account-panel" role="tabpanel" aria-labelledby="accountTabProfile" tabindex="0">
+                <div id="accountUpdateCard" class="account-card account-card--spaced">
+                    <h3 class="account-card-title">App updates</h3>
+                    <p class="profile-hint" id="accountUpdateHint">Checking update settings…</p>
+                    <div id="accountUpdateStatus" class="account-update-status" role="status" aria-live="polite"></div>
+                    <div id="accountUpdateProgressWrap" class="account-update-progress-wrap hidden">
+                        <div class="account-update-progress-bar" role="progressbar" id="accountUpdateProgressBar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Download progress">
+                            <div id="accountUpdateProgressFill" class="account-update-progress-fill"></div>
+                        </div>
+                        <p id="accountUpdateProgressLabel" class="profile-hint account-update-progress-label"></p>
+                    </div>
+                    <div id="accountUpdateError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="account-form-actions account-update-actions">
+                        <button type="button" class="btn btn-secondary" id="accountUpdateCheckBtn">Check for updates</button>
+                        <button type="button" class="btn btn-primary" id="accountUpdateDownloadBtn" style="display: none;">Download update</button>
+                        <button type="button" class="btn btn-primary" id="accountUpdateInstallBtn" style="display: none;">Install and restart</button>
+                    </div>
+                </div>
                 <form id="profileForm" class="profile-form account-card">
                     <h3 class="account-card-title">Profile</h3>
                     <div id="profileError" class="auth-error" role="alert" aria-live="polite"></div>

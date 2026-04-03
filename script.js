@@ -19,6 +19,10 @@ let currentAppView = 'calls'
 let logoutClickHandler = null
 let adminDirectoryPage = 1
 let accountAdminLoadedOnce = false
+let accountUpdaterUnsubscribe = null
+let accountUpdaterListenersBound = false
+let accountUpdaterToastVersion = null
+let accountUpdaterToastDownloadedVersion = null
 
 function setAppView(view) {
     const main = document.getElementById('mainWorkspace');
@@ -1624,6 +1628,7 @@ async function initApp() {
     await loadEntries();
     await updateStats();
     fitWindowToContent();
+    setupAccountUpdaterPanel();
 }
 
 // Size the main window height to fit the full content (Electron only)
@@ -3670,6 +3675,209 @@ async function runReportsNow() {
     }
 }
 
+// ---------- Account page: in-app updater (Electron, Windows NSIS) ----------
+function formatUpdaterBytes(n) {
+    if (n == null || typeof n !== 'number' || n < 0) return ''
+    if (n < 1024) return `${n} B`
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function maybeToastAccountUpdater(state) {
+    if (!state || !state.supported) return
+    if (state.phase === 'available' && state.availableVersion) {
+        const v = String(state.availableVersion)
+        if (accountUpdaterToastVersion !== v) {
+            accountUpdaterToastVersion = v
+            showNotification(`Update available: v${v}. Open Account to download when you are ready.`)
+        }
+    }
+    if (state.phase === 'downloaded' && state.downloadedVersion) {
+        const v = String(state.downloadedVersion)
+        if (accountUpdaterToastDownloadedVersion !== v) {
+            accountUpdaterToastDownloadedVersion = v
+            showNotification(`Update v${v} is ready. Open Account to install and restart.`)
+        }
+    }
+}
+
+function renderAccountUpdater(state) {
+    if (!state || typeof state !== 'object') return
+    const card = document.getElementById('accountUpdateCard')
+    const hint = document.getElementById('accountUpdateHint')
+    const statusEl = document.getElementById('accountUpdateStatus')
+    const errEl = document.getElementById('accountUpdateError')
+    const progressWrap = document.getElementById('accountUpdateProgressWrap')
+    const progressFill = document.getElementById('accountUpdateProgressFill')
+    const progressBar = document.getElementById('accountUpdateProgressBar')
+    const progressLabel = document.getElementById('accountUpdateProgressLabel')
+    const checkBtn = document.getElementById('accountUpdateCheckBtn')
+    const dlBtn = document.getElementById('accountUpdateDownloadBtn')
+    const installBtn = document.getElementById('accountUpdateInstallBtn')
+    if (!card) return
+
+    if (!window.electronAPI?.updater) {
+        card.classList.add('hidden')
+        return
+    }
+    card.classList.remove('hidden')
+
+    const cv = state.currentVersion ? `v${state.currentVersion}` : 'this version'
+
+    if (!state.supported) {
+        if (hint) {
+            hint.textContent =
+                'In-app updates apply only when Call Log is installed with the Windows setup program (not the portable .exe).'
+        }
+        if (statusEl) statusEl.textContent = `You are running ${cv}.`
+        if (errEl) errEl.textContent = ''
+        if (progressWrap) progressWrap.classList.add('hidden')
+        if (checkBtn) checkBtn.style.display = 'none'
+        if (dlBtn) dlBtn.style.display = 'none'
+        if (installBtn) installBtn.style.display = 'none'
+        return
+    }
+
+    if (hint) {
+        hint.textContent =
+            'Check for new releases, download in the background, then install and restart when you are ready.'
+    }
+
+    const phase = state.phase || 'idle'
+    if (phase !== 'error' && errEl) errEl.textContent = ''
+    if (phase === 'error' && errEl && state.errorMessage) {
+        errEl.textContent = String(state.errorMessage)
+    }
+
+    let statusText = ''
+    if (phase === 'idle') {
+        statusText = `You are on ${cv}.`
+    } else if (phase === 'checking') {
+        statusText = 'Checking for updates…'
+    } else if (phase === 'available' && state.availableVersion) {
+        statusText = `Version v${state.availableVersion} is available (you are on ${cv}).`
+    } else if (phase === 'downloading') {
+        statusText = 'Downloading update…'
+    } else if (phase === 'downloaded' && state.downloadedVersion) {
+        statusText = `Version v${state.downloadedVersion} is downloaded and ready to install.`
+    } else if (phase === 'error') {
+        statusText = 'Something went wrong with the updater.'
+    } else {
+        statusText = `You are on ${cv}.`
+    }
+    if (statusEl) statusEl.textContent = statusText
+
+    const showProgress = phase === 'downloading' && state.progress
+    if (progressWrap) {
+        if (showProgress) {
+            progressWrap.classList.remove('hidden')
+            const pct = state.progress.percent != null ? state.progress.percent : 0
+            if (progressFill) progressFill.style.width = `${Math.min(100, Math.max(0, pct))}%`
+            if (progressBar) {
+                progressBar.setAttribute('aria-valuenow', String(Math.round(pct)))
+            }
+            if (progressLabel) {
+                const t = state.progress.total
+                const x = state.progress.transferred
+                let extra = ''
+                if (typeof t === 'number' && t > 0 && typeof x === 'number') {
+                    extra = ` (${formatUpdaterBytes(x)} / ${formatUpdaterBytes(t)})`
+                }
+                progressLabel.textContent = `${Math.round(pct)}%${extra}`
+            }
+        } else {
+            progressWrap.classList.add('hidden')
+        }
+    }
+
+    const busy = phase === 'checking' || phase === 'downloading'
+    if (checkBtn) {
+        checkBtn.style.display = ''
+        checkBtn.disabled = busy || phase === 'downloaded'
+    }
+    if (dlBtn) {
+        const showDl = phase === 'available'
+        dlBtn.style.display = showDl ? '' : 'none'
+        dlBtn.disabled = busy
+    }
+    if (installBtn) {
+        const showIn = phase === 'downloaded'
+        installBtn.style.display = showIn ? '' : 'none'
+        installBtn.disabled = false
+    }
+
+    maybeToastAccountUpdater(state)
+}
+
+const handleAccountUpdaterCheck = async () => {
+    const api = window.electronAPI?.updater
+    if (!api) return
+    const errEl = document.getElementById('accountUpdateError')
+    if (errEl) errEl.textContent = ''
+    try {
+        await api.checkForUpdates()
+    } catch (err) {
+        console.error('checkForUpdates:', err)
+        if (errEl) errEl.textContent = err?.message || 'Update check failed.'
+    }
+}
+
+const handleAccountUpdaterDownload = async () => {
+    const api = window.electronAPI?.updater
+    if (!api) return
+    const errEl = document.getElementById('accountUpdateError')
+    if (errEl) errEl.textContent = ''
+    try {
+        const res = await api.downloadUpdate()
+        if (!res?.ok && errEl) {
+            errEl.textContent = res?.message || 'Download failed.'
+        }
+    } catch (err) {
+        console.error('downloadUpdate:', err)
+        if (errEl) errEl.textContent = err?.message || 'Download failed.'
+    }
+}
+
+const handleAccountUpdaterInstall = async () => {
+    const api = window.electronAPI?.updater
+    if (!api) return
+    try {
+        await api.quitAndInstall()
+    } catch (err) {
+        console.error('quitAndInstall:', err)
+    }
+}
+
+function setupAccountUpdaterPanel() {
+    const card = document.getElementById('accountUpdateCard')
+    const api = window.electronAPI?.updater
+    if (!card) return
+    if (!api) {
+        card.classList.add('hidden')
+        return
+    }
+    card.classList.remove('hidden')
+
+    if (!accountUpdaterListenersBound) {
+        accountUpdaterListenersBound = true
+        document.getElementById('accountUpdateCheckBtn')?.addEventListener('click', handleAccountUpdaterCheck)
+        document.getElementById('accountUpdateDownloadBtn')?.addEventListener('click', handleAccountUpdaterDownload)
+        document.getElementById('accountUpdateInstallBtn')?.addEventListener('click', handleAccountUpdaterInstall)
+    }
+
+    if (accountUpdaterUnsubscribe) {
+        accountUpdaterUnsubscribe()
+        accountUpdaterUnsubscribe = null
+    }
+    accountUpdaterUnsubscribe = api.onEvent((payload) => {
+        if (payload?.type === 'state') {
+            renderAccountUpdater(payload)
+        }
+    })
+
+    api.getState().then(renderAccountUpdater).catch(() => {})
+}
+
 // ---------- Account page (Supabase) ----------
 function updateAccountAdminTabVisibility() {
     const tab = document.getElementById('accountTabAdmin');
@@ -3753,6 +3961,7 @@ function openAccountPage() {
     updateAccountAdminTabVisibility();
     selectAccountTab('profile');
     setAppView('account');
+    window.electronAPI?.updater?.getState().then(renderAccountUpdater).catch(() => {});
     setTimeout(() => document.getElementById('profileName')?.focus(), 0);
 }
 
