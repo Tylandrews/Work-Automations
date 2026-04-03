@@ -2226,7 +2226,11 @@ body[data-shell="statistics"] .app-shell {
 }
 
 .account-back-inline {
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    width: auto;
+    align-self: flex-start;
+    padding: 8px 14px;
+    font-size: 13px;
 }
 
 .account-tabs {
