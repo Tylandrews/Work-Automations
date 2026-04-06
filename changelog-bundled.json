@@ -1,6 +1,23 @@
 {
   "releases": [
     {
+      "version": "3.4.12",
+      "date": "2026-04-06",
+      "sections": {
+        "Added": [
+          "shared admin-managed regex rules for recent ticket colors (fixes #25)"
+        ],
+        "Fixed": [],
+        "Changed": [],
+        "Maintenance": [
+          "update changelog for v3.4.11"
+        ],
+        "Other": [
+          "new file:   supabase/functions/autotask-recent-tickets/README.md \tnew file:   supabase/functions/autotask-recent-tickets/deno.json \tnew file:   supabase/functions/autotask-recent-tickets/index.ts"
+        ]
+      }
+    },
+    {
       "version": "3.4.11",
       "date": "2026-04-06",
       "sections": {
