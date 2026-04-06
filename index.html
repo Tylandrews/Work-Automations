@@ -253,7 +253,7 @@
             <div class="entries-container entries-container--tabs">
                 <div id="historyPanelRecentTickets" class="history-tabpanel" role="tabpanel" aria-labelledby="historyTabRecentTickets" tabindex="0" hidden>
                     <p id="recentTicketsHint" class="recent-tickets-hint">Select an organization from suggestions to load Autotask tickets.</p>
-                    <div id="recentTicketsLegend" class="recent-tickets-legend" role="group" aria-label="How ticket titles are color coded" hidden></div>
+                    <div id="recentTicketsLegend" class="recent-tickets-legend" role="group" aria-label="How tickets are color coded by Autotask source" hidden></div>
                     <div id="recentTicketsStatus" class="recent-tickets-status" role="status" aria-live="polite"></div>
                     <div id="recentTicketsError" class="recent-tickets-error auth-error" role="alert" aria-live="polite" hidden></div>
                     <div id="recentTicketsList" class="entries-list recent-tickets-list" role="list" aria-label="Autotask tickets with activity in the last 14 days"></div>
@@ -301,7 +301,7 @@
             <header class="account-page-header">
                 <div class="account-page-header-text">
                     <h2 class="account-page-title" id="accountPageHeading">Account</h2>
-                    <p class="account-page-lead">Profile, app updates, security, shared ticket color rules (admins), and user management.</p>
+                    <p class="account-page-lead">Profile, app updates, security, and user management.</p>
                 </div>
             </header>
 
@@ -309,7 +309,6 @@
                 <button type="button" class="account-tab" role="tab" id="accountTabProfile" aria-selected="true" aria-controls="accountPanelProfile" tabindex="0">Profile</button>
                 <button type="button" class="account-tab" role="tab" id="accountTabUpdates" aria-selected="false" aria-controls="accountPanelUpdates" tabindex="-1">Updates</button>
                 <button type="button" class="account-tab" role="tab" id="accountTabSecurity" aria-selected="false" aria-controls="accountPanelSecurity" tabindex="-1">Security</button>
-                <button type="button" class="account-tab hidden" role="tab" id="accountTabTicketRules" aria-selected="false" aria-controls="accountPanelTicketRules" tabindex="-1">Ticket colors</button>
                 <button type="button" class="account-tab hidden" role="tab" id="accountTabAdmin" aria-selected="false" aria-controls="accountPanelAdmin" tabindex="-1">Administration</button>
             </div>
 
@@ -386,43 +385,6 @@
                 </div>
             </div>
 
-            <div id="accountPanelTicketRules" class="account-panel hidden" role="tabpanel" aria-labelledby="accountTabTicketRules" tabindex="0" hidden>
-                <div class="account-card">
-                    <h3 class="account-card-title">Recent ticket colors</h3>
-                    <p class="profile-hint">Shared rules for everyone signed in. First matching regex wins (case-insensitive). Non-matching titles use the &quot;Other&quot; style in the Recent tickets list.</p>
-                    <div id="ticketRulesError" class="auth-error" role="alert" aria-live="polite"></div>
-                    <div id="ticketRulesStatus" class="profile-hint ticket-rules-status" role="status" aria-live="polite"></div>
-                    <div class="ticket-rules-test account-card account-card--nested">
-                        <label for="ticketRulesTestTitle" class="ticket-rules-test-label">Test a title</label>
-                        <div class="ticket-rules-test-row">
-                            <input type="text" id="ticketRulesTestTitle" class="ticket-rules-test-input" placeholder="Paste a ticket title" autocomplete="off" aria-describedby="ticketRulesTestResult">
-                            <button type="button" class="btn btn-secondary" id="ticketRulesTestBtn">Test match</button>
-                        </div>
-                        <p id="ticketRulesTestResult" class="profile-hint ticket-rules-test-result" role="status"></p>
-                    </div>
-                    <div class="account-table-wrap ticket-rules-table-wrap">
-                        <table class="ticket-rules-table" aria-label="Regex and color rules">
-                            <thead>
-                                <tr>
-                                    <th scope="col">On</th>
-                                    <th scope="col">Label</th>
-                                    <th scope="col">Regex</th>
-                                    <th scope="col">Color</th>
-                                    <th scope="col">Order</th>
-                                    <th scope="col"><span class="sr-only">Remove</span></th>
-                                </tr>
-                            </thead>
-                            <tbody id="ticketRulesEditorBody"></tbody>
-                        </table>
-                    </div>
-                    <div class="account-form-actions ticket-rules-actions">
-                        <button type="button" class="btn btn-secondary" id="ticketRulesAddBtn">Add rule</button>
-                        <button type="button" class="btn btn-secondary" id="ticketRulesResetBtn">Reset to defaults</button>
-                        <button type="button" class="btn btn-primary" id="ticketRulesSaveBtn">Save rules</button>
-                    </div>
-                </div>
-            </div>
-
             <div id="accountPanelAdmin" class="account-panel hidden" role="tabpanel" aria-labelledby="accountTabAdmin" tabindex="0" hidden>
                 <div class="account-card">
                     <h3 class="account-card-title">Invite user</h3>
@@ -436,6 +398,26 @@
                             <button type="submit" class="btn btn-primary" id="adminInviteSubmit">Send invite</button>
                         </div>
                     </form>
+                </div>
+                <div class="account-card account-card--spaced">
+                    <h3 class="account-card-title">Autotask ticket sources</h3>
+                    <p class="profile-hint">Each recent ticket includes a numeric Autotask <strong>source</strong> id. Load the official picklist (id and label), then add rows to <code>RECENT_TICKET_SOURCE_STYLES</code> in <code>script.js</code> to assign colors.</p>
+                    <div id="adminTicketSourcesError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="account-form-actions">
+                        <button type="button" class="btn btn-secondary" id="adminTicketSourcesBtn">Load picklist from Autotask</button>
+                    </div>
+                    <div class="account-table-wrap admin-ticket-sources-wrap" id="adminTicketSourcesWrap" hidden>
+                        <table class="account-users-table" aria-label="Autotask ticket source picklist">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Source id</th>
+                                    <th scope="col">Label</th>
+                                    <th scope="col">Active</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminTicketSourcesTableBody"></tbody>
+                        </table>
+                    </div>
                 </div>
                 <div class="account-card account-card--spaced">
                     <h3 class="account-card-title account-admin-users-title">Users</h3>

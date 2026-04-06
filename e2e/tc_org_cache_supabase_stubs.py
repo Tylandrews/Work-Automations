@@ -36,6 +36,35 @@ async def _fulfill_json(route, body: Any, status: int = 200) -> None:
     await route.fulfill(status=status, headers=headers, body=json.dumps(body))
 
 
+async def wait_for_local_autotask_org_cache(
+    page,
+    *,
+    min_rows: int = 1,
+    timeout_ms: int = 20000,
+) -> None:
+    """
+    Wait until script.js has written `cached_autotask_companies` to localStorage.
+
+    After login, `showApp` runs before `await initApp()`; `refreshAutotaskOrgCacheAfterAuth`
+    is fire-and-forget. Typing in Organization immediately can race an empty cache; stubs
+    still need one turn for PostgREST to populate storage.
+    """
+    await page.wait_for_function(
+        """minRows => {
+            try {
+                const raw = localStorage.getItem('cached_autotask_companies');
+                if (!raw) return false;
+                const arr = JSON.parse(raw);
+                return Array.isArray(arr) && arr.length >= minRows;
+            } catch (e) {
+                return false;
+            }
+        }""",
+        arg=min_rows,
+        timeout=timeout_ms,
+    )
+
+
 async def register_org_cache_supabase_stubs(page, company_rows: List[Dict[str, str]]) -> str:
     """
     Stubs PostgREST reads and optional full-sync Edge call.

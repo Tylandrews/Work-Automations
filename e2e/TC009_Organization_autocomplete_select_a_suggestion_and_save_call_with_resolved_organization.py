@@ -11,7 +11,10 @@ import os
 
 from calllog_e2e_cleanup import e2e_notes_with_run_id, new_e2e_run_id, run_supabase_e2e_cleanup
 from tc_browser import launch_test_browser
-from tc_org_cache_supabase_stubs import register_org_cache_supabase_stubs
+from tc_org_cache_supabase_stubs import (
+    register_org_cache_supabase_stubs,
+    wait_for_local_autotask_org_cache,
+)
 from tc_selectors import ORG_AUTOCOMPLETE_ITEM
 from playwright.async_api import async_playwright, expect
 
@@ -64,6 +67,9 @@ async def run_test() -> None:
             await expect(auth_screen).to_be_hidden()
 
         await expect(page.locator("#callForm")).to_be_visible(timeout=10000)
+
+        if not NO_MOCK:
+            await wait_for_local_autotask_org_cache(page)
 
         await page.locator("#name").fill("Test Caller")
 

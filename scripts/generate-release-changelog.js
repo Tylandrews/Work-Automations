@@ -8,6 +8,7 @@
 const fs = require('fs')
 const path = require('path')
 const { execSync } = require('child_process')
+const { classifySubject } = require('./commit-conventions')
 
 const root = path.join(__dirname, '..')
 
@@ -57,30 +58,6 @@ const getCommitSubjects = (prevTag, endRef) => {
 const getReleaseDateIso = (endRef) => {
   const line = runGit(`git log -1 --format=%cs ${endRef}`)
   return line || new Date().toISOString().slice(0, 10)
-}
-
-const MERGE_RE = /^merge(\s|$)/i
-const CONV_RE = /^(feat|fix|perf|refactor|chore|ci|build|docs|test|style)(\([^)]+\))?\s*:\s*(.+)$/i
-const VERSION_ONLY_RE = /^\d+\.\d+\.\d+$/
-const GIT_STATUS_JUNK_RE = /(^|\t|\s)modified:\s+/i
-
-const classifySubject = (subject) => {
-  if (!subject || MERGE_RE.test(subject)) return null
-  if (VERSION_ONLY_RE.test(subject.trim())) return null
-  if (GIT_STATUS_JUNK_RE.test(subject)) return null
-  const m = subject.match(CONV_RE)
-  if (!m) {
-    return { bucket: 'other', text: subject }
-  }
-  const kind = m[1].toLowerCase()
-  const text = m[3].trim()
-  if (kind === 'feat') return { bucket: 'added', text }
-  if (kind === 'fix') return { bucket: 'fixed', text }
-  if (kind === 'perf' || kind === 'refactor') return { bucket: 'changed', text }
-  if (kind === 'chore' || kind === 'ci' || kind === 'build' || kind === 'docs' || kind === 'test' || kind === 'style') {
-    return { bucket: 'maintenance', text }
-  }
-  return { bucket: 'other', text }
 }
 
 const bucketToHeading = {

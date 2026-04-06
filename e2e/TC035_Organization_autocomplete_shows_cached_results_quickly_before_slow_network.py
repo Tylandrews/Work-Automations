@@ -12,7 +12,10 @@ import os
 import time
 
 from tc_browser import launch_test_browser
-from tc_org_cache_supabase_stubs import register_org_cache_supabase_stubs
+from tc_org_cache_supabase_stubs import (
+    register_org_cache_supabase_stubs,
+    wait_for_local_autotask_org_cache,
+)
 from tc_selectors import ORG_AUTOCOMPLETE_ITEM
 from playwright.async_api import async_playwright, expect
 
@@ -39,7 +42,7 @@ async def run_test() -> None:
         context = await browser.new_context()
         context.set_default_timeout(25000)
 
-        context.add_init_script(
+        await context.add_init_script(
             f"""
             try {{
                 localStorage.setItem(
@@ -75,6 +78,8 @@ async def run_test() -> None:
             await expect(auth_screen).to_be_hidden()
 
         await expect(page.locator("#callForm")).to_be_visible(timeout=10000)
+
+        await wait_for_local_autotask_org_cache(page)
 
         org_input = page.locator("#organization")
         first_suggestion = page.locator(ORG_AUTOCOMPLETE_ITEM).first

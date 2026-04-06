@@ -3,9 +3,10 @@ name: github-issue-workflow
 description: >-
   Manage GitHub issues end-to-end using the GitHub MCP server and the GitHub CLI
   (`gh`). Create issues, list open issues, pick an issue to work on, fix it in
-  Cursor, then close the issue. Use when the user asks to create a GitHub issue,
-  work on an issue, close an issue, list issues, or manage the issue-to-fix
-  workflow.
+  Cursor, then close the issue. Tie work to in-app release notes via Conventional
+  Commits and the existing changelog pipeline. Use when the user asks to create a
+  GitHub issue, work on an issue, close an issue, list issues, release notes, or
+  manage the issue-to-fix workflow.
 ---
 
 # GitHub Issue Workflow
@@ -35,6 +36,39 @@ Parse the URL to extract:
 - **repo**: the repository name without `.git` (e.g. `Work-Automations`)
 
 Use these values in all MCP calls below.
+
+---
+
+## Release notes and the in-app changelog
+
+**Goal:** When you finish issue work, user-facing changes must show up under **Account → Release notes** in the app after the next versioned release.
+
+### How it flows
+
+1. **Commits on `main`** use [Conventional Commits](https://www.conventionalcommits.org/) (`feat`, `fix`, `perf`, etc.). The release script (`scripts/generate-release-changelog.js`) reads `git log` between the previous semver tag and the new tag and buckets subjects into **Added**, **Fixed**, **Changed**, **Maintenance**, and **Other**.
+2. **Tagging `vX.Y.Z`** runs [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml), which regenerates [`CHANGELOG.md`](CHANGELOG.md), [`changelog-bundled.json`](changelog-bundled.json), and `release-notes.md`. The desktop app loads `changelog-bundled.json` (see `loadAccountChangelog` in `script.js`).
+3. **CI** runs [`scripts/validate-pr-conventional-commits.js`](scripts/validate-pr-conventional-commits.js) on every **pull request** so non-conventional subjects fail the check before merge (empty commit ranges pass).
+
+### Commit message rules (required for issue work)
+
+- **Format:** `type(optional-scope): description`
+- **Types used for grouping:** `feat` (Added), `fix` (Fixed), `perf` / `refactor` (Changed), `chore` / `ci` / `build` / `docs` / `test` / `style` (Maintenance)
+- **Link the issue** in the subject or body GitHub understands, for example: `fix(call-log): correct search debounce (fixes #42)` or put `fixes #42` in the PR / commit body
+- **Squash merges:** The **squash commit title** must still follow the same pattern, or it will fail PR validation and land as a single bad line in history
+
+### Local check before push
+
+```bash
+# Same as CI: compare PR base..head SHAs (example: against main)
+git fetch origin main
+BASE_SHA=$(git merge-base HEAD origin/main)
+HEAD_SHA=$(git rev-parse HEAD)
+BASE_SHA="$BASE_SHA" HEAD_SHA="$HEAD_SHA" node scripts/validate-pr-conventional-commits.js
+```
+
+### What does *not* update the app
+
+Closing an issue, adding labels, or editing the issue body does **not** change the in-app panel. Only a **published release** (tag + workflow) refreshes `changelog-bundled.json` in the artifact users install.
 
 ---
 
@@ -221,8 +255,11 @@ gh issue view <number> --repo <owner>/<repo> --comments
 3. Summarize the issue for the user
 4. Create a todo list based on the issue requirements
 5. Begin working on the fix using the codebase tools
-6. After fixing, recommend the user commit with a message referencing the issue:
-   - Format: `fix(scope): description (fixes #<number>)`
+6. **Release notes:** Plan the **Conventional Commit** line(s) that will appear in **Account → Release notes** after the next tag (see **Release notes and the in-app changelog** above). Prefer one logical change per commit with a clear user-facing description.
+7. After fixing, recommend commits that will pass `validate-pr-conventional-commits.js` and map to the right changelog section, for example:
+   - `fix(scope): short user-visible description (fixes #<number>)`
+   - `feat(scope): short user-visible description (fixes #<number>)`
+8. Optionally remind the user they can run the local `BASE_SHA` / `HEAD_SHA` check before opening a PR
 
 ---
 
@@ -253,6 +290,7 @@ gh issue close <number> --repo <owner>/<repo> --reason completed
 ```
 
 3. Confirm the issue was closed
+4. **Release notes:** Remind the user that the in-app **Release notes** panel updates on the next **versioned release** (GitHub tag + `release-electron.yml`), not when the issue closes. If the fix is urgent to *describe* before release, the commit messages on `main` are already the source of truth for the next changelog entry
 
 ---
 
@@ -269,6 +307,14 @@ gh issue close <number> --repo <owner>/<repo> --reason completed
 | Search issues | `search_issues` (`query: "…"`) | `gh issue list --search "…"` |
 | Add comment | `add_issue_comment` | `gh issue comment <number> --body "…"` |
 | Edit issue | `issue_write` (`method: "update"`, `title`/`body`) | `gh issue edit <number> --title "…"` |
+
+### Release notes (no MCP)
+
+| Action | Command / artifact |
+|--------|----------------------|
+| PR commit check (CI) | `node scripts/validate-pr-conventional-commits.js` with `BASE_SHA` + `HEAD_SHA` |
+| Regenerate bundled changelog (release) | `node scripts/generate-release-changelog.js vX.Y.Z` (normally run by Actions) |
+| In-app data | `changelog-bundled.json` (Account → Release notes) |
 
 ## Additional gh CLI Commands
 
@@ -293,7 +339,7 @@ These operations are only available via `gh` and extend the workflow beyond what
 - Agent lists all open issues
 
 **User**: "Work on issue #5"
-- Agent reads issue #5, understands the problem, fixes the code
+- Agent reads issue #5, understands the problem, fixes the code, and uses a Conventional Commit so the change appears correctly in **Account → Release notes** after the next release
 
 **User**: "Close issue #5"
 - Agent closes the issue as completed

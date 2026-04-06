@@ -30,6 +30,15 @@ const runValidateReleaseTag = (tag) => {
     })
 }
 
+const runValidatePrCommits = (baseSha, headSha) => {
+    const script = path.join(root, 'scripts', 'validate-pr-conventional-commits.js')
+    return spawnSync(process.execPath, [script], {
+        encoding: 'utf8',
+        cwd: root,
+        env: { ...process.env, BASE_SHA: baseSha, HEAD_SHA: headSha }
+    })
+}
+
 describe('package.json', () => {
     test('is a valid application manifest', () => {
         const pkg = readPkg()
@@ -74,6 +83,8 @@ describe('repository layout', () => {
         assertFile('scripts/validate-config.js')
         assertFile('scripts/validate-release-version.js')
         assertFile('scripts/generate-release-changelog.js')
+        assertFile('scripts/commit-conventions.js')
+        assertFile('scripts/validate-pr-conventional-commits.js')
         assertFile('scripts/clean-dist.js')
         assertFile('scripts/build-icon.js')
     })
@@ -102,7 +113,9 @@ describe('syntax (node --check)', () => {
         'scripts/clean-dist.js',
         'scripts/validate-config.js',
         'scripts/validate-release-version.js',
-        'scripts/generate-release-changelog.js'
+        'scripts/generate-release-changelog.js',
+        'scripts/commit-conventions.js',
+        'scripts/validate-pr-conventional-commits.js'
     ]
 
     for (const rel of checked) {
@@ -138,6 +151,27 @@ describe('scripts/validate-release-version.js', () => {
 
     test('exits 1 for invalid tag format', () => {
         const r = runValidateReleaseTag('v1')
+        assert.equal(r.status, 1)
+    })
+})
+
+describe('scripts/validate-pr-conventional-commits.js', () => {
+    test('exits 0 for empty commit range (same SHA)', () => {
+        const rHead = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', cwd: root })
+        assert.equal(rHead.status, 0, 'git rev-parse HEAD')
+        const sha = (rHead.stdout || '').trim()
+        assert.ok(sha.length > 0)
+        const r = runValidatePrCommits(sha, sha)
+        assert.equal(r.status, 0, r.stderr || r.stdout)
+    })
+
+    test('exits 1 when BASE_SHA / HEAD_SHA are missing', () => {
+        const script = path.join(root, 'scripts', 'validate-pr-conventional-commits.js')
+        const r = spawnSync(process.execPath, [script], {
+            encoding: 'utf8',
+            cwd: root,
+            env: { ...process.env, BASE_SHA: '', HEAD_SHA: '' }
+        })
         assert.equal(r.status, 1)
     })
 })

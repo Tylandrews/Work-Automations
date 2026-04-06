@@ -209,7 +209,6 @@ const AUTOCACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const AUTOCOMPLETE_DEBOUNCE_MS = 150
 let autocompleteDebounceTimer = null;
 let autocompleteActiveInstance = null; // Currently active autocomplete instance
-const ORG_SELECTION_CACHE_PREFIX = 'calllog-org-selection-';
 const CACHED_AUTOTASK_COMPANIES_KEY = 'cached_autotask_companies';
 /** Align with Edge Function autotask-sync-all-companies (weekly full sync). */
 const ORG_FULL_SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -217,24 +216,6 @@ const ORG_FULL_SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const CACHED_AUTOTASK_COMPANIES_LOCAL_MAX = 50000;
 /** Parsed org list from localStorage; null means not loaded yet. */
 let persistentAutotaskCompaniesMemory = null;
-
-function getCachedOrganizationSelection(inputId) {
-    try {
-        return String(localStorage.getItem(`${ORG_SELECTION_CACHE_PREFIX}${inputId}`) || '').trim();
-    } catch (err) {
-        return '';
-    }
-}
-
-function setCachedOrganizationSelection(inputId, organizationName) {
-    const value = String(organizationName || '').trim();
-    if (!value) return;
-    try {
-        localStorage.setItem(`${ORG_SELECTION_CACHE_PREFIX}${inputId}`, value);
-    } catch (err) {
-        // Ignore localStorage errors
-    }
-}
 
 function addToCachedAutotaskCompanies(organizations) {
     const incoming = Array.isArray(organizations) ? organizations : [organizations];
@@ -484,25 +465,6 @@ let mainFormOrganizationCommitTimer = null;
 let recentTicketsDebounceTimer = null;
 let recentTicketsAbortController = null;
 
-const RECENT_TICKET_STYLE_RULES_TABLE = 'recent_ticket_style_rules';
-/** Built-in fallbacks when the DB has no rows, or after shared rules for still-unmatched titles. */
-const BUILTIN_RECENT_TICKET_STYLE_RULES = [
-    { label: 'C: drive alert', pattern: '^c:\\s*drive\\s+has\\b', color: '#ca8a04' },
-    { label: 'SaaS / email alert', pattern: '^.+\\s*/\\s*\\S+@\\S+\\.\\S+', color: '#2563eb' },
-    { label: 'Graphus', pattern: '^graphus\\b', color: '#7c3aed' },
-];
-let recentTicketRulesFetchPromise = null;
-/** @type {Array<{ label: string, color: string, re: RegExp, source: string, id?: string }>|null} */
-let recentTicketRulesCompiledMatchers = null;
-/** @type {Array<{ id: string|null, label: string, pattern: string, color: string, enabled: boolean, sort_order: number }>} */
-let ticketRulesEditorRows = [];
-let ticketRulesEditorListenersBound = false;
-
-function invalidateRecentTicketRulesCache() {
-    recentTicketRulesFetchPromise = null;
-    recentTicketRulesCompiledMatchers = null;
-}
-
 function normalizeHexColor(raw) {
     let s = String(raw || '').trim();
     if (!s.startsWith('#')) s = `#${s}`;
@@ -515,443 +477,59 @@ function normalizeHexColor(raw) {
     return '#6b7280';
 }
 
-function compileRecentTicketRulePattern(pattern, labelForLog) {
-    try {
-        const re = new RegExp(String(pattern || ''), 'i');
-        return { ok: true, re };
-    } catch (e) {
-        console.warn('[recent-ticket-rules] invalid regex', labelForLog, e);
-        return { ok: false, re: null };
+/**
+ * Recent-ticket accent colors by Autotask Ticket `source` (integer picklist id).
+ * To see every id and label for your tenant: Account → Administration → Load picklist from Autotask.
+ */
+const RECENT_TICKET_SOURCE_STYLES = [
+    { source: 2, label: '1300 784 889 (SLA)', color: '#16a34a' },
+    { source: 4, label: 'Email (SLA)', color: '#84cc16' },
+    { source: 6, label: 'Face to Face (SLA)', color: '#eab308' },
+    { source: 23, label: 'SaaS Alerts', color: '#7c3aed' },
+    { source: 22, label: 'RMM', color: '#dc2626' },
+];
+
+function buildRecentTicketSourceStyleMap() {
+    const m = new Map();
+    for (const row of RECENT_TICKET_SOURCE_STYLES) {
+        const id = Number(row?.source);
+        if (!Number.isFinite(id)) continue;
+        const label = String(row?.label ?? '').trim() || `Source ${id}`;
+        m.set(id, { label, color: normalizeHexColor(row?.color) });
     }
+    return m;
 }
 
-function buildCompiledMatchersFromDbRows(dbRows) {
-    const out = [];
-    const sorted = [...(dbRows || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-    for (const row of sorted) {
-        if (row.enabled === false) continue;
-        if (!String(row.pattern || '').trim()) continue;
-        const c = compileRecentTicketRulePattern(row.pattern, row.label);
-        if (!c.ok) continue;
-        out.push({
-            label: String(row.label || '').trim() || 'Rule',
-            color: normalizeHexColor(row.color),
-            re: c.re,
-            source: 'db',
-            id: row.id,
-        });
-    }
-    return out;
-}
+const recentTicketSourceStyleMap = buildRecentTicketSourceStyleMap();
 
-function buildBuiltinMatchers() {
-    const out = [];
-    BUILTIN_RECENT_TICKET_STYLE_RULES.forEach((r, i) => {
-        const c = compileRecentTicketRulePattern(r.pattern, r.label);
-        if (!c.ok) return;
-        out.push({
-            label: r.label,
-            color: normalizeHexColor(r.color),
-            re: c.re,
-            source: 'builtin',
-            id: `builtin-${i}`,
-        });
-    });
-    return out;
-}
-
-async function refreshRecentTicketStyleRulesCache(force) {
-    if (!force && recentTicketRulesCompiledMatchers !== null) return;
-
-    const run = async () => {
-        if (!useSupabase()) {
-            recentTicketRulesCompiledMatchers = buildBuiltinMatchers();
-            return;
-        }
-        const supabase = getSupabase();
-        if (!supabase) {
-            recentTicketRulesCompiledMatchers = buildBuiltinMatchers();
-            return;
-        }
-        const { data: userData } = await supabase.auth.getUser();
-        if (!userData?.user) {
-            recentTicketRulesCompiledMatchers = buildBuiltinMatchers();
-            return;
-        }
-        const { data, error } = await supabase
-            .from(RECENT_TICKET_STYLE_RULES_TABLE)
-            .select('id, sort_order, label, pattern, color, enabled')
-            .order('sort_order', { ascending: true });
-        if (error) {
-            console.warn('[recent-ticket-rules] fetch failed:', error);
-            recentTicketRulesCompiledMatchers = buildBuiltinMatchers();
-            return;
-        }
-        const dbMatchers = buildCompiledMatchersFromDbRows(data || []);
-        const builtins = buildBuiltinMatchers();
-        recentTicketRulesCompiledMatchers = dbMatchers.length > 0 ? [...dbMatchers, ...builtins] : builtins;
-    };
-
-    if (recentTicketRulesFetchPromise && !force) {
-        await recentTicketRulesFetchPromise;
-        return;
-    }
-    recentTicketRulesFetchPromise = run();
-    try {
-        await recentTicketRulesFetchPromise;
-    } finally {
-        recentTicketRulesFetchPromise = null;
-    }
-}
-
-function classifyRecentTicketTitle(rawTitle) {
-    const title = String(rawTitle || '').trim();
-    const matchers = recentTicketRulesCompiledMatchers || [];
-    for (const m of matchers) {
-        try {
-            if (m.re.test(title)) {
-                return { label: m.label, color: m.color };
-            }
-        } catch (_) {
-            /* ignore */
-        }
-    }
-    return null;
+function classifyRecentTicketSource(rawSource) {
+    if (rawSource == null || rawSource === '') return null;
+    const id = typeof rawSource === 'number' ? rawSource : Number(rawSource);
+    if (!Number.isFinite(id)) return null;
+    const entry = recentTicketSourceStyleMap.get(id);
+    if (!entry) return null;
+    return { label: entry.label, color: entry.color };
 }
 
 function updateRecentTicketsLegend() {
     const el = document.getElementById('recentTicketsLegend');
     if (!el) return;
-    const matchers = recentTicketRulesCompiledMatchers;
-    if (!matchers || matchers.length === 0) {
+    const rows = RECENT_TICKET_SOURCE_STYLES.filter((r) => Number.isFinite(Number(r?.source)));
+    if (rows.length === 0) {
         el.innerHTML = '';
         el.setAttribute('hidden', '');
         return;
     }
-    const chips = matchers.map((m) => {
-        const lab = escapeHtml(m.label);
-        const col = normalizeHexColor(m.color);
-        return `<span class="recent-tickets-legend__chip" style="--legend-accent:${escapeHtmlAttr(col)}">${lab}</span>`;
-    }).join('');
+    const chips = rows
+        .map((r) => {
+            const lab = escapeHtml(String(r.label || '').trim() || `Source ${r.source}`);
+            const col = normalizeHexColor(r.color);
+            return `<span class="recent-tickets-legend__chip" style="--legend-accent:${escapeHtmlAttr(col)}">${lab}</span>`;
+        })
+        .join('');
     const other = '<span class="recent-tickets-legend__chip recent-tickets-legend__chip--other">Other</span>';
     el.innerHTML = `<span class="recent-tickets-legend__label">Key</span>${chips}${other}`;
     el.removeAttribute('hidden');
-}
-
-function getDefaultSeedTicketRulesForDb() {
-    return BUILTIN_RECENT_TICKET_STYLE_RULES.map((r, i) => ({
-        id: null,
-        label: r.label,
-        pattern: r.pattern,
-        color: normalizeHexColor(r.color),
-        enabled: true,
-        sort_order: (i + 1) * 10,
-    }));
-}
-
-function readTicketRuleRowFromTr(tr) {
-    if (!tr) return null;
-    const id = tr.getAttribute('data-rule-id');
-    const enabledEl = tr.querySelector('.ticket-rules-enabled');
-    const labelEl = tr.querySelector('.ticket-rules-label');
-    const patternEl = tr.querySelector('.ticket-rules-pattern-input');
-    const colorEl = tr.querySelector('.ticket-rules-color');
-    return {
-        id: id && id !== 'new' ? id : null,
-        enabled: !!(enabledEl && enabledEl.checked),
-        label: String(labelEl?.value ?? ''),
-        pattern: String(patternEl?.value ?? ''),
-        color: normalizeHexColor(colorEl?.value ?? '#6b7280'),
-        sort_order: 0,
-    };
-}
-
-function collectTicketRulesFromEditorDom() {
-    const body = document.getElementById('ticketRulesEditorBody');
-    if (!body) return [];
-    return [...body.querySelectorAll('tr[data-rule-index]')]
-        .sort((a, b) => Number(a.getAttribute('data-rule-index')) - Number(b.getAttribute('data-rule-index')))
-        .map((tr) => readTicketRuleRowFromTr(tr))
-        .filter(Boolean);
-}
-
-function renderTicketRulesEditorTable() {
-    const body = document.getElementById('ticketRulesEditorBody');
-    if (!body) return;
-    body.innerHTML = ticketRulesEditorRows
-        .map((row, i) => {
-            const rid = row.id ? escapeHtmlAttr(row.id) : 'new';
-            const label = escapeHtmlAttr(row.label);
-            const pattern = escapeHtmlAttr(row.pattern);
-            const color = escapeHtmlAttr(normalizeHexColor(row.color));
-            const chk = row.enabled !== false ? ' checked' : '';
-            return `<tr data-rule-index="${i}" data-rule-id="${rid}">
-                <td><input type="checkbox" class="ticket-rules-enabled" aria-label="Enable rule ${i + 1}"${chk}></td>
-                <td><input type="text" class="ticket-rules-label" value="${label}" maxlength="120" autocomplete="off" aria-label="Rule label ${i + 1}"></td>
-                <td><input type="text" class="ticket-rules-pattern-input" value="${pattern}" spellcheck="false" autocomplete="off" aria-label="Regular expression ${i + 1}"></td>
-                <td><input type="color" class="ticket-rules-color" value="${color}" aria-label="Color for rule ${i + 1}"></td>
-                <td class="ticket-rules-order-cell">
-                    <button type="button" class="btn btn-secondary btn-sm" data-ticket-rule-action="up" aria-label="Move rule ${i + 1} up">Up</button>
-                    <button type="button" class="btn btn-secondary btn-sm" data-ticket-rule-action="down" aria-label="Move rule ${i + 1} down">Down</button>
-                </td>
-                <td><button type="button" class="btn btn-secondary btn-sm" data-ticket-rule-action="remove" aria-label="Remove rule ${i + 1}">Remove</button></td>
-            </tr>`;
-        })
-        .join('');
-}
-
-async function loadTicketRulesEditorFromServer() {
-    const errEl = document.getElementById('ticketRulesError');
-    const statusEl = document.getElementById('ticketRulesStatus');
-    if (errEl) errEl.textContent = '';
-    if (statusEl) statusEl.textContent = 'Loading rules…';
-    if (!useSupabase() || !currentUserProfile?.is_admin) {
-        if (statusEl) statusEl.textContent = '';
-        return;
-    }
-    const supabase = getSupabase();
-    if (!supabase) {
-        if (statusEl) statusEl.textContent = '';
-        return;
-    }
-    const { data, error } = await supabase
-        .from(RECENT_TICKET_STYLE_RULES_TABLE)
-        .select('id, sort_order, label, pattern, color, enabled')
-        .order('sort_order', { ascending: true });
-    if (error) {
-        console.error('[recent-ticket-rules] admin load:', error);
-        if (errEl) errEl.textContent = 'Could not load rules. Check that the database migration has been applied.';
-        if (statusEl) statusEl.textContent = '';
-        return;
-    }
-    const rows = data || [];
-    ticketRulesEditorRows = rows.map((r) => ({
-        id: r.id,
-        label: String(r.label ?? ''),
-        pattern: String(r.pattern ?? ''),
-        color: normalizeHexColor(r.color),
-        enabled: r.enabled !== false,
-        sort_order: r.sort_order ?? 0,
-    }));
-    if (ticketRulesEditorRows.length === 0) {
-        ticketRulesEditorRows = getDefaultSeedTicketRulesForDb();
-    }
-    renderTicketRulesEditorTable();
-    if (statusEl) statusEl.textContent = '';
-}
-
-function validateTicketRulesRows(rows) {
-    const errors = [];
-    rows.forEach((r, i) => {
-        if (!String(r.pattern || '').trim()) {
-            errors.push({ index: i, message: `Row ${i + 1}: pattern is required.` });
-            return;
-        }
-        const c = compileRecentTicketRulePattern(r.pattern, r.label);
-        if (!c.ok) errors.push({ index: i, message: `Row ${i + 1}: invalid regular expression.` });
-    });
-    return errors;
-}
-
-async function saveTicketRulesFromEditor() {
-    const errEl = document.getElementById('ticketRulesError');
-    const statusEl = document.getElementById('ticketRulesStatus');
-    if (errEl) errEl.textContent = '';
-    if (statusEl) statusEl.textContent = '';
-    if (!useSupabase() || !currentUserProfile?.is_admin) return;
-    const supabase = getSupabase();
-    if (!supabase) return;
-
-    const rows = collectTicketRulesFromEditorDom();
-    const validationErrors = validateTicketRulesRows(rows);
-    if (validationErrors.length > 0) {
-        if (errEl) errEl.textContent = validationErrors.map((e) => e.message).join(' ');
-        const body = document.getElementById('ticketRulesEditorBody');
-        validationErrors.forEach((e) => {
-            const tr = body?.querySelector(`tr[data-rule-index="${e.index}"]`);
-            tr?.querySelector('.ticket-rules-pattern-input')?.classList.add('ticket-rules-row-error');
-        });
-        return;
-    }
-    document.querySelectorAll('.ticket-rules-row-error').forEach((el) => el.classList.remove('ticket-rules-row-error'));
-
-    const { data: existing, error: exErr } = await supabase.from(RECENT_TICKET_STYLE_RULES_TABLE).select('id');
-    if (exErr) {
-        console.error('[recent-ticket-rules] save list ids:', exErr);
-        if (errEl) errEl.textContent = 'Could not save rules.';
-        return;
-    }
-    const editorIds = new Set(rows.filter((r) => r.id).map((r) => r.id));
-    for (const r of existing || []) {
-        if (r.id && !editorIds.has(r.id)) {
-            const { error: delErr } = await supabase.from(RECENT_TICKET_STYLE_RULES_TABLE).delete().eq('id', r.id);
-            if (delErr) {
-                console.error('[recent-ticket-rules] delete:', delErr);
-                if (errEl) errEl.textContent = 'Could not remove deleted rules.';
-                return;
-            }
-        }
-    }
-
-    for (let i = 0; i < rows.length; i++) {
-        const r = rows[i];
-        const payload = {
-            sort_order: (i + 1) * 10,
-            label: String(r.label || '').trim(),
-            pattern: String(r.pattern || ''),
-            color: normalizeHexColor(r.color),
-            enabled: r.enabled !== false,
-        };
-        if (r.id) {
-            const { error: upErr } = await supabase.from(RECENT_TICKET_STYLE_RULES_TABLE).update(payload).eq('id', r.id);
-            if (upErr) {
-                console.error('[recent-ticket-rules] update:', upErr);
-                if (errEl) errEl.textContent = 'Could not update rules.';
-                return;
-            }
-        } else {
-            const { error: insErr } = await supabase.from(RECENT_TICKET_STYLE_RULES_TABLE).insert([payload]);
-            if (insErr) {
-                console.error('[recent-ticket-rules] insert:', insErr);
-                if (errEl) errEl.textContent = 'Could not insert new rules.';
-                return;
-            }
-        }
-    }
-
-    if (statusEl) statusEl.textContent = 'Saved.';
-    invalidateRecentTicketRulesCache();
-    await refreshRecentTicketStyleRulesCache(true);
-    updateRecentTicketsLegend();
-    await loadTicketRulesEditorFromServer();
-}
-
-async function resetTicketRulesToDefaults() {
-    const errEl = document.getElementById('ticketRulesError');
-    const statusEl = document.getElementById('ticketRulesStatus');
-    if (errEl) errEl.textContent = '';
-    if (!useSupabase() || !currentUserProfile?.is_admin) return;
-    const ok = window.confirm('Replace all shared ticket color rules with the three built-in defaults?');
-    if (!ok) return;
-    const supabase = getSupabase();
-    if (!supabase) return;
-    const { data: existing, error: exErr } = await supabase.from(RECENT_TICKET_STYLE_RULES_TABLE).select('id');
-    if (exErr) {
-        if (errEl) errEl.textContent = 'Could not reset rules.';
-        return;
-    }
-    for (const r of existing || []) {
-        if (r.id) await supabase.from(RECENT_TICKET_STYLE_RULES_TABLE).delete().eq('id', r.id);
-    }
-    const seeds = getDefaultSeedTicketRulesForDb().map((r, i) => ({
-        sort_order: (i + 1) * 10,
-        label: r.label,
-        pattern: r.pattern,
-        color: r.color,
-        enabled: true,
-    }));
-    const { error: insErr } = await supabase.from(RECENT_TICKET_STYLE_RULES_TABLE).insert(seeds);
-    if (insErr) {
-        console.error('[recent-ticket-rules] reset insert:', insErr);
-        if (errEl) errEl.textContent = 'Could not insert default rules.';
-        return;
-    }
-    if (statusEl) statusEl.textContent = 'Reset to defaults.';
-    invalidateRecentTicketRulesCache();
-    await refreshRecentTicketStyleRulesCache(true);
-    updateRecentTicketsLegend();
-    await loadTicketRulesEditorFromServer();
-}
-
-function runTicketRulesTestMatch() {
-    const resultEl = document.getElementById('ticketRulesTestResult');
-    const titleEl = document.getElementById('ticketRulesTestTitle');
-    const title = String(titleEl?.value || '').trim();
-    const rows = collectTicketRulesFromEditorDom();
-    const tryRows = [];
-    rows.forEach((r) => {
-        if (r.enabled === false) return;
-        if (!String(r.pattern || '').trim()) return;
-        const c = compileRecentTicketRulePattern(r.pattern, r.label);
-        if (!c.ok) return;
-        tryRows.push({ label: String(r.label || '').trim() || 'Rule', re: c.re });
-    });
-    const builtins = buildBuiltinMatchers();
-    const hasPersisted = !!document.querySelector('#ticketRulesEditorBody tr[data-rule-id]:not([data-rule-id="new"])');
-    const ordered = hasPersisted
-        ? [...tryRows, ...builtins.map((b) => ({ label: b.label, re: b.re }))]
-        : tryRows.length > 0
-          ? tryRows
-          : builtins.map((b) => ({ label: b.label, re: b.re }));
-    if (!title) {
-        if (resultEl) resultEl.textContent = 'Enter a title to test.';
-        return;
-    }
-    for (const m of ordered) {
-        try {
-            if (m.re.test(title)) {
-                if (resultEl) resultEl.textContent = `Matches: ${m.label}`;
-                return;
-            }
-        } catch (_) {
-            /* ignore */
-        }
-    }
-    if (resultEl) resultEl.textContent = 'No rule matched (would use Other in the list).';
-}
-
-function setupTicketRulesEditorListeners() {
-    if (ticketRulesEditorListenersBound) return;
-    ticketRulesEditorListenersBound = true;
-    document.getElementById('ticketRulesAddBtn')?.addEventListener('click', () => {
-        ticketRulesEditorRows = collectTicketRulesFromEditorDom();
-        ticketRulesEditorRows.push({
-            id: null,
-            label: '',
-            pattern: '',
-            color: '#6b7280',
-            enabled: true,
-            sort_order: 0,
-        });
-        renderTicketRulesEditorTable();
-    });
-    document.getElementById('ticketRulesSaveBtn')?.addEventListener('click', () => {
-        void saveTicketRulesFromEditor();
-    });
-    document.getElementById('ticketRulesResetBtn')?.addEventListener('click', () => {
-        void resetTicketRulesToDefaults();
-    });
-    document.getElementById('ticketRulesTestBtn')?.addEventListener('click', () => {
-        runTicketRulesTestMatch();
-    });
-    document.getElementById('ticketRulesEditorBody')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-ticket-rule-action]');
-        if (!btn) return;
-        const tr = btn.closest('tr[data-rule-index]');
-        if (!tr) return;
-        const idx = Number(tr.getAttribute('data-rule-index'));
-        if (!Number.isFinite(idx)) return;
-        const action = btn.getAttribute('data-ticket-rule-action');
-        ticketRulesEditorRows = collectTicketRulesFromEditorDom();
-        if (action === 'remove') {
-            ticketRulesEditorRows.splice(idx, 1);
-            renderTicketRulesEditorTable();
-            return;
-        }
-        if (action === 'up' && idx > 0) {
-            const t = ticketRulesEditorRows[idx - 1];
-            ticketRulesEditorRows[idx - 1] = ticketRulesEditorRows[idx];
-            ticketRulesEditorRows[idx] = t;
-            renderTicketRulesEditorTable();
-            return;
-        }
-        if (action === 'down' && idx < ticketRulesEditorRows.length - 1) {
-            const t = ticketRulesEditorRows[idx + 1];
-            ticketRulesEditorRows[idx + 1] = ticketRulesEditorRows[idx];
-            ticketRulesEditorRows[idx] = t;
-            renderTicketRulesEditorTable();
-        }
-    });
 }
 
 function resolveAutotaskCompanyIdFromCache(organizationName) {
@@ -984,9 +562,7 @@ function selectHistoryPanelTab(which) {
     if (isRecent) {
         panelRecent.removeAttribute('hidden');
         panelHistory.setAttribute('hidden', '');
-        if (useSupabase()) {
-            void refreshRecentTicketStyleRulesCache(false).then(() => updateRecentTicketsLegend());
-        }
+        updateRecentTicketsLegend();
     } else {
         panelRecent.setAttribute('hidden', '');
         panelHistory.removeAttribute('hidden');
@@ -1148,19 +724,23 @@ function renderRecentTicketsList(tickets) {
             const num = escapeHtml(String(t.ticketNumber || '').trim() || String(t.id || ''));
             const rawTitle = String(t.title || '').trim();
             const title = escapeHtml(rawTitle || '(No title)');
-            const match = classifyRecentTicketTitle(rawTitle);
+            const match = classifyRecentTicketSource(t.source);
             const rowCls = match ? 'recent-ticket-row recent-ticket-row--matched' : 'recent-ticket-row recent-ticket-row--other';
             const accentStyle = match ? ` style="--recent-ticket-accent:${escapeHtmlAttr(normalizeHexColor(match.color))}"` : '';
             const when = formatRecentTicketWhen(t.lastActivityDate);
             const metaParts = [];
             if (when) metaParts.push(when);
-            if (t.status != null && t.status !== '') metaParts.push(`Status ${t.status}`);
+            const statusLabel = String(t.statusName || '').trim();
+            if (statusLabel) metaParts.push(statusLabel);
+            else if (t.status != null && t.status !== '') metaParts.push(`Status ${t.status}`);
+            const prr = String(t.primaryResourceRole || '').trim();
+            if (prr) metaParts.push(prr);
             const meta = metaParts.join(' · ');
             const rawNum = String(t.ticketNumber || '').trim() || String(t.id || '');
             const ticketValue = escapeHtmlAttr(rawNum);
             const ariaExtra = match
-                ? ` Matched rule: ${match.label}.`
-                : ' No matching color rule.';
+                ? ` Ticket source: ${match.label}.`
+                : ' No mapped ticket source color.';
             const ariaUse = escapeHtmlAttr(`Use ticket ${rawNum} in ticket number field.${ariaExtra}`);
             const metaBlock = meta ? `<span class="recent-ticket-row__meta">${escapeHtml(meta)}</span>` : '';
             return `<div class="recent-ticket-row-wrap" role="listitem"><button type="button" class="${rowCls}" data-ticket-number="${ticketValue}" aria-label="${ariaUse}"${accentStyle}><span class="recent-ticket-row__num">${num}</span><span class="recent-ticket-row__title">${title}</span>${metaBlock}</button></div>`;
@@ -1313,7 +893,6 @@ async function loadRecentTicketsForCompanyId(companyId) {
         const data = await response.json().catch(() => ({}));
         const tickets = Array.isArray(data?.tickets) ? data.tickets : [];
         if (status) status.textContent = '';
-        await refreshRecentTicketStyleRulesCache(false);
         updateRecentTicketsLegend();
         renderRecentTicketsList(tickets);
     } catch (err) {
@@ -1573,11 +1152,6 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
     let suggestions = [];
     let suppressNextInputSearch = false;
 
-    const cachedOrganization = getCachedOrganizationSelection(inputId);
-    if (!input.value.trim() && cachedOrganization) {
-        input.value = cachedOrganization;
-    }
-
     function hideDropdown() {
         dropdown.classList.remove('show');
         dropdown.setAttribute('aria-hidden', 'true');
@@ -1648,7 +1222,6 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
 
         const org = suggestions[index];
         input.value = org.name;
-        setCachedOrganizationSelection(inputId, org.name);
         addToCachedAutotaskCompanies(org);
         suppressNextInputSearch = true;
         hideDropdown();
@@ -1882,7 +1455,6 @@ async function loadCurrentUserProfile() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
             currentUserProfile = null;
-            invalidateRecentTicketRulesCache();
             updateRecentTicketsLegend();
             return;
         }
@@ -1910,7 +1482,7 @@ async function loadCurrentUserProfile() {
             };
             profileCache.set(uid, currentUserProfile.full_name);
             updateAccountAdminTabVisibility();
-            void refreshRecentTicketStyleRulesCache(false).then(() => updateRecentTicketsLegend());
+            updateRecentTicketsLegend();
             return;
         }
 
@@ -1941,7 +1513,7 @@ async function loadCurrentUserProfile() {
         }
         profileCache.set(uid, currentUserProfile.full_name);
         updateAccountAdminTabVisibility();
-        void refreshRecentTicketStyleRulesCache(false).then(() => updateRecentTicketsLegend());
+        updateRecentTicketsLegend();
     } catch (err) {
         console.error('loadCurrentUserProfile exception:', err);
     }
@@ -2554,7 +2126,6 @@ async function runAuthSignOutAndTeardown(signOutOptions) {
     }
     const authScreen = document.getElementById('authScreen');
     const appShell = document.getElementById('appShell');
-    invalidateRecentTicketRulesCache();
     updateRecentTicketsLegend();
     showAuth(authScreen, appShell);
     setupAuthListeners();
@@ -3150,7 +2721,6 @@ async function handleFormSubmit(e) {
         timestamp: entryDate.toISOString()
     };
     if (formData.organization) {
-        setCachedOrganizationSelection('organization', formData.organization);
         addToCachedAutotaskCompanies({ id: '', name: formData.organization });
     }
 
@@ -4973,22 +4543,11 @@ function setupAccountUpdaterPanel() {
 // ---------- Account page (Supabase) ----------
 function updateAccountAdminTabVisibility() {
     const tab = document.getElementById('accountTabAdmin');
-    const tabTicketRules = document.getElementById('accountTabTicketRules');
     const teamStatsBtn = document.getElementById('adminStatsBtn');
     const isAdmin = !!currentUserProfile?.is_admin;
     const showTeamStats = isAdmin && useSupabase() && getSupabase();
     if (teamStatsBtn) {
         teamStatsBtn.classList.toggle('hidden', !showTeamStats);
-    }
-    if (tabTicketRules) {
-        if (isAdmin) {
-            tabTicketRules.classList.remove('hidden');
-        } else {
-            tabTicketRules.classList.add('hidden');
-            if (tabTicketRules.getAttribute('aria-selected') === 'true') {
-                selectAccountTab('profile');
-            }
-        }
     }
     if (!tab) return;
     if (isAdmin) {
@@ -5006,7 +4565,6 @@ function selectAccountTab(tabId) {
         { id: 'profile', tabEl: 'accountTabProfile', panelEl: 'accountPanelProfile' },
         { id: 'updates', tabEl: 'accountTabUpdates', panelEl: 'accountPanelUpdates' },
         { id: 'security', tabEl: 'accountTabSecurity', panelEl: 'accountPanelSecurity' },
-        { id: 'ticketRules', tabEl: 'accountTabTicketRules', panelEl: 'accountPanelTicketRules' },
         { id: 'admin', tabEl: 'accountTabAdmin', panelEl: 'accountPanelAdmin' },
     ];
     for (const row of rows) {
@@ -5037,9 +4595,6 @@ function selectAccountTab(tabId) {
     if (tabId === 'updates') {
         window.electronAPI?.updater?.getState().then(renderAccountUpdater).catch(() => {})
         loadAccountChangelog().catch(() => {})
-    }
-    if (tabId === 'ticketRules' && currentUserProfile?.is_admin) {
-        void loadTicketRulesEditorFromServer();
     }
     if (tabId === 'admin' && currentUserProfile?.is_admin) {
         if (!accountAdminLoadedOnce) {
@@ -5798,6 +5353,76 @@ function appendAdminUserRows(users) {
     }
 }
 
+async function handleAdminLoadAutotaskTicketSources() {
+    if (!currentUserProfile?.is_admin) return;
+    const errEl = document.getElementById('adminTicketSourcesError');
+    const tbody = document.getElementById('adminTicketSourcesTableBody');
+    const wrap = document.getElementById('adminTicketSourcesWrap');
+    const btn = document.getElementById('adminTicketSourcesBtn');
+    if (errEl) errEl.textContent = '';
+    if (!useSupabase()) {
+        if (errEl) errEl.textContent = 'Sign-in is required.';
+        return;
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+        if (errEl) errEl.textContent = 'Sign-in is required.';
+        return;
+    }
+    const { error: userError } = await supabase.auth.getUser();
+    if (userError) {
+        if (errEl) errEl.textContent = 'Session invalid. Please sign in again.';
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+        if (errEl) errEl.textContent = 'Session expired. Please sign in again.';
+        return;
+    }
+    const config = window.supabaseConfig || {};
+    const supabaseUrl = String(config.SUPABASE_URL || '').trim();
+    if (!supabaseUrl) {
+        if (errEl) errEl.textContent = 'Supabase is not configured.';
+        return;
+    }
+    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
+    const origLabel = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Loading…';
+    }
+    try {
+        const res = await fetch(`${baseFunctionsUrl}/autotask-ticket-sources`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            if (errEl) errEl.textContent = data?.error || `Request failed (${res.status}).`;
+            return;
+        }
+        const sources = Array.isArray(data?.sources) ? data.sources : [];
+        if (tbody) {
+            tbody.innerHTML = sources
+                .map((s) => {
+                    const id = escapeHtml(String(s.value));
+                    const lab = escapeHtml(String(s.label || '—'));
+                    const act = s.isActive === false ? 'No' : 'Yes';
+                    return `<tr><td>${id}</td><td>${lab}</td><td>${act}</td></tr>`;
+                })
+                .join('');
+        }
+        if (wrap) wrap.removeAttribute('hidden');
+    } catch (e) {
+        if (errEl) errEl.textContent = 'Could not load ticket sources.';
+        console.error('[autotask-ticket-sources]', e);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            if (origLabel) btn.textContent = origLabel;
+        }
+    }
+}
+
 async function fetchAdminDirectory(reset) {
     if (!currentUserProfile?.is_admin) return;
     const errEl = document.getElementById('adminUsersError');
@@ -5890,9 +5515,7 @@ function setupAccountPageListeners() {
     document.getElementById('accountTabProfile')?.addEventListener('click', () => selectAccountTab('profile'));
     document.getElementById('accountTabUpdates')?.addEventListener('click', () => selectAccountTab('updates'));
     document.getElementById('accountTabSecurity')?.addEventListener('click', () => selectAccountTab('security'));
-    document.getElementById('accountTabTicketRules')?.addEventListener('click', () => selectAccountTab('ticketRules'));
     document.getElementById('accountTabAdmin')?.addEventListener('click', () => selectAccountTab('admin'));
-    setupTicketRulesEditorListeners();
 
     document.getElementById('profileForm')?.addEventListener('submit', handleProfileSubmit);
     document.getElementById('securityPasswordForm')?.addEventListener('submit', handleSecurityPasswordSubmit);
@@ -5904,6 +5527,9 @@ function setupAccountPageListeners() {
     });
     document.getElementById('adminLoadMoreBtn')?.addEventListener('click', () => {
         fetchAdminDirectory(false).catch((e) => console.error(e));
+    });
+    document.getElementById('adminTicketSourcesBtn')?.addEventListener('click', () => {
+        void handleAdminLoadAutotaskTicketSources();
     });
 
     document.getElementById('adminUsersTableBody')?.addEventListener('click', (e) => {

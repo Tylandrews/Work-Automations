@@ -949,7 +949,7 @@ main .form-container {
 }
 
 .recent-tickets-legend__chip--other {
-    --legend-accent: #22c55e;
+    --legend-accent: var(--primary);
 }
 
 .recent-ticket-row {
@@ -977,9 +977,9 @@ main .form-container {
 }
 
 .recent-ticket-row--other {
-    border-left: 3px solid #22c55e;
+    border-left: 3px solid var(--primary);
     padding-left: 10px;
-    background: color-mix(in srgb, #22c55e 8%, var(--bg-primary));
+    background: color-mix(in srgb, var(--primary) 8%, var(--bg-primary));
 }
 
 .recent-ticket-row:hover {
@@ -992,7 +992,7 @@ main .form-container {
 }
 
 .recent-ticket-row--other:hover {
-    background: color-mix(in srgb, #22c55e 12%, var(--hover-bg));
+    background: color-mix(in srgb, var(--primary) 12%, var(--hover-bg));
 }
 
 .recent-ticket-row:focus-visible {
@@ -2563,121 +2563,6 @@ body[data-shell="admin-statistics"] .app-shell {
     border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: color-mix(in srgb, var(--bg-primary) 92%, var(--bg-secondary));
-}
-
-.ticket-rules-status {
-    min-height: 1.2em;
-    margin-top: 6px;
-}
-
-.ticket-rules-test-label {
-    display: block;
-    font-size: 0.875rem;
-    font-weight: 600;
-    margin-bottom: 8px;
-    color: var(--text-primary);
-}
-
-.ticket-rules-test-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-}
-
-.ticket-rules-test-input {
-    flex: 1 1 200px;
-    min-width: 0;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-family: inherit;
-    font-size: 13px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-}
-
-.ticket-rules-test-result {
-    margin-top: 8px;
-    margin-bottom: 0;
-}
-
-.ticket-rules-table-wrap {
-    margin-top: 16px;
-    max-height: min(50vh, 360px);
-    overflow: auto;
-}
-
-.ticket-rules-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-}
-
-.ticket-rules-table th,
-.ticket-rules-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border);
-    text-align: left;
-    vertical-align: middle;
-}
-
-.ticket-rules-table th {
-    font-weight: 600;
-    color: var(--text-secondary);
-    font-size: 12px;
-    position: sticky;
-    top: 0;
-    background: var(--bg-secondary);
-    z-index: 1;
-}
-
-.ticket-rules-table input[type="text"] {
-    width: 100%;
-    min-width: 120px;
-    box-sizing: border-box;
-    padding: 6px 8px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-size: 12px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-}
-
-.ticket-rules-table .ticket-rules-pattern-input {
-    font-family: ui-monospace, monospace;
-    min-width: 180px;
-}
-
-.ticket-rules-table input[type="color"] {
-    width: 40px;
-    height: 32px;
-    padding: 2px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    background: var(--bg-primary);
-}
-
-.ticket-rules-table .ticket-rules-row-error {
-    outline: 2px solid var(--danger, #dc2626);
-    outline-offset: 1px;
-}
-
-.ticket-rules-order-cell {
-    display: flex;
-    gap: 4px;
-    flex-wrap: nowrap;
-}
-
-.ticket-rules-order-cell .btn-sm {
-    padding: 4px 8px;
-    font-size: 11px;
-    min-width: 2rem;
-}
-
-.ticket-rules-actions {
-    margin-top: 14px;
 }
 
 .account-update-status {
