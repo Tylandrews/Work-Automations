@@ -140,6 +140,34 @@ The legacy Edge Function `autotask-search-companies-v3` (per-query search) is op
 
 Configure the same Autotask secrets for the sync function (`AUTOTASK_INTEGRATION_CODE`, `AUTOTASK_USERNAME`, `AUTOTASK_SECRET`, optional `AUTOTASK_ZONE_URL`, plus `SUPABASE_SERVICE_ROLE_KEY`).
 
+#### Team statistics (administrators)
+
+Administrators see a **Team statistics** control in the call history header. It opens an in-app workspace with overview charts, per-user totals, recent calls (metadata only), and a **Live** tab with in-app metrics plus instructions for the terminal dashboard.
+
+Deploy the Edge Function after cloning or updating the repo (use **`--no-verify-jwt`** so the Supabase gateway does not validate the JWT before your code runs; this function still validates the session with `auth.getUser` and `profiles.is_admin`, same pattern as `account-admin`):
+
+```bash
+supabase functions deploy admin-analytics --no-verify-jwt
+```
+
+If you see **Invalid JWT** in the browser console when opening Team statistics, the function was likely deployed without `--no-verify-jwt`; redeploy with the flag above.
+
+The function verifies the caller’s JWT and `profiles.is_admin`, then uses the service role to aggregate across all users. It does not return caller name, phone, or ciphertext fields.
+
+**Terminal live line chart** ([blessed-contrib](https://github.com/yaronn/blessed-contrib)): from the repo root after `npm install`, set environment variables and run:
+
+| Variable | Purpose |
+| -------- | ------- |
+| `SUPABASE_URL` | Same as in `supabaseConfig.js` |
+| `SUPABASE_ANON_KEY` | Same anon key as the app |
+| `CALL_LOG_ACCESS_TOKEN` | Your current session access token; in the app use **Copy access token** on the Team statistics **Live** tab (treat like a password; it expires with the session) |
+
+```bash
+npm run admin:live-dashboard
+```
+
+Use `q` or `Ctrl+C` to exit. On Windows, use a UTF-8 terminal (for example Windows Terminal) if box-drawing characters do not render correctly.
+
 ### Project layout
 
 ```
