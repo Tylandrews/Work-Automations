@@ -710,7 +710,7 @@ textarea {
     border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
 }
 
-/* Same slot width as Account (icon + label) so titlebar does not shift when toggling views */
+/* Same slot width as Settings (icon + label) so titlebar does not shift when toggling views */
 .tb-btn--shell-nav {
     box-sizing: border-box;
     width: 7.25rem;
@@ -2499,7 +2499,18 @@ body[data-shell="admin-statistics"] .app-shell {
     font-size: 14px;
     color: var(--text-secondary);
     margin: 0;
-    max-width: 42ch;
+    max-width: 48ch;
+}
+
+.account-page-header-actions {
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+
+.account-settings-signout {
+    min-height: 40px;
+    padding-inline: 18px;
+    font-weight: 600;
 }
 
 .account-back-inline {

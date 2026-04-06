@@ -49,10 +49,11 @@ async def run_test() -> None:
         account_ws = page.locator("#accountWorkspace")
         await expect(account_ws).to_be_visible()
         await expect(account_ws).to_have_attribute("aria-hidden", "false")
-        await expect(page.locator("#accountPageHeading")).to_have_text("Account")
+        await expect(page.locator("#accountPageHeading")).to_have_text("Settings")
         lead = page.locator("#accountWorkspace .account-page-lead")
         await expect(lead).to_be_visible()
-        await expect(lead).to_contain_text("Profile, app updates, security")
+        await expect(lead).to_contain_text("Profile, app updates")
+        await expect(page.locator("#logoutBtn")).to_be_visible()
 
         profile_tab = page.get_by_role("tab", name="Profile")
         await expect(profile_tab).to_be_visible()

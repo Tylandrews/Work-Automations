@@ -479,7 +479,7 @@ function normalizeHexColor(raw) {
 
 /**
  * Recent-ticket accent colors by Autotask Ticket `source` (integer picklist id).
- * To see every id and label for your tenant: Account → Administration → Load picklist from Autotask.
+ * To see every id and label for your tenant: Settings → Administration → Load picklist from Autotask.
  */
 const RECENT_TICKET_SOURCE_STYLES = [
     { source: 2, label: '1300 784 889 (SLA)', color: '#16a34a' },
@@ -1538,7 +1538,7 @@ async function tryConsumePendingAuthDeepLink(appShell, authScreen) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return false;
     await completeAuthenticatedStartup(appShell, authScreen);
-    showNotification('You are signed in. If you reset your password, set a new one under Account, then Security.');
+    showNotification('You are signed in. If you reset your password, set a new one under Settings, then Security.');
     return true;
 }
 
@@ -1554,7 +1554,7 @@ function ensureAuthDeepLinkListener(appShell, authScreen) {
         if (!session) return;
         if (document.body?.getAttribute('data-shell') !== 'auth') return;
         await completeAuthenticatedStartup(appShell, authScreen);
-        showNotification('You are signed in. If you reset your password, set a new one under Account, then Security.');
+        showNotification('You are signed in. If you reset your password, set a new one under Settings, then Security.');
     });
 }
 
@@ -4351,14 +4351,14 @@ function maybeToastAccountUpdater(state) {
         const v = String(state.availableVersion)
         if (accountUpdaterToastVersion !== v) {
             accountUpdaterToastVersion = v
-            showNotification(`Update available: v${v}. Open Account, Updates tab, to download when you are ready.`)
+            showNotification(`Update available: v${v}. Open Settings, Updates tab, to download when you are ready.`)
         }
     }
     if (state.phase === 'downloaded' && state.downloadedVersion) {
         const v = String(state.downloadedVersion)
         if (accountUpdaterToastDownloadedVersion !== v) {
             accountUpdaterToastDownloadedVersion = v
-            showNotification(`Update v${v} is ready. Open Account, Updates tab, to install and restart.`)
+            showNotification(`Update v${v} is ready. Open Settings, Updates tab, to install and restart.`)
         }
     }
 }
@@ -5601,7 +5601,7 @@ async function handleProfileSubmit(e) {
         profileCache.set(session.user.id, fullName);
         updateAccountAdminTabVisibility();
         await updateProfileEmailPendingHint();
-        showNotification('Account updated.');
+        showNotification('Profile updated.');
     } catch (err) {
         if (errEl) errEl.textContent = err?.message || 'Update failed.';
     } finally {

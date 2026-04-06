@@ -1,5 +1,5 @@
 """
-TC031: Set display name to Test Display Name, save — field reflects value and Account updated toast appears.
+TC031: Set display name to Test Display Name, save — field reflects value and Profile updated toast appears.
 """
 import asyncio
 import os
@@ -51,7 +51,7 @@ async def run_test() -> None:
         await page.locator("#profileSaveBtn").click()
 
         await expect(page.locator(APP_NOTIFICATION)).to_contain_text(
-            "Account updated", timeout=20000
+            "Profile updated", timeout=20000
         )
 
         await page.locator("#accountBackBtn").click()
