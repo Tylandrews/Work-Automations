@@ -68,7 +68,7 @@ Production builds include the Electron runtime. Installers and portable packages
 
 On Windows, `npm run build-win` produces an NSIS installer and a portable executable. Close any running instance of the application before rebuilding if file locks occur.
 
-**Windows NSIS artwork:** Branded wizard images live under [`nsis/branding/`](nsis/branding/) (`installer-sidebar.bmp`, `installer-header.bmp`). NSIS expects **uncompressed BMP** files at **164×314** (welcome/finish sidebar) and **150×57** (header strip on inner pages). They are regenerated during `prebuild` from [`Images/BigFish_Centered_Logo_Inverted.png`](Images/BigFish_Centered_Logo_Inverted.png) via [`scripts/generate-nsis-installer-assets.js`](scripts/generate-nsis-installer-assets.js); you can also run `npm run build:installer-assets` alone. Custom NSIS hooks are in [`nsis/installer.nsh`](nsis/installer.nsh).
+**Windows NSIS artwork:** [`nsis/branding/installer-sidebar.bmp`](nsis/branding/) is a **164×314** uncompressed BMP regenerated during `prebuild` from [`Images/BigFish_Centered_Logo_Inverted.png`](Images/BigFish_Centered_Logo_Inverted.png) via [`scripts/generate-nsis-installer-assets.js`](scripts/generate-nsis-installer-assets.js) (or `npm run build:installer-assets`). `build.nsis.installerSidebar` points at that file. `electron-builder` invokes `makensis` with Node `spawn` and a single argv per `-D` flag, so paths that contain spaces are passed correctly; **do not** wrap `-D` values in extra quotes (that can break NSIS compilation, for example in generated `messages.nsh`). The “choose install scope” screen is a custom NSIS page and does not show the left bitmap. Avoid `installerHeader` if you want the default `modern.exe` layout on finish/welcome pages.
 
 To attach Chromium DevTools during local development, enable the appropriate call in `main.js` (see Electron documentation for `openDevTools`).
 
@@ -110,6 +110,7 @@ Set these GitHub repository secrets before running release builds:
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
+- `CALLLOG_MASTER_KEY` — same value as in your local `supabaseConfig.js` (32-byte key as Base64, or any strong passphrase; see `supabaseConfig.example.js`). Required so release builds can encrypt name/phone and save calls.
 
 The release workflow creates `supabaseConfig.js` from these secrets at build time, then runs the existing build scripts.
 
@@ -124,7 +125,7 @@ The release workflow creates `supabaseConfig.js` from these secrets at build tim
 
 ### Supabase configuration
 
-Cloud features require a valid `supabaseConfig.js` (not committed to the repository). Copy the example file and supply the project URL and anon key from the Supabase dashboard (**Settings → API**).
+Cloud features require a valid `supabaseConfig.js` (not committed to the repository). Copy the example file and supply the project URL and anon key from the Supabase dashboard (**Settings → API**), plus **`CALLLOG_MASTER_KEY`**: without it, sign-in works but saving calls is blocked (encrypted name/phone).
 
 ```bash
 cp supabaseConfig.example.js supabaseConfig.js

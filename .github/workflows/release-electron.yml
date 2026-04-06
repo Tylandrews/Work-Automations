@@ -59,14 +59,19 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          CALLLOG_MASTER_KEY: ${{ secrets.CALLLOG_MASTER_KEY }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:SUPABASE_URL) -or [string]::IsNullOrWhiteSpace($env:SUPABASE_ANON_KEY)) {
             throw "Missing required repository secrets: SUPABASE_URL and/or SUPABASE_ANON_KEY"
           }
+          if ([string]::IsNullOrWhiteSpace($env:CALLLOG_MASTER_KEY)) {
+            throw "Missing required repository secret: CALLLOG_MASTER_KEY (needed for encrypted PII and saving calls)"
+          }
           @"
           window.supabaseConfig = {
             SUPABASE_URL: '$env:SUPABASE_URL',
-            SUPABASE_ANON_KEY: '$env:SUPABASE_ANON_KEY'
+            SUPABASE_ANON_KEY: '$env:SUPABASE_ANON_KEY',
+            CALLLOG_MASTER_KEY: '$env:CALLLOG_MASTER_KEY'
           }
           "@ | Set-Content -Path "supabaseConfig.js" -Encoding UTF8
 

@@ -116,7 +116,6 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "installerSidebar": "nsis/branding/installer-sidebar.bmp",
-      "installerHeader": "nsis/branding/installer-header.bmp",
       "uninstallerSidebar": "nsis/branding/installer-sidebar.bmp",
       "include": "nsis/installer.nsh"
     },

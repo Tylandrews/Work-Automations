@@ -89,26 +89,7 @@ const main = async () => {
   const sidebarOut = path.join(outDir, 'installer-sidebar.bmp')
   await sidebar.writeAsync(sidebarOut)
 
-  const headerW = 150
-  const headerH = 57
-  const header = new Jimp(headerW, headerH)
-  gradientFill(header, bottom, top)
-
-  const logoHeader = logo.clone()
-  logoHeader.scaleToFit(42, 42)
-  const hx = 8
-  const hy = Math.floor((headerH - logoHeader.bitmap.height) / 2)
-  header.composite(logoHeader, hx, hy)
-
-  const textX = hx + logoHeader.bitmap.width + 10
-  const textY = Math.floor((headerH - 16) / 2)
-  header.print(font, textX, textY, 'Call Log')
-
-  const headerOut = path.join(outDir, 'installer-header.bmp')
-  await header.writeAsync(headerOut)
-
   console.log('generate-nsis-installer-assets:', sidebarOut)
-  console.log('generate-nsis-installer-assets:', headerOut)
 }
 
 main().catch((err) => {
