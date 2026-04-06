@@ -1993,7 +1993,21 @@ async function handleFormSubmit(e) {
     try {
         const saved = await saveEntry(formData);
         if (saved == null) {
-            showNotification('Failed to save call. Check console for errors.');
+            const supabase = getSupabase();
+            if (!supabase) {
+                showNotification('Failed to save call. Check console for errors.');
+                return;
+            }
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                showNotification('Please log in to save calls.');
+            } else if (!isPiiWriteAllowed()) {
+                showNotification(
+                    'Cannot save: encryption is not set up. Add CALLLOG_MASTER_KEY to supabaseConfig.js (see supabaseConfig.example.js), use the same key as your other machines, then restart the app.'
+                );
+            } else {
+                showNotification('Failed to save call. Check console for errors.');
+            }
             return;
         }
         showNotification('Call logged successfully!');
