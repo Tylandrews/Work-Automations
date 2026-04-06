@@ -2,6 +2,16 @@
 
 All notable changes to **Call Log** are recorded here. Each GitHub release updates this file from commits since the previous version tag.
 
+## [3.4.14] - 2026-04-06
+
+### Added
+
+- ticket source picklist API and call log updates
+
+### Maintenance
+
+- update changelog for v3.4.12
+
 ## [3.4.12] - 2026-04-06
 
 ### Added
@@ -21,5 +31,6 @@ All notable changes to **Call Log** are recorded here. Each GitHub release updat
 ### Summary
 
 - See commit history for this release.
+
 
 
