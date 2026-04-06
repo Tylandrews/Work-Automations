@@ -5,6 +5,44 @@ const vm = require('vm');
 const { autoUpdater } = require('electron-updater');
 // Local SQL database removed - using Supabase only
 
+/** Password recovery emails must redirect here; add the same URL in Supabase Auth redirect allowlist. */
+const AUTH_DEEP_LINK_PREFIX = /^calllog:\/\//i;
+
+let pendingAuthDeepLink = null;
+
+const pushAuthDeepLink = (url) => {
+    const s = url == null ? '' : String(url).trim();
+    if (!s || !AUTH_DEEP_LINK_PREFIX.test(s)) return;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('auth-deep-link', s);
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    } else {
+        pendingAuthDeepLink = s;
+    }
+};
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+    app.quit();
+} else {
+    app.on('second-instance', (_event, commandLine) => {
+        const url = commandLine.find((arg) => AUTH_DEEP_LINK_PREFIX.test(String(arg)));
+        if (url) pushAuthDeepLink(url);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+        }
+    });
+
+    app.on('open-url', (event, url) => {
+        event.preventDefault();
+        pushAuthDeepLink(url);
+    });
+}
+
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 const UPDATE_CHECK_START_DELAY_MS = 8000
 
@@ -212,18 +250,42 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 let mainWindow;
-let notificationWindow = null;
+const notificationWindows = [];
 
 const NOTIFICATION_WIDTH = 340;
 const NOTIFICATION_HEIGHT = 90;
 const NOTIFICATION_MARGIN = 12;
+const NOTIFICATION_GAP = 8;
 const NOTIFICATION_DURATION_MS = 7000;
+const MAX_VISIBLE_NOTIFICATIONS = 5;
+
+function repositionTrayNotifications() {
+    const display = screen.getPrimaryDisplay();
+    const { x, y, width, height } = display.workArea;
+    const baseX = x + width - NOTIFICATION_WIDTH - NOTIFICATION_MARGIN;
+    let offsetFromBottom = NOTIFICATION_MARGIN;
+
+    for (const win of notificationWindows) {
+        if (win.isDestroyed()) continue;
+        const ny = y + height - NOTIFICATION_HEIGHT - offsetFromBottom;
+        win.setPosition(baseX, ny);
+        offsetFromBottom += NOTIFICATION_HEIGHT + NOTIFICATION_GAP;
+    }
+}
+
+function removeTrayNotification(win) {
+    const idx = notificationWindows.indexOf(win);
+    if (idx !== -1) notificationWindows.splice(idx, 1);
+    if (win && !win.isDestroyed()) win.close();
+    repositionTrayNotifications();
+}
 
 function showTrayNotification(title, body) {
-    if (notificationWindow && !notificationWindow.isDestroyed()) {
-        notificationWindow.close();
-        notificationWindow = null;
+    while (notificationWindows.length >= MAX_VISIBLE_NOTIFICATIONS) {
+        const oldest = notificationWindows.shift();
+        if (oldest && !oldest.isDestroyed()) oldest.close();
     }
+
     const preloadPath = path.join(__dirname, 'preload-notification.js');
     if (!fs.existsSync(preloadPath)) {
         console.warn('preload-notification.js not found, skipping tray notification');
@@ -253,32 +315,24 @@ function showTrayNotification(title, body) {
         return;
     });
     win.once('ready-to-show', () => {
-        const display = screen.getPrimaryDisplay();
-        const { x, y, width, height } = display.workArea;
-        const nx = x + width - NOTIFICATION_WIDTH - NOTIFICATION_MARGIN;
-        const ny = y + height - NOTIFICATION_HEIGHT - NOTIFICATION_MARGIN;
-        win.setPosition(nx, ny);
+        notificationWindows.push(win);
+        repositionTrayNotifications();
         win.show();
     });
-    const closeNotification = () => {
-        if (win && !win.isDestroyed()) {
-            win.close();
-        }
-        if (notificationWindow === win) notificationWindow = null;
-    };
     win.on('closed', () => {
-        if (notificationWindow === win) notificationWindow = null;
+        const idx = notificationWindows.indexOf(win);
+        if (idx !== -1) notificationWindows.splice(idx, 1);
+        repositionTrayNotifications();
     });
-    const timeoutId = setTimeout(closeNotification, NOTIFICATION_DURATION_MS);
+    const timeoutId = setTimeout(() => removeTrayNotification(win), NOTIFICATION_DURATION_MS);
     win.on('closed', () => clearTimeout(timeoutId));
-    notificationWindow = win;
 }
 
-ipcMain.on('notification-clicked', () => {
-    if (notificationWindow && !notificationWindow.isDestroyed()) {
-        notificationWindow.close();
-        notificationWindow = null;
-    }
+ipcMain.on('notification-clicked', (_event) => {
+    const senderWin = BrowserWindow.getAllWindows().find(
+        (w) => !w.isDestroyed() && notificationWindows.includes(w)
+    );
+    if (senderWin) removeTrayNotification(senderWin);
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.show();
         mainWindow.focus();
@@ -430,6 +484,12 @@ ipcMain.handle('get-app-version', () => {
     return app.getVersion();
 });
 
+ipcMain.handle('get-pending-auth-deep-link', () => {
+    const u = pendingAuthDeepLink;
+    pendingAuthDeepLink = null;
+    return u || null;
+});
+
 ipcMain.handle('updater-get-state', () => buildUpdaterSnapshot());
 
 ipcMain.handle('updater-check-for-updates', async () => {
@@ -491,6 +551,21 @@ ipcMain.handle('updater-quit-and-install', () => {
 
 // This method will be called when Electron has finished initialization
 app.whenReady().then(async () => {
+    try {
+        if (process.defaultApp) {
+            if (process.argv[1]) {
+                app.setAsDefaultProtocolClient('calllog', process.execPath, [path.resolve(process.argv[1])]);
+            }
+        } else {
+            app.setAsDefaultProtocolClient('calllog');
+        }
+    } catch (e) {
+        console.warn('setAsDefaultProtocolClient(calllog):', e);
+    }
+
+    const coldStartUrl = process.argv.find((arg) => AUTH_DEEP_LINK_PREFIX.test(String(arg)));
+    if (coldStartUrl) pushAuthDeepLink(coldStartUrl);
+
     // Local SQL database initialization removed - using Supabase only
     createWindow();
     setupAutoUpdater();

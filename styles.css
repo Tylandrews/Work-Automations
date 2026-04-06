@@ -148,7 +148,8 @@ body[data-shell="auth"] .water-canvas {
 
 body[data-shell="app"] .water-canvas,
 body[data-shell="account"] .water-canvas,
-body[data-shell="statistics"] .water-canvas {
+body[data-shell="statistics"] .water-canvas,
+body[data-shell="admin-statistics"] .water-canvas {
     opacity: 0.18;
     filter: blur(10px) saturate(calc(var(--water-sat) - 0.10)) contrast(calc(var(--water-contrast) - 0.06));
 }
@@ -507,6 +508,48 @@ textarea {
 
 .auth-actions .btn {
     flex: 1;
+}
+
+.auth-forgot {
+    margin: -0.15rem 0 0.5rem;
+    text-align: center;
+}
+
+.auth-text-btn {
+    background: none;
+    border: none;
+    padding: 0.35rem 0.25rem;
+    font: inherit;
+    font-size: 0.875rem;
+    color: var(--primary);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.auth-text-btn:hover {
+    color: var(--primary-dark);
+}
+
+.auth-text-btn:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+.auth-forgot-panel {
+    margin-top: 0.25rem;
+}
+
+.auth-forgot-lead {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    margin-bottom: 1rem;
+}
+
+.auth-forgot-actions {
+    margin-top: 0.25rem;
 }
 
 .auth-no-config {
@@ -2126,6 +2169,15 @@ main .form-container {
     z-index: 3000;
     font-size: 14px;
     font-weight: 500;
+    transition: top 180ms var(--ease-out-quart);
+    max-width: 380px;
+    word-break: break-word;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .notification {
+        transition: none;
+    }
 }
 
 @keyframes toastIn {
@@ -2162,7 +2214,8 @@ main .form-container {
 /* App shell: titlebar + workspace fill below (app, account, and statistics all use data-shell other than "app") */
 body[data-shell="app"] .app-shell,
 body[data-shell="account"] .app-shell,
-body[data-shell="statistics"] .app-shell {
+body[data-shell="statistics"] .app-shell,
+body[data-shell="admin-statistics"] .app-shell {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -2661,6 +2714,81 @@ body[data-shell="statistics"] .app-shell {
     margin: 0;
     color: var(--text-secondary);
     font-size: 15px;
+}
+
+.admin-stats-tabs {
+    margin-bottom: 16px;
+}
+
+.admin-stats-panel {
+    margin-top: 4px;
+}
+
+.admin-stats-panel.hidden {
+    display: none;
+}
+
+.admin-live-metrics {
+    margin: 12px 0 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+
+.admin-live-metrics p {
+    margin: 0 0 8px;
+}
+
+.admin-live-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.admin-cli-block {
+    display: block;
+    margin: 12px 0;
+    padding: 14px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-primary);
+    overflow-x: auto;
+}
+
+.admin-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.92em;
+}
+
+.admin-recent-pagination {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.admin-recent-page-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.admin-recent-table-wrap {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.admin-recent-table td:last-child {
+    max-width: 280px;
+    word-break: break-word;
 }
 
 @media (max-width: 720px) {

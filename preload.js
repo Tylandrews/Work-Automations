@@ -38,4 +38,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
             return () => ipcRenderer.removeListener('updater-event', listener);
         },
     },
+    getPendingAuthDeepLink: () => ipcRenderer.invoke('get-pending-auth-deep-link'),
+    onAuthDeepLink: (callback) => {
+        if (typeof callback !== 'function') return () => {};
+        const listener = (_event, deepUrl) => {
+            callback(deepUrl);
+        };
+        ipcRenderer.on('auth-deep-link', listener);
+        return () => ipcRenderer.removeListener('auth-deep-link', listener);
+    },
 });

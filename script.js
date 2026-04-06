@@ -8,17 +8,80 @@ let calendarMonthNavChain = Promise.resolve()
 let confirmResolver = null;
 let supabaseClient = null;
 let supabaseRealtimeChannel = null;
-let currentUserProfile = null; // { id, full_name, is_admin } for logged-in user (Supabase)
+let currentUserProfile = null; // { id, full_name, is_admin, profile_load_error? } for logged-in user (Supabase)
 const profileCache = new Map(); // user_id -> full_name
+const PROFILE_DISPLAY_NAME_MAX_LEN = 120;
+let authDeepLinkListenerBound = false;
+
+function clampDisplayName(raw) {
+    const t = String(raw ?? '').trim();
+    if (!t) return '';
+    if (t.length <= PROFILE_DISPLAY_NAME_MAX_LEN) return t;
+    return t.slice(0, PROFILE_DISPLAY_NAME_MAX_LEN);
+}
+
+function getPasswordRecoveryRedirectUrl() {
+    const u = String(window.supabaseConfig?.PASSWORD_RESET_REDIRECT_URL || 'calllog://auth/callback').trim();
+    return u || 'calllog://auth/callback';
+}
+
+function parseAuthHashParamsFromUrl(url) {
+    try {
+        const s = String(url);
+        const i = s.indexOf('#');
+        const hash = i >= 0 ? s.slice(i + 1) : '';
+        const q = new URLSearchParams(hash);
+        return {
+            access_token: q.get('access_token'),
+            refresh_token: q.get('refresh_token'),
+            type: q.get('type'),
+        };
+    } catch {
+        return { access_token: null, refresh_token: null, type: null };
+    }
+}
+
+async function applyAuthDeepLinkSession(url) {
+    const supabase = getSupabase();
+    if (!supabase || !url) return { ok: false };
+    const { access_token, refresh_token } = parseAuthHashParamsFromUrl(url);
+    if (!access_token || !refresh_token) return { ok: false };
+    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+    if (error) {
+        console.error('applyAuthDeepLinkSession:', error);
+        return { ok: false, error };
+    }
+    return { ok: true };
+}
 
 /** Deploy: `supabase functions deploy account-admin` (use `--no-verify-jwt` if JWT is verified inside the function). */
 const ACCOUNT_ADMIN_FUNCTION_SLUG = 'account-admin'
+/** Deploy: `supabase functions deploy admin-analytics` */
+const ADMIN_ANALYTICS_FUNCTION_SLUG = 'admin-analytics'
 const ADMIN_LIST_PER_PAGE = 50
 
 let currentAppView = 'calls'
 let logoutClickHandler = null
 let adminDirectoryPage = 1
+/** Chart.js instance for admin team overview */
+let adminStatsPageChart = null
+let adminStatsLiveTimer = null
+let adminRecentPage = 1
 let accountAdminLoadedOnce = false
+
+function destroyAdminStatsPageChart() {
+    if (adminStatsPageChart) {
+        try { adminStatsPageChart.destroy() } catch (_) {}
+        adminStatsPageChart = null
+    }
+}
+
+function stopAdminLivePolling() {
+    if (adminStatsLiveTimer) {
+        clearInterval(adminStatsLiveTimer)
+        adminStatsLiveTimer = null
+    }
+}
 let accountUpdaterUnsubscribe = null
 let accountUpdaterListenersBound = false
 let accountUpdaterToastVersion = null
@@ -28,6 +91,7 @@ function setAppView(view) {
     const main = document.getElementById('mainWorkspace');
     const account = document.getElementById('accountWorkspace');
     const stats = document.getElementById('statsWorkspace');
+    const adminStats = document.getElementById('adminStatsWorkspace');
     const backBtn = document.getElementById('accountBackBtn');
     const profileBtn = document.getElementById('profileBtn');
     if (!main || !account) return;
@@ -40,6 +104,15 @@ function setAppView(view) {
         destroyStatsPageChart();
     };
 
+    const hideAdminStats = () => {
+        if (adminStats) {
+            adminStats.classList.add('hidden');
+            adminStats.setAttribute('aria-hidden', 'true');
+        }
+        destroyAdminStatsPageChart();
+        stopAdminLivePolling();
+    };
+
     const showCallsShell = () => {
         currentAppView = 'calls';
         main.classList.remove('hidden');
@@ -47,6 +120,7 @@ function setAppView(view) {
         account.classList.add('hidden');
         account.setAttribute('aria-hidden', 'true');
         hideStats();
+        hideAdminStats();
         if (backBtn) backBtn.style.display = 'none';
         if (profileBtn && useSupabase() && getSupabase()) profileBtn.style.display = '';
         document.body?.setAttribute('data-shell', 'app');
@@ -59,6 +133,7 @@ function setAppView(view) {
         account.classList.remove('hidden');
         account.setAttribute('aria-hidden', 'false');
         hideStats();
+        hideAdminStats();
         if (backBtn) backBtn.style.display = '';
         if (profileBtn) profileBtn.style.display = 'none';
         document.body?.setAttribute('data-shell', 'account');
@@ -71,6 +146,7 @@ function setAppView(view) {
         main.setAttribute('aria-hidden', 'true');
         account.classList.add('hidden');
         account.setAttribute('aria-hidden', 'true');
+        hideAdminStats();
         if (stats) {
             stats.classList.remove('hidden');
             stats.setAttribute('aria-hidden', 'false');
@@ -78,6 +154,27 @@ function setAppView(view) {
         if (backBtn) backBtn.style.display = '';
         if (profileBtn) profileBtn.style.display = 'none';
         document.body?.setAttribute('data-shell', 'statistics');
+        return;
+    }
+
+    if (view === 'adminStatistics') {
+        if (!currentUserProfile?.is_admin) {
+            showCallsShell();
+            return;
+        }
+        currentAppView = 'adminStatistics';
+        main.classList.add('hidden');
+        main.setAttribute('aria-hidden', 'true');
+        account.classList.add('hidden');
+        account.setAttribute('aria-hidden', 'true');
+        hideStats();
+        if (adminStats) {
+            adminStats.classList.remove('hidden');
+            adminStats.setAttribute('aria-hidden', 'false');
+        }
+        if (backBtn) backBtn.style.display = '';
+        if (profileBtn) profileBtn.style.display = 'none';
+        document.body?.setAttribute('data-shell', 'admin-statistics');
         return;
     }
 
@@ -920,23 +1017,102 @@ async function loadCurrentUserProfile() {
             currentUserProfile = null;
             return;
         }
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('full_name, is_admin')
-            .eq('id', session.user.id)
-            .single();
+        const uid = session.user.id;
+        const prevSameUser = currentUserProfile?.id === uid ? currentUserProfile : null;
+        const emailFallback = session.user.email || 'You';
+        const metaName = clampDisplayName(session.user.user_metadata?.full_name);
+
+        const fetchProfileRow = async () =>
+            supabase.from('profiles').select('full_name, is_admin').eq('id', uid).maybeSingle();
+
+        let { data, error } = await fetchProfileRow();
+        if (error) {
+            await new Promise((r) => setTimeout(r, 400));
+            ({ data, error } = await fetchProfileRow());
+        }
+
         if (error) {
             console.error('loadCurrentUserProfile error:', error);
-            currentUserProfile = { id: session.user.id, full_name: session.user.email || 'You', is_admin: false };
+            currentUserProfile = {
+                id: uid,
+                full_name: (prevSameUser && prevSameUser.full_name) || metaName || emailFallback,
+                is_admin: prevSameUser ? !!prevSameUser.is_admin : false,
+                profile_load_error: true,
+            };
+            profileCache.set(uid, currentUserProfile.full_name);
             updateAccountAdminTabVisibility();
             return;
         }
-        currentUserProfile = { id: session.user.id, full_name: data.full_name || (session.user.email || 'You'), is_admin: !!data.is_admin };
-        profileCache.set(session.user.id, currentUserProfile.full_name);
+
+        if (!data) {
+            const seedName = metaName || (emailFallback.includes('@') ? emailFallback.split('@')[0] : emailFallback) || 'User';
+            const { error: upErr } = await supabase
+                .from('profiles')
+                .upsert(
+                    { id: uid, full_name: seedName, updated_at: new Date().toISOString() },
+                    { onConflict: 'id' },
+                );
+            if (upErr) console.error('loadCurrentUserProfile self-heal upsert:', upErr);
+            ({ data, error } = await fetchProfileRow());
+        }
+
+        if (error || !data) {
+            currentUserProfile = {
+                id: uid,
+                full_name: metaName || emailFallback,
+                is_admin: false,
+            };
+        } else {
+            currentUserProfile = {
+                id: uid,
+                full_name: data.full_name || metaName || emailFallback,
+                is_admin: !!data.is_admin,
+            };
+        }
+        profileCache.set(uid, currentUserProfile.full_name);
         updateAccountAdminTabVisibility();
     } catch (err) {
         console.error('loadCurrentUserProfile exception:', err);
     }
+}
+
+async function completeAuthenticatedStartup(appShell, authScreen) {
+    await loadCurrentUserProfile();
+    showApp(appShell, authScreen);
+    setupLogout();
+    subscribeRealtime();
+    await initApp();
+}
+
+async function tryConsumePendingAuthDeepLink(appShell, authScreen) {
+    const getPending = window.electronAPI?.getPendingAuthDeepLink;
+    if (typeof getPending !== 'function') return false;
+    const url = await getPending();
+    if (!url) return false;
+    const { ok } = await applyAuthDeepLinkSession(url);
+    if (!ok) return false;
+    const supabase = getSupabase();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return false;
+    await completeAuthenticatedStartup(appShell, authScreen);
+    showNotification('You are signed in. If you reset your password, set a new one under Account, then Security.');
+    return true;
+}
+
+function ensureAuthDeepLinkListener(appShell, authScreen) {
+    if (authDeepLinkListenerBound) return;
+    authDeepLinkListenerBound = true;
+    window.electronAPI?.onAuthDeepLink?.(async (url) => {
+        const { ok } = await applyAuthDeepLinkSession(url);
+        if (!ok) return;
+        const supabase = getSupabase();
+        if (!supabase) return;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        if (document.body?.getAttribute('data-shell') !== 'auth') return;
+        await completeAuthenticatedStartup(appShell, authScreen);
+        showNotification('You are signed in. If you reset your password, set a new one under Account, then Security.');
+    });
 }
 
 async function getProfileNameByUserId(userId) {
@@ -993,14 +1169,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
-                await loadCurrentUserProfile();
-                showApp(appShell, authScreen);
-                await initApp();
-                setupLogout();
-                subscribeRealtime();
+                await completeAuthenticatedStartup(appShell, authScreen);
             } else {
-                showAuth(authScreen, appShell);
-                setupAuthListeners();
+                const openedViaDeepLink = await tryConsumePendingAuthDeepLink(appShell, authScreen);
+                if (!openedViaDeepLink) {
+                    setupAuthListeners();
+                }
             }
         } else {
             // Supabase is required — show configuration message only
@@ -1274,6 +1448,27 @@ function showAuth(authScreen, appShell) {
             }
         }
     }
+    resetAuthForgotToLogin();
+}
+
+function resetAuthForgotToLogin() {
+    const panel = document.getElementById('authForgotPanel');
+    const pwdG = document.getElementById('authPasswordGroup');
+    const act = document.getElementById('authPrimaryActions');
+    const forgotLink = document.getElementById('authForgotWrap');
+    const nameG = document.getElementById('authNameGroup');
+    const title = document.querySelector('#authFormCard .auth-title');
+    const subtitle = document.querySelector('#authFormCard .auth-subtitle');
+    if (panel) {
+        panel.classList.add('hidden');
+        panel.setAttribute('aria-hidden', 'true');
+    }
+    pwdG?.classList.remove('hidden');
+    act?.classList.remove('hidden');
+    forgotLink?.classList.remove('hidden');
+    if (nameG) nameG.style.display = 'none';
+    if (title) title.textContent = 'Sign in';
+    if (subtitle) subtitle.textContent = 'Use your work email to continue.';
 }
 
 function setupAuthListeners() {
@@ -1348,23 +1543,50 @@ function setupAuthListeners() {
     });
 
     function switchToSignupMode() {
+        resetAuthForgotToLogin();
         authMode = 'signup';
         showAuthForm();
         if (authNameGroup) authNameGroup.style.display = '';
         if (nameInput) nameInput.setAttribute('required', '');
         if (signInBtn) signInBtn.textContent = 'Create account';
         if (signUpBtn) signUpBtn.textContent = 'Back to log in';
+        document.getElementById('authForgotWrap')?.classList.add('hidden');
         authError.textContent = '';
     }
 
     function switchToLoginMode() {
+        resetAuthForgotToLogin();
         authMode = 'login';
         showAuthForm();
         if (authNameGroup) authNameGroup.style.display = 'none';
         if (nameInput) nameInput.removeAttribute('required');
         if (signInBtn) signInBtn.textContent = 'Log in';
         if (signUpBtn) signUpBtn.textContent = 'Sign up';
+        document.getElementById('authForgotWrap')?.classList.remove('hidden');
         authError.textContent = '';
+    }
+
+    function enterAuthForgotMode() {
+        authError.textContent = '';
+        authError.style.color = '';
+        if (authMode === 'signup') switchToLoginMode();
+        resetAuthForgotToLogin();
+        const pwdG = document.getElementById('authPasswordGroup');
+        const act = document.getElementById('authPrimaryActions');
+        const forgotLink = document.getElementById('authForgotWrap');
+        const panel = document.getElementById('authForgotPanel');
+        const nameG = document.getElementById('authNameGroup');
+        const title = document.querySelector('#authFormCard .auth-title');
+        const subtitle = document.querySelector('#authFormCard .auth-subtitle');
+        pwdG?.classList.add('hidden');
+        act?.classList.add('hidden');
+        forgotLink?.classList.add('hidden');
+        if (nameG) nameG.style.display = 'none';
+        panel?.classList.remove('hidden');
+        panel?.setAttribute('aria-hidden', 'false');
+        if (title) title.textContent = 'Reset password';
+        if (subtitle) subtitle.textContent = 'We will email you a secure link.';
+        setTimeout(() => document.getElementById('authEmail')?.focus(), 0);
     }
 
     async function doLogin() {
@@ -1381,28 +1603,24 @@ function setupAuthListeners() {
             return;
         }
         if (data.session) {
-            // Save email for next time
             try {
                 localStorage.setItem('calllog-saved-email', email);
             } catch (e) {
                 // Ignore localStorage errors
             }
-            await loadCurrentUserProfile();
-            showApp(appShell, authScreen);
-            setupLogout();
-            subscribeRealtime();
-            await initApp();
+            await completeAuthenticatedStartup(appShell, authScreen);
         }
     }
 
     async function doSignUp() {
         authError.textContent = '';
         authError.style.color = '';
-        const fullName = nameInput?.value.trim();
+        const fullName = clampDisplayName(nameInput?.value || '');
         if (!fullName) {
             authError.textContent = 'Please enter your name.';
             return;
         }
+        if (nameInput) nameInput.value = fullName;
         const email = document.getElementById('authEmail').value.trim();
         const password = document.getElementById('authPassword').value;
         if (!email || !password) {
@@ -1415,39 +1633,51 @@ function setupAuthListeners() {
             btn.textContent = 'Signing up…';
         }
         try {
-            const { data, error } = await supabase.auth.signUp({ email, password });
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: { data: { full_name: fullName } },
+            });
             if (error) {
                 authError.textContent = error.message || 'Sign up failed';
                 return;
             }
+            let profileWarning = '';
             if (data.user) {
                 try {
                     const { error: profileError } = await supabase
                         .from('profiles')
-                        .upsert({ id: data.user.id, full_name: fullName })
-                        .single();
-                    if (profileError) console.error('Profile upsert error:', profileError);
+                        .upsert(
+                            { id: data.user.id, full_name: fullName, updated_at: new Date().toISOString() },
+                            { onConflict: 'id' },
+                        );
+                    if (profileError) {
+                        console.error('Profile upsert error:', profileError);
+                        profileWarning =
+                            ' Account was created but your display name could not be saved yet. You can set it under Account.';
+                    }
                 } catch (profileErr) {
                     console.error('Profile upsert exception:', profileErr);
+                    profileWarning =
+                        ' Account was created but your display name could not be saved yet. You can set it under Account.';
                 }
             }
             if (data.user && !data.session) {
-                authError.textContent = 'Check your email to confirm your account.';
+                authError.textContent =
+                    ('Check your email to confirm your account.' + profileWarning).trim();
                 authError.style.color = 'var(--success)';
                 return;
             }
             if (data.session) {
-                // Save email for next time
                 try {
                     localStorage.setItem('calllog-saved-email', email);
                 } catch (e) {
                     // Ignore localStorage errors
                 }
-                await loadCurrentUserProfile();
-                showApp(appShell, authScreen);
-                setupLogout();
-                subscribeRealtime();
-                await initApp();
+                if (profileWarning) {
+                    showNotification(profileWarning.trim());
+                }
+                await completeAuthenticatedStartup(appShell, authScreen);
             }
         } catch (err) {
             authError.textContent = err?.message || 'Sign up failed. Check your connection.';
@@ -1490,6 +1720,50 @@ function setupAuthListeners() {
             }
         });
     }
+
+    document.getElementById('authForgotBtn')?.addEventListener('click', () => {
+        enterAuthForgotMode();
+    });
+    document.getElementById('authForgotBackBtn')?.addEventListener('click', () => {
+        authError.textContent = '';
+        authError.style.color = '';
+        resetAuthForgotToLogin();
+    });
+    document.getElementById('authForgotSendBtn')?.addEventListener('click', async () => {
+        authError.textContent = '';
+        authError.style.color = '';
+        const email = document.getElementById('authEmail')?.value.trim() || '';
+        if (!email) {
+            authError.textContent = 'Enter your email address.';
+            return;
+        }
+        const sendBtn = document.getElementById('authForgotSendBtn');
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending…';
+        }
+        try {
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: getPasswordRecoveryRedirectUrl(),
+            });
+            if (error) {
+                authError.textContent = error.message || 'Could not send reset email.';
+                return;
+            }
+            authError.textContent =
+                'If an account exists for that email, you will receive a link shortly. Open it on this computer.';
+            authError.style.color = 'var(--success)';
+        } catch (err) {
+            authError.textContent = err?.message || 'Could not send reset email.';
+        } finally {
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send reset link';
+            }
+        }
+    });
+
+    ensureAuthDeepLinkListener(appShell, authScreen);
 
     // Window controls on auth screen (move, minimize, maximize, close)
     setupWindowControls(
@@ -1568,6 +1842,7 @@ function subscribeRealtime() {
                 // Always refresh entries when a new call is inserted
                 await loadEntries();
                 refreshStatisticsPageIfVisible();
+                refreshAdminStatsIfVisible();
 
                 // Do not show a \"teammate\" notification for your own inserts
                 if (!user || !takerId || takerId === user.id) return;
@@ -1609,6 +1884,7 @@ async function initApp() {
     setCurrentDateTime();
     setupEventListeners();
     setupStatisticsPageListeners();
+    setupAdminStatisticsPageListeners();
     setupKeyboardShortcuts();
     setupTitlebar();
 
@@ -2029,7 +2305,7 @@ function setupKeyboardShortcuts() {
                 closeCalendar();
             } else if (document.getElementById('confirmModal')?.classList.contains('show')) {
                 closeConfirm(false);
-            } else if (currentAppView === 'account' || currentAppView === 'statistics') {
+            } else if (currentAppView === 'account' || currentAppView === 'statistics' || currentAppView === 'adminStatistics') {
                 setAppView('calls');
             } else if (document.getElementById('searchContainer').style.display !== 'none') {
                 toggleSearch();
@@ -2460,12 +2736,9 @@ async function loadEntries() {
         })
     }
 
-    // Immediate loading state to avoid pop-in
     setEntriesLoading(true);
-    const loadStartedAt = performance.now();
 
     const entries = await getEntries();
-    const dynamicMinMs = getDynamicMinLoadingMs(entries.length);
 
     // First filter by selected day (local day boundaries)
     const dayKey = selectedDay || getTodayKey();
@@ -2507,7 +2780,6 @@ async function loadEntries() {
                 </p>
             </div>
         `;
-        await waitForMinLoading(loadStartedAt, dynamicMinMs);
         entriesList.innerHTML = html;
         setEntriesLoading(false);
         return;
@@ -2516,27 +2788,8 @@ async function loadEntries() {
     const html = filteredEntries.map(entry => createEntryCard(entry)).join('');
 
     await updateStats();
-    await waitForMinLoading(loadStartedAt, dynamicMinMs);
     entriesList.innerHTML = html;
     setEntriesLoading(false);
-}
-
-function getDynamicMinLoadingMs(totalEntries) {
-    const base = 2000;
-    // As the DB grows, keep the transition feeling intentional without becoming slow.
-    // Adds up to +1500ms max, in small steps.
-    const extra = Math.min(1500, Math.floor((Number(totalEntries) || 0) / 200) * 150);
-    return base + extra;
-}
-
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForMinLoading(startedAt, minMs) {
-    const elapsed = performance.now() - startedAt;
-    const remaining = (minMs || 0) - elapsed;
-    if (remaining > 0) await sleep(remaining);
 }
 
 function setEntriesLoading(isLoading) {
@@ -3881,8 +4134,13 @@ function setupAccountUpdaterPanel() {
 // ---------- Account page (Supabase) ----------
 function updateAccountAdminTabVisibility() {
     const tab = document.getElementById('accountTabAdmin');
-    if (!tab) return;
+    const teamStatsBtn = document.getElementById('adminStatsBtn');
     const isAdmin = !!currentUserProfile?.is_admin;
+    const showTeamStats = isAdmin && useSupabase() && getSupabase();
+    if (teamStatsBtn) {
+        teamStatsBtn.classList.toggle('hidden', !showTeamStats);
+    }
+    if (!tab) return;
     if (isAdmin) {
         tab.classList.remove('hidden');
     } else {
@@ -3936,6 +4194,31 @@ function selectAccountTab(tabId) {
     }
 }
 
+async function updateProfileEmailPendingHint() {
+    const hint = document.getElementById('profileEmailPendingHint');
+    if (!hint) return;
+    const supabase = getSupabase();
+    if (!supabase) {
+        hint.textContent = '';
+        hint.classList.add('hidden');
+        return;
+    }
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+        hint.textContent = '';
+        hint.classList.add('hidden');
+        return;
+    }
+    const pending = user.new_email;
+    if (pending) {
+        hint.textContent = `Confirm ${pending} using the link emailed to that address. You can still sign in with your current email until you confirm.`;
+        hint.classList.remove('hidden');
+    } else {
+        hint.textContent = '';
+        hint.classList.add('hidden');
+    }
+}
+
 function hydrateAccountProfileForm() {
     if (!useSupabase() || !currentUserProfile) return;
     const supabase = getSupabase();
@@ -3948,6 +4231,7 @@ function hydrateAccountProfileForm() {
     nameEl.value = currentUserProfile.full_name || '';
     supabase.auth.getSession().then(({ data: { session } }) => {
         emailEl.value = session?.user?.email || '';
+        updateProfileEmailPendingHint().catch(() => {});
     });
 }
 
@@ -3996,12 +4280,611 @@ async function invokeAccountAdmin(body) {
     if (!res.ok) {
         const raw = payload?.error ?? payload?.detail ?? payload?.message ?? responseText;
         const detail = raw == null ? '' : typeof raw === 'string' ? raw : JSON.stringify(raw);
+        const haystack = `${detail} ${responseText}`.toLowerCase();
+        const missingFn =
+            res.status === 404 ||
+            haystack.includes('requested function was not found') ||
+            haystack.includes('function not found');
+        if (missingFn) {
+            throw new Error(
+                `The account-admin API is not deployed to this Supabase project. From a machine with the Supabase CLI, run: supabase functions deploy ${ACCOUNT_ADMIN_FUNCTION_SLUG} --no-verify-jwt`,
+            );
+        }
+        const invalidGatewayJwt = res.status === 401 && haystack.includes('invalid jwt');
+        if (invalidGatewayJwt) {
+            throw new Error(
+                `The account-admin function is rejecting the token at the Supabase gateway. Redeploy with gateway JWT verification off (the function still checks your session and is_admin): supabase functions deploy ${ACCOUNT_ADMIN_FUNCTION_SLUG} --no-verify-jwt`,
+            );
+        }
         throw new Error(detail || `HTTP ${res.status}`);
     }
     if (payload && payload.ok === false) {
         throw new Error(payload.error || payload.detail || 'Request failed');
     }
     return payload;
+}
+
+async function invokeAdminAnalytics(body) {
+    if (!useSupabase()) throw new Error('Supabase is not configured.');
+    const accessToken = await getSupabaseAccessToken();
+    if (!accessToken) throw new Error('Session expired. Please log in again.');
+    const url = (window.supabaseConfig?.SUPABASE_URL || '').trim();
+    const anonKey = (window.supabaseConfig?.SUPABASE_ANON_KEY || '').trim();
+    if (!url || !anonKey) throw new Error('Supabase is not configured.');
+    const res = await fetch(`${url.replace(/\/+$/, '')}/functions/v1/${ADMIN_ANALYTICS_FUNCTION_SLUG}`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            apikey: anonKey,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    });
+    const responseText = await res.text().catch(() => '');
+    const payload = (() => {
+        try {
+            return responseText ? JSON.parse(responseText) : null;
+        } catch {
+            return null;
+        }
+    })();
+    if (!res.ok) {
+        const raw =
+            payload?.error ?? payload?.detail ?? payload?.message ?? payload?.msg ?? responseText;
+        const detail = raw == null ? '' : typeof raw === 'string' ? raw : JSON.stringify(raw);
+        const haystack = `${detail} ${responseText}`.toLowerCase();
+        const missingFn =
+            res.status === 404 ||
+            haystack.includes('requested function was not found') ||
+            haystack.includes('function not found');
+        if (missingFn) {
+            throw new Error(
+                'The admin-analytics API is not deployed to this Supabase project. From a machine with the Supabase CLI, run: supabase functions deploy admin-analytics --no-verify-jwt',
+            );
+        }
+        const invalidGatewayJwt = res.status === 401 && haystack.includes('invalid jwt');
+        if (invalidGatewayJwt) {
+            throw new Error(
+                'The admin-analytics function is rejecting the token at the Supabase gateway. Redeploy with gateway JWT verification off (the function still checks your session and is_admin): supabase functions deploy admin-analytics --no-verify-jwt',
+            );
+        }
+        throw new Error(detail || `HTTP ${res.status}`);
+    }
+    if (payload && payload.ok === false) {
+        throw new Error(payload.error || payload.detail || payload.msg || 'Request failed');
+    }
+    return payload;
+}
+
+let currentAdminStatsTabId = 'overview';
+
+function getAdminStatisticsRangeFromUI() {
+    const presetEl = document.getElementById('adminStatsRangePreset');
+    const preset = presetEl ? presetEl.value : '30';
+    const today = new Date();
+    const todayStart = startOfLocalDay(today);
+
+    if (preset === 'all') {
+        return {
+            preset,
+            startIso: null,
+            endIso: null,
+            fromDayKey: null,
+            toDayKey: null,
+            rangeDaysInclusive: 1,
+            invalid: false,
+        };
+    }
+
+    if (preset === 'custom') {
+        const startInp = document.getElementById('adminStatsRangeStart');
+        const endInp = document.getElementById('adminStatsRangeEnd');
+        const sk = (startInp && startInp.value) ? startInp.value : toLocalDayKey(today);
+        const ek = (endInp && endInp.value) ? endInp.value : toLocalDayKey(today);
+        const sDate = parseDayKeyToLocalStart(sk);
+        const eDate = parseDayKeyToLocalStart(ek);
+        if (!sDate || !eDate || sDate > eDate) {
+            return {
+                preset,
+                startIso: null,
+                endIso: null,
+                fromDayKey: toLocalDayKey(today),
+                toDayKey: toLocalDayKey(today),
+                rangeDaysInclusive: 1,
+                invalid: true,
+            };
+        }
+        const startIso = startOfLocalDay(sDate).toISOString();
+        const endIso = endOfLocalDay(eDate).toISOString();
+        const rangeDaysInclusive = calendarDaysInclusive(sDate, eDate);
+        return {
+            preset,
+            startIso,
+            endIso,
+            fromDayKey: sk,
+            toDayKey: ek,
+            rangeDaysInclusive,
+            invalid: false,
+        };
+    }
+
+    const days = preset === '7' ? 7 : preset === '90' ? 90 : 30;
+    const startDate = addLocalDays(todayStart, -(days - 1));
+    const fromDayKey = toLocalDayKey(startDate);
+    const toDayKey = toLocalDayKey(today);
+    return {
+        preset,
+        startIso: startOfLocalDay(startDate).toISOString(),
+        endIso: endOfLocalDay(today).toISOString(),
+        fromDayKey,
+        toDayKey,
+        rangeDaysInclusive: days,
+        invalid: false,
+    };
+}
+
+function setAdminStatsLoading(show) {
+    const el = document.getElementById('adminStatsLoading');
+    if (!el) return;
+    el.classList.toggle('hidden', !show);
+}
+
+function renderAdminKpis(p) {
+    const first = p.first_call ? escapeHtml(toLocalDayKey(new Date(p.first_call))) : '—';
+    const last = p.last_call ? escapeHtml(toLocalDayKey(new Date(p.last_call))) : '—';
+    return `
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${Number(p.total || 0)}</div>
+            <div class="stats-kpi-label">Total calls</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${Number(p.unique_users || 0)}</div>
+            <div class="stats-kpi-label">Users</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${Number(p.unique_orgs || 0)}</div>
+            <div class="stats-kpi-label">Organizations</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${first} – ${last}</div>
+            <div class="stats-kpi-label">First / last (local day)</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${escapeHtml(String(p.avg_per_day ?? 0))}</div>
+            <div class="stats-kpi-label">Avg / day in range</div>
+        </div>
+    `;
+}
+
+function renderAdminOrgsTable(topOrgs) {
+    const list = topOrgs || [];
+    if (!list.length) {
+        return '<tr><td colspan="4">No organizations in range</td></tr>';
+    }
+    return list.map((o) => `
+        <tr>
+            <td>${o.rank}</td>
+            <td>${escapeHtml(o.name)}</td>
+            <td>${o.count}</td>
+            <td>${o.pct}%</td>
+        </tr>
+    `).join('');
+}
+
+function attachAdminOverviewChart(dailyTimeseries, perUserSeries) {
+    destroyAdminStatsPageChart();
+    const canvas = document.getElementById('adminStatsOverviewCanvas');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (!Array.isArray(dailyTimeseries) || dailyTimeseries.length === 0) return;
+    const labels = dailyTimeseries.map((p) => formatReportChartDay(p.day));
+    const primary = getReportChartPrimaryColor();
+    const textSecondary = getReportChartCssVar('--text-secondary') || 'rgba(255,255,255,0.68)';
+    const borderColor = getReportChartCssVar('--border') || 'rgba(255,255,255,0.1)';
+    const palette = ['#86a3ff', '#7ad7a6', '#f0b27a', '#e070c8', '#9bdcff', '#d4b8ff', '#ff8a8a', '#c9f068'];
+    const series = Array.isArray(perUserSeries) ? perUserSeries : [];
+    const datasets = [{
+        label: 'Total',
+        data: dailyTimeseries.map((p) => Number(p.calls ?? 0)),
+        borderColor: primary,
+        backgroundColor: 'transparent',
+        tension: 0.2,
+        fill: false,
+        borderWidth: 2,
+    }];
+    series.forEach((s, i) => {
+        datasets.push({
+            label: s.title || s.user_id,
+            data: (s.y || []).map((n) => Number(n)),
+            borderColor: palette[i % palette.length],
+            backgroundColor: 'transparent',
+            tension: 0.2,
+            fill: false,
+            borderWidth: 1.5,
+        });
+    });
+    adminStatsPageChart = new Chart(canvas, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    display: series.length > 0,
+                    labels: { color: textSecondary, boxWidth: 10, font: { size: 10 } },
+                },
+                tooltip: { enabled: true },
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        maxRotation: 0,
+                        font: { size: 10 },
+                        color: textSecondary,
+                    },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: borderColor },
+                    ticks: {
+                        font: { size: 10 },
+                        color: textSecondary,
+                    },
+                },
+            },
+        },
+    });
+}
+
+async function loadAdminOverviewTab() {
+    const errEl = document.getElementById('adminStatsPageError');
+    const mainEl = document.getElementById('adminStatsOverviewMain');
+    const emptyEl = document.getElementById('adminStatsOverviewEmpty');
+    if (errEl) errEl.textContent = '';
+    const rangeSpec = getAdminStatisticsRangeFromUI();
+    if (rangeSpec.invalid) {
+        if (errEl) errEl.textContent = 'Choose a valid custom range (from on or before to).';
+        if (mainEl) mainEl.classList.add('hidden');
+        if (emptyEl) emptyEl.classList.add('hidden');
+        return;
+    }
+    setAdminStatsLoading(true);
+    if (mainEl) mainEl.classList.add('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+    destroyAdminStatsPageChart();
+    try {
+        const fetchRange = rangeSpec.preset === 'all'
+            ? { startIso: null, endIso: null }
+            : { startIso: rangeSpec.startIso, endIso: rangeSpec.endIso };
+        const payload = await invokeAdminAnalytics({
+            action: 'summary',
+            timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+            startIso: fetchRange.startIso,
+            endIso: fetchRange.endIso,
+            fromDayKey: rangeSpec.fromDayKey,
+            toDayKey: rangeSpec.toDayKey,
+        });
+        setAdminStatsLoading(false);
+        if (Number(payload.total || 0) === 0) {
+            if (emptyEl) emptyEl.classList.remove('hidden');
+            return;
+        }
+        if (mainEl) mainEl.classList.remove('hidden');
+        const kpi = document.getElementById('adminStatsKpiRow');
+        if (kpi) kpi.innerHTML = renderAdminKpis(payload);
+        const orgBody = document.getElementById('adminStatsOrgTableBody');
+        if (orgBody) orgBody.innerHTML = renderAdminOrgsTable(payload.top_orgs);
+        attachAdminOverviewChart(payload.daily_timeseries, payload.per_user_series);
+    } catch (e) {
+        setAdminStatsLoading(false);
+        console.error('loadAdminOverviewTab', e);
+        if (errEl) errEl.textContent = e?.message || 'Failed to load team overview.';
+        destroyAdminStatsPageChart();
+    }
+}
+
+async function loadAdminByUserTab() {
+    const errEl = document.getElementById('adminStatsPageError');
+    const mainEl = document.getElementById('adminStatsByUserMain');
+    const emptyEl = document.getElementById('adminStatsByUserEmpty');
+    if (errEl) errEl.textContent = '';
+    const rangeSpec = getAdminStatisticsRangeFromUI();
+    if (rangeSpec.invalid) {
+        if (errEl) errEl.textContent = 'Choose a valid custom range (from on or before to).';
+        if (mainEl) mainEl.classList.add('hidden');
+        if (emptyEl) emptyEl.classList.add('hidden');
+        return;
+    }
+    setAdminStatsLoading(true);
+    if (mainEl) mainEl.classList.add('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+    try {
+        const fetchRange = rangeSpec.preset === 'all'
+            ? { startIso: null, endIso: null }
+            : { startIso: rangeSpec.startIso, endIso: rangeSpec.endIso };
+        const payload = await invokeAdminAnalytics({
+            action: 'byUser',
+            startIso: fetchRange.startIso,
+            endIso: fetchRange.endIso,
+        });
+        setAdminStatsLoading(false);
+        const users = payload.users || [];
+        if (users.length === 0) {
+            if (emptyEl) emptyEl.classList.remove('hidden');
+            return;
+        }
+        if (mainEl) mainEl.classList.remove('hidden');
+        const tbody = document.getElementById('adminStatsByUserTableBody');
+        if (tbody) {
+            tbody.innerHTML = users.map((u) => {
+                const t = u.last_call_time ? escapeHtml(new Date(u.last_call_time).toLocaleString()) : '—';
+                return `<tr><td>${escapeHtml(u.user_label || u.user_id)}</td><td>${u.call_count}</td><td>${t}</td></tr>`;
+            }).join('');
+        }
+    } catch (e) {
+        setAdminStatsLoading(false);
+        console.error('loadAdminByUserTab', e);
+        if (errEl) errEl.textContent = e?.message || 'Failed to load users.';
+    }
+}
+
+const ADMIN_RECENT_PER_PAGE = 25;
+
+async function loadAdminRecentTab() {
+    const errEl = document.getElementById('adminStatsPageError');
+    const tbody = document.getElementById('adminStatsRecentTableBody');
+    const pageLabel = document.getElementById('adminStatsRecentPageLabel');
+    const prevBtn = document.getElementById('adminStatsRecentPrevBtn');
+    const nextBtn = document.getElementById('adminStatsRecentNextBtn');
+    if (errEl) errEl.textContent = '';
+    const rangeSpec = getAdminStatisticsRangeFromUI();
+    if (rangeSpec.invalid) {
+        if (tbody) tbody.innerHTML = '';
+        if (pageLabel) pageLabel.textContent = '';
+        if (errEl) errEl.textContent = 'Choose a valid custom range (from on or before to).';
+        return;
+    }
+    setAdminStatsLoading(true);
+    try {
+        const fetchRange = rangeSpec.preset === 'all'
+            ? { startIso: null, endIso: null }
+            : { startIso: rangeSpec.startIso, endIso: rangeSpec.endIso };
+        const payload = await invokeAdminAnalytics({
+            action: 'recentCalls',
+            startIso: fetchRange.startIso,
+            endIso: fetchRange.endIso,
+            page: adminRecentPage,
+            perPage: ADMIN_RECENT_PER_PAGE,
+        });
+        setAdminStatsLoading(false);
+        const calls = payload.calls || [];
+        const total = Number(payload.total ?? calls.length);
+        const totalPages = Math.max(1, Math.ceil(total / ADMIN_RECENT_PER_PAGE));
+        if (adminRecentPage > totalPages) {
+            adminRecentPage = totalPages;
+            await loadAdminRecentTab();
+            return;
+        }
+        if (tbody) {
+            if (calls.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5">No calls in this range</td></tr>';
+            } else {
+                tbody.innerHTML = calls.map((c) => {
+                    const snip = (c.support_request || '').trim();
+                    const short = snip.length > 80 ? `${escapeHtml(snip.slice(0, 80))}…` : escapeHtml(snip);
+                    const when = c.call_time ? escapeHtml(new Date(c.call_time).toLocaleString()) : '—';
+                    return `<tr><td>${when}</td><td>${escapeHtml(c.user_label || '')}</td><td>${escapeHtml((c.organization || '').trim() || '—')}</td><td>${escapeHtml((c.device_name || '').trim() || '—')}</td><td>${short || '—'}</td></tr>`;
+                }).join('');
+            }
+        }
+        if (pageLabel) pageLabel.textContent = `Page ${adminRecentPage} of ${totalPages} (${total} calls)`;
+        if (prevBtn) prevBtn.disabled = adminRecentPage <= 1;
+        if (nextBtn) nextBtn.disabled = adminRecentPage >= totalPages;
+    } catch (e) {
+        setAdminStatsLoading(false);
+        console.error('loadAdminRecentTab', e);
+        if (errEl) errEl.textContent = e?.message || 'Failed to load recent calls.';
+        if (tbody) tbody.innerHTML = '';
+    }
+}
+
+async function loadAdminLiveTabData() {
+    const errEl = document.getElementById('adminStatsPageError');
+    const metricsEl = document.getElementById('adminLiveMetrics');
+    try {
+        const payload = await invokeAdminAnalytics({ action: 'liveSeries', windowMinutes: 60 });
+        const counts = payload.counts || [];
+        const sum = counts.reduce((a, b) => a + Number(b || 0), 0);
+        const peak = counts.length ? Math.max(...counts.map((n) => Number(n || 0))) : 0;
+        const gen = payload.generatedAt ? new Date(payload.generatedAt).toLocaleString() : '—';
+        if (metricsEl) {
+            metricsEl.innerHTML = `
+                <p><strong>Calls in the last hour (UTC buckets):</strong> ${sum}</p>
+                <p><strong>Peak calls in one minute:</strong> ${peak}</p>
+                <p class="profile-hint">Server time at refresh: ${escapeHtml(gen)}</p>
+            `;
+        }
+    } catch (e) {
+        console.error('loadAdminLiveTabData', e);
+        if (errEl) errEl.textContent = e?.message || 'Failed to load live metrics.';
+        if (metricsEl) metricsEl.innerHTML = '';
+    }
+}
+
+function fillAdminCliBlock() {
+    const url = (window.supabaseConfig?.SUPABASE_URL || '').trim();
+    const block = document.getElementById('adminCliCommandBlock');
+    if (!block) return;
+    const lines = [
+        '# PowerShell (example):',
+        `$env:SUPABASE_URL="${url || 'https://YOUR_PROJECT.supabase.co'}"`,
+        '$env:SUPABASE_ANON_KEY="<copy from supabaseConfig.js>"',
+        '$env:CALL_LOG_ACCESS_TOKEN="<use Copy access token in this tab>"',
+        'npm run admin:live-dashboard',
+        '',
+        'Quit the terminal dashboard with q or Ctrl+C.',
+    ];
+    block.textContent = lines.join('\n');
+}
+
+function startAdminLivePolling() {
+    stopAdminLivePolling();
+    adminStatsLiveTimer = setInterval(() => {
+        if (currentAppView !== 'adminStatistics') return;
+        if (currentAdminStatsTabId !== 'live') return;
+        loadAdminLiveTabData().catch(() => {});
+    }, 30000);
+}
+
+const handleAdminCopyToken = async () => {
+    const feedback = document.getElementById('adminCopyTokenFeedback');
+    try {
+        const tok = await getSupabaseAccessToken();
+        if (!tok) throw new Error('No active session');
+        await navigator.clipboard.writeText(tok);
+        if (feedback) feedback.textContent = 'Token copied. Treat it like a password.'
+    } catch (e) {
+        if (feedback) feedback.textContent = e?.message || 'Copy failed';
+    }
+    setTimeout(() => {
+        if (feedback) feedback.textContent = '';
+    }, 5000);
+};
+
+function selectAdminStatsTab(tabId) {
+    const rows = [
+        { id: 'overview', tabEl: 'adminStatsTabOverview', panelEl: 'adminStatsPanelOverview' },
+        { id: 'byUser', tabEl: 'adminStatsTabByUser', panelEl: 'adminStatsPanelByUser' },
+        { id: 'recent', tabEl: 'adminStatsTabRecent', panelEl: 'adminStatsPanelRecent' },
+        { id: 'live', tabEl: 'adminStatsTabLive', panelEl: 'adminStatsPanelLive' },
+    ];
+    currentAdminStatsTabId = tabId;
+    stopAdminLivePolling();
+    for (const row of rows) {
+        const active = row.id === tabId;
+        const te = document.getElementById(row.tabEl);
+        const pe = document.getElementById(row.panelEl);
+        if (te) {
+            te.setAttribute('aria-selected', active ? 'true' : 'false');
+            te.tabIndex = active ? 0 : -1;
+        }
+        if (pe) {
+            if (active) {
+                pe.classList.remove('hidden');
+                pe.removeAttribute('hidden');
+            } else {
+                pe.classList.add('hidden');
+                pe.setAttribute('hidden', '');
+            }
+        }
+    }
+    if (tabId === 'live') {
+        fillAdminCliBlock();
+        loadAdminLiveTabData().catch((e) => console.error(e));
+        startAdminLivePolling();
+    }
+    if (tabId === 'overview') {
+        loadAdminOverviewTab().catch((e) => console.error(e));
+    }
+    if (tabId === 'byUser') {
+        loadAdminByUserTab().catch((e) => console.error(e));
+    }
+    if (tabId === 'recent') {
+        adminRecentPage = 1;
+        loadAdminRecentTab().catch((e) => console.error(e));
+    }
+}
+
+function openAdminStatisticsPage() {
+    if (!currentUserProfile?.is_admin) return;
+    const errEl = document.getElementById('adminStatsPageError');
+    if (errEl) errEl.textContent = '';
+    setAppView('adminStatistics');
+    const preset = document.getElementById('adminStatsRangePreset');
+    const customWrap = document.getElementById('adminStatsCustomRange');
+    if (preset && customWrap) {
+        customWrap.classList.toggle('hidden', preset.value !== 'custom');
+    }
+    selectAdminStatsTab('overview');
+}
+
+function refreshAdminStatsIfVisible() {
+    if (currentAppView !== 'adminStatistics') return;
+    const id = currentAdminStatsTabId;
+    if (id === 'overview') loadAdminOverviewTab().catch((e) => console.warn(e));
+    else if (id === 'byUser') loadAdminByUserTab().catch((e) => console.warn(e));
+    else if (id === 'recent') loadAdminRecentTab().catch((e) => console.warn(e));
+    else if (id === 'live') loadAdminLiveTabData().catch((e) => console.warn(e));
+}
+
+function setupAdminStatisticsPageListeners() {
+    const preset = document.getElementById('adminStatsRangePreset');
+    const customWrap = document.getElementById('adminStatsCustomRange');
+    const applyCustom = document.getElementById('adminStatsApplyCustomBtn');
+    const refreshBtn = document.getElementById('adminStatsRefreshBtn');
+    const backInline = document.getElementById('adminStatsBackInlineBtn');
+    const adminBtn = document.getElementById('adminStatsBtn');
+
+    const syncCustomVisibility = () => {
+        if (!preset || !customWrap) return;
+        const isCustom = preset.value === 'custom';
+        customWrap.classList.toggle('hidden', !isCustom);
+        if (isCustom) {
+            const startInp = document.getElementById('adminStatsRangeStart');
+            const endInp = document.getElementById('adminStatsRangeEnd');
+            const t = new Date();
+            if (startInp && !startInp.value) startInp.value = toLocalDayKey(addLocalDays(startOfLocalDay(t), -29));
+            if (endInp && !endInp.value) endInp.value = toLocalDayKey(t);
+        }
+    };
+
+    preset?.addEventListener('change', () => {
+        syncCustomVisibility();
+        if (preset.value !== 'custom' && currentAppView === 'adminStatistics') {
+            refreshAdminStatsIfVisible();
+        }
+    });
+
+    applyCustom?.addEventListener('click', () => {
+        refreshAdminStatsIfVisible();
+    });
+
+    refreshBtn?.addEventListener('click', () => {
+        refreshAdminStatsIfVisible();
+    });
+
+    backInline?.addEventListener('click', () => setAppView('calls'));
+
+    adminBtn?.addEventListener('click', () => openAdminStatisticsPage());
+
+    document.getElementById('adminStatsTabOverview')?.addEventListener('click', () => selectAdminStatsTab('overview'));
+    document.getElementById('adminStatsTabByUser')?.addEventListener('click', () => selectAdminStatsTab('byUser'));
+    document.getElementById('adminStatsTabRecent')?.addEventListener('click', () => selectAdminStatsTab('recent'));
+    document.getElementById('adminStatsTabLive')?.addEventListener('click', () => selectAdminStatsTab('live'));
+
+    document.getElementById('adminStatsRecentPrevBtn')?.addEventListener('click', () => {
+        if (adminRecentPage > 1) {
+            adminRecentPage -= 1;
+            loadAdminRecentTab().catch((e) => console.error(e));
+        }
+    });
+    document.getElementById('adminStatsRecentNextBtn')?.addEventListener('click', () => {
+        adminRecentPage += 1;
+        loadAdminRecentTab().catch((e) => console.error(e));
+    });
+
+    document.getElementById('adminLiveRefreshBtn')?.addEventListener('click', () => {
+        loadAdminLiveTabData().catch((e) => console.error(e));
+    });
+
+    document.getElementById('adminCopyTokenBtn')?.addEventListener('click', () => {
+        handleAdminCopyToken().catch((e) => console.error(e));
+    });
+
+    syncCustomVisibility();
 }
 
 function appendAdminUserRows(users) {
@@ -4184,20 +5067,21 @@ async function handleProfileSubmit(e) {
     const nameEl = document.getElementById('profileName');
     const emailEl = document.getElementById('profileEmail');
     const saveBtn = document.getElementById('profileSaveBtn');
-    const fullName = nameEl.value.trim();
-    const newEmail = emailEl.value.trim();
-    errEl.textContent = '';
+    const fullName = clampDisplayName(nameEl?.value || '');
+    const newEmail = emailEl?.value.trim() || '';
+    if (errEl) errEl.textContent = '';
+    if (nameEl) nameEl.value = fullName;
     if (!fullName) {
-        errEl.textContent = 'Please enter your name.';
+        if (errEl) errEl.textContent = 'Please enter your name.';
         return;
     }
     if (!newEmail) {
-        errEl.textContent = 'Please enter your email.';
+        if (errEl) errEl.textContent = 'Please enter your email.';
         return;
     }
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-        errEl.textContent = 'Session expired. Please log in again.';
+        if (errEl) errEl.textContent = 'Session expired. Please log in again.';
         return;
     }
     const originalText = saveBtn?.textContent;
@@ -4213,22 +5097,26 @@ async function handleProfileSubmit(e) {
                 { onConflict: 'id' },
             );
         if (profileError) {
-            errEl.textContent = profileError.message || 'Failed to update name.';
+            if (errEl) errEl.textContent = profileError.message || 'Failed to update name.';
             return;
         }
+        const { error: metaErr } = await supabase.auth.updateUser({ data: { full_name: fullName } });
+        if (metaErr) console.warn('updateUser full_name metadata:', metaErr);
         if (newEmail !== (session.user.email || '')) {
             const { error: authError } = await supabase.auth.updateUser({ email: newEmail });
             if (authError) {
-                errEl.textContent = authError.message || 'Failed to update email.';
+                if (errEl) errEl.textContent = authError.message || 'Failed to update email.';
                 return;
             }
+            await supabase.auth.refreshSession();
         }
         currentUserProfile = { id: session.user.id, full_name: fullName, is_admin: !!currentUserProfile?.is_admin };
         profileCache.set(session.user.id, fullName);
         updateAccountAdminTabVisibility();
+        await updateProfileEmailPendingHint();
         showNotification('Account updated.');
     } catch (err) {
-        errEl.textContent = err?.message || 'Update failed.';
+        if (errEl) errEl.textContent = err?.message || 'Update failed.';
     } finally {
         if (saveBtn) {
             saveBtn.disabled = false;
@@ -4403,18 +5291,43 @@ function clearForm() {
     document.getElementById('name').focus();
 }
 
-// Show notification
-function showNotification(message) {
-    const notification = document.createElement('div');
-    notification.className = 'notification';
-    notification.setAttribute('data-testid', 'app-notification');
-    notification.textContent = message;
-    document.body.appendChild(notification);
+const activeNotifications = []
+const NOTIFICATION_BASE_TOP = 60
+const NOTIFICATION_GAP = 10
+
+const repositionNotifications = () => {
+    let offset = NOTIFICATION_BASE_TOP
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    for (const el of activeNotifications) {
+        el.style.top = `${offset}px`
+        if (!prefersReducedMotion) {
+            el.style.transition = 'top 180ms var(--ease-out-quart)'
+        }
+        offset += el.offsetHeight + NOTIFICATION_GAP
+    }
+}
+
+const removeNotification = (el) => {
+    const idx = activeNotifications.indexOf(el)
+    if (idx !== -1) activeNotifications.splice(idx, 1)
+    el.remove()
+    repositionNotifications()
+}
+
+const showNotification = (message) => {
+    const notification = document.createElement('div')
+    notification.className = 'notification'
+    notification.setAttribute('data-testid', 'app-notification')
+    notification.textContent = message
+    document.body.appendChild(notification)
+
+    activeNotifications.push(notification)
+    repositionNotifications()
 
     setTimeout(() => {
-        notification.classList.add('is-exiting');
-        setTimeout(() => notification.remove(), 160);
-    }, 3000);
+        notification.classList.add('is-exiting')
+        setTimeout(() => removeNotification(notification), 160)
+    }, 3000)
 }
 
 function cssEscapeValue(value) {

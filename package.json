@@ -25,7 +25,8 @@
     "test:e2e:ci": "py -3.10 e2e/run_like_github_ci.py",
     "test:e2e:ci:firefox": "py -3.10 e2e/run_like_github_ci.py --browser firefox",
     "test:e2e:report": "py -3.10 e2e/run_playwright_report.py",
-    "test:unit": "node --test test"
+    "test:unit": "node --test test",
+    "admin:live-dashboard": "node scripts/admin-live-dashboard.mjs"
   },
   "keywords": [
     "electron",
@@ -39,10 +40,14 @@
     "node": ">=18"
   },
   "dependencies": {
+    "cli": "^1.0.1",
     "electron-updater": "^6.3.9",
-    "gsap": "^3.14.2"
+    "gsap": "^3.14.2",
+    "supabase": "^2.84.7"
   },
   "devDependencies": {
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
     "electron-icon-builder": "^2.0.1",
@@ -116,6 +121,14 @@
     },
     "portable": {
       "artifactName": "CallLog-Portable-${version}.${ext}"
-    }
+    },
+    "protocols": [
+      {
+        "name": "Call Log Auth",
+        "schemes": [
+          "calllog"
+        ]
+      }
+    ]
   }
 }
