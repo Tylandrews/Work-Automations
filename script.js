@@ -1456,7 +1456,6 @@ function resetAuthForgotToLogin() {
     const pwdG = document.getElementById('authPasswordGroup');
     const act = document.getElementById('authPrimaryActions');
     const forgotLink = document.getElementById('authForgotWrap');
-    const nameG = document.getElementById('authNameGroup');
     const title = document.querySelector('#authFormCard .auth-title');
     const subtitle = document.querySelector('#authFormCard .auth-subtitle');
     if (panel) {
@@ -1466,27 +1465,24 @@ function resetAuthForgotToLogin() {
     pwdG?.classList.remove('hidden');
     act?.classList.remove('hidden');
     forgotLink?.classList.remove('hidden');
-    if (nameG) nameG.style.display = 'none';
     if (title) title.textContent = 'Sign in';
-    if (subtitle) subtitle.textContent = 'Use your work email to continue.';
+    if (subtitle) {
+        subtitle.textContent =
+            'Sign in with the account an administrator invited. New users receive an email invite.';
+    }
 }
 
 function setupAuthListeners() {
     const form = document.getElementById('authForm');
-    const signUpBtn = document.getElementById('authSignUpBtn');
     const signInBtn = document.getElementById('authSignInBtn');
     const authError = document.getElementById('authError');
     const authScreen = document.getElementById('authScreen');
     const appShell = document.getElementById('appShell');
-    const nameInput = document.getElementById('authName');
-    const authNameGroup = document.getElementById('authNameGroup');
     const layout = document.querySelector('.auth-layout');
     const brandCard = document.getElementById('authBrandCard');
     const formCard = document.getElementById('authFormCard');
     const supabase = getSupabase();
     if (!supabase || !form) return;
-
-    let authMode = 'login'; // 'login' | 'signup'
 
     function showAuthBrand() {
         layout?.classList.remove('is-form');
@@ -1542,46 +1538,19 @@ function setupAuthListeners() {
         }
     });
 
-    function switchToSignupMode() {
-        resetAuthForgotToLogin();
-        authMode = 'signup';
-        showAuthForm();
-        if (authNameGroup) authNameGroup.style.display = '';
-        if (nameInput) nameInput.setAttribute('required', '');
-        if (signInBtn) signInBtn.textContent = 'Create account';
-        if (signUpBtn) signUpBtn.textContent = 'Back to log in';
-        document.getElementById('authForgotWrap')?.classList.add('hidden');
-        authError.textContent = '';
-    }
-
-    function switchToLoginMode() {
-        resetAuthForgotToLogin();
-        authMode = 'login';
-        showAuthForm();
-        if (authNameGroup) authNameGroup.style.display = 'none';
-        if (nameInput) nameInput.removeAttribute('required');
-        if (signInBtn) signInBtn.textContent = 'Log in';
-        if (signUpBtn) signUpBtn.textContent = 'Sign up';
-        document.getElementById('authForgotWrap')?.classList.remove('hidden');
-        authError.textContent = '';
-    }
-
     function enterAuthForgotMode() {
         authError.textContent = '';
         authError.style.color = '';
-        if (authMode === 'signup') switchToLoginMode();
         resetAuthForgotToLogin();
         const pwdG = document.getElementById('authPasswordGroup');
         const act = document.getElementById('authPrimaryActions');
         const forgotLink = document.getElementById('authForgotWrap');
         const panel = document.getElementById('authForgotPanel');
-        const nameG = document.getElementById('authNameGroup');
         const title = document.querySelector('#authFormCard .auth-title');
         const subtitle = document.querySelector('#authFormCard .auth-subtitle');
         pwdG?.classList.add('hidden');
         act?.classList.add('hidden');
         forgotLink?.classList.add('hidden');
-        if (nameG) nameG.style.display = 'none';
         panel?.classList.remove('hidden');
         panel?.setAttribute('aria-hidden', 'false');
         if (title) title.textContent = 'Reset password';
@@ -1612,89 +1581,8 @@ function setupAuthListeners() {
         }
     }
 
-    async function doSignUp() {
-        authError.textContent = '';
-        authError.style.color = '';
-        const fullName = clampDisplayName(nameInput?.value || '');
-        if (!fullName) {
-            authError.textContent = 'Please enter your name.';
-            return;
-        }
-        if (nameInput) nameInput.value = fullName;
-        const email = document.getElementById('authEmail').value.trim();
-        const password = document.getElementById('authPassword').value;
-        if (!email || !password) {
-            authError.textContent = 'Please enter email and password.';
-            return;
-        }
-        const btn = signInBtn;
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Signing up…';
-        }
-        try {
-            const { data, error } = await supabase.auth.signUp({
-                email,
-                password,
-                options: { data: { full_name: fullName } },
-            });
-            if (error) {
-                authError.textContent = error.message || 'Sign up failed';
-                return;
-            }
-            let profileWarning = '';
-            if (data.user) {
-                try {
-                    const { error: profileError } = await supabase
-                        .from('profiles')
-                        .upsert(
-                            { id: data.user.id, full_name: fullName, updated_at: new Date().toISOString() },
-                            { onConflict: 'id' },
-                        );
-                    if (profileError) {
-                        console.error('Profile upsert error:', profileError);
-                        profileWarning =
-                            ' Account was created but your display name could not be saved yet. You can set it under Account.';
-                    }
-                } catch (profileErr) {
-                    console.error('Profile upsert exception:', profileErr);
-                    profileWarning =
-                        ' Account was created but your display name could not be saved yet. You can set it under Account.';
-                }
-            }
-            if (data.user && !data.session) {
-                authError.textContent =
-                    ('Check your email to confirm your account.' + profileWarning).trim();
-                authError.style.color = 'var(--success)';
-                return;
-            }
-            if (data.session) {
-                try {
-                    localStorage.setItem('calllog-saved-email', email);
-                } catch (e) {
-                    // Ignore localStorage errors
-                }
-                if (profileWarning) {
-                    showNotification(profileWarning.trim());
-                }
-                await completeAuthenticatedStartup(appShell, authScreen);
-            }
-        } catch (err) {
-            authError.textContent = err?.message || 'Sign up failed. Check your connection.';
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = 'Create account';
-            }
-        }
-    }
-
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (authMode === 'signup') {
-            await doSignUp();
-            return;
-        }
         if (signInBtn) {
             signInBtn.disabled = true;
             const originalText = signInBtn.textContent;
@@ -1709,17 +1597,6 @@ function setupAuthListeners() {
             }
         }
     });
-
-    if (signUpBtn) {
-        signUpBtn.addEventListener('click', () => {
-            if (authMode === 'login') {
-                switchToSignupMode();
-                nameInput?.focus();
-            } else {
-                switchToLoginMode();
-            }
-        });
-    }
 
     document.getElementById('authForgotBtn')?.addEventListener('click', () => {
         enterAuthForgotMode();
@@ -4926,11 +4803,12 @@ function appendAdminUserRows(users) {
             return b;
         };
 
-        tdAct.appendChild(mkBtn(u.is_admin ? 'Remove admin' : 'Make admin', 'toggleAdmin', ''));
-        tdAct.appendChild(document.createTextNode(' '));
-        tdAct.appendChild(mkBtn(u.banned ? 'Enable' : 'Disable', 'toggleBan', ''));
-        tdAct.appendChild(document.createTextNode(' '));
-        tdAct.appendChild(mkBtn('Delete', 'deleteUser', 'btn-danger-outline'));
+        const actionsInner = document.createElement('div');
+        actionsInner.className = 'account-actions-inner';
+        actionsInner.appendChild(mkBtn(u.is_admin ? 'Remove admin' : 'Make admin', 'toggleAdmin', ''));
+        actionsInner.appendChild(mkBtn(u.banned ? 'Enable' : 'Disable', 'toggleBan', ''));
+        actionsInner.appendChild(mkBtn('Delete', 'deleteUser', 'btn-danger-outline'));
+        tdAct.appendChild(actionsInner);
 
         tr.appendChild(tdEmail);
         tr.appendChild(tdName);
@@ -5188,10 +5066,8 @@ async function handleAdminInviteSubmit(e) {
     e.preventDefault();
     const errEl = document.getElementById('adminInviteError');
     const emailEl = document.getElementById('adminInviteEmail');
-    const redirEl = document.getElementById('adminInviteRedirect');
     const btn = document.getElementById('adminInviteSubmit');
     const email = (emailEl?.value || '').trim().toLowerCase();
-    const redirectTo = (redirEl?.value || '').trim();
     if (errEl) errEl.textContent = '';
     if (!email) {
         if (errEl) errEl.textContent = 'Enter an email address.';
@@ -5206,10 +5082,8 @@ async function handleAdminInviteSubmit(e) {
         await invokeAccountAdmin({
             action: 'invite',
             email,
-            redirectTo: redirectTo || undefined,
         });
         if (emailEl) emailEl.value = '';
-        if (redirEl) redirEl.value = '';
         showNotification('Invite sent.');
         await fetchAdminDirectory(true);
         accountAdminLoadedOnce = true;

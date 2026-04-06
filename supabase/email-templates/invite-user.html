@@ -1,0 +1,45 @@
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0;padding:0;background-color:#f6f7fb;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:560px;background-color:#ffffff;border-radius:12px;border:1px solid rgba(11,18,36,0.10);overflow:hidden;">
+        <tr>
+          <td bgcolor="#ffffff" style="padding:28px 28px 8px 28px;background-color:#ffffff;border-bottom:1px solid rgba(11,18,36,0.08);">
+            <p style="margin:0 0 4px 0;font-size:13px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#3557d6;">Call Log</p>
+            <h1 style="margin:0;font-size:22px;line-height:1.25;font-weight:700;color:#0b1224;">You have been invited</h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 28px 0 28px;">
+            <p style="margin:0 0 16px 0;font-size:15px;line-height:1.55;color:#44526b;">Hello,</p>
+            <p style="margin:0 0 16px 0;font-size:15px;line-height:1.55;color:#44526b;">You have been invited to create an account for <strong style="color:#0b1224;">Call Log</strong>, the team workspace for logging and reviewing support calls. Use the button below to accept your invitation and finish setting up access.</p>
+            <p style="margin:0 0 20px 0;font-size:14px;line-height:1.5;color:#64748b;">This message was sent to <span style="color:#0b1224;word-break:break-all;">{{ .Email }}</span>.</p>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:8px 28px 8px 28px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" bgcolor="#3557d6" style="border-radius:10px;">
+                  <a href="{{ .ConfirmationURL }}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px;">Accept invitation</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 28px 24px 28px;">
+            <p style="margin:0 0 8px 0;font-size:13px;line-height:1.5;color:#64748b;">If the button does not work, copy and paste this link into your browser:</p>
+            <p style="margin:0;font-size:12px;line-height:1.45;color:#3557d6;word-break:break-all;">{{ .ConfirmationURL }}</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:0 28px 28px 28px;border-top:1px solid rgba(11,18,36,0.08);">
+            <p style="margin:20px 0 8px 0;font-size:12px;line-height:1.5;color:#64748b;">If you were not expecting this email, you can ignore it. The invitation link will stop working once it expires or has been used.</p>
+            <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">Sent from {{ .SiteURL }}</p>
+          </td>
+        </tr>
+      </table>
+      <p style="margin:20px 0 0 0;font-size:11px;line-height:1.4;color:#94a3b8;max-width:560px;">Call Log helps teams capture call details, search history, and stay aligned. Questions? Contact the person who invited you.</p>
+    </td>
+  </tr>
+</table>

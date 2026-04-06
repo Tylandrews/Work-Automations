@@ -54,17 +54,13 @@
                 <section class="auth-card" id="authFormCard" aria-label="Account access" aria-hidden="true">
                     <div class="auth-card-header">
                         <h1 class="auth-title" data-testid="auth-title">Sign in</h1>
-                        <p class="auth-subtitle">Use your work email to continue.</p>
+                        <p class="auth-subtitle">Sign in with the account an administrator invited. New users receive an email invite.</p>
                     </div>
 
                     <div id="authError" class="auth-error" role="alert" aria-live="polite"></div>
 
                     <form id="authForm" class="auth-form">
                         <div id="authMainFields">
-                            <div class="form-group auth-signup-only" id="authNameGroup" style="display: none;">
-                                <label for="authName">Name</label>
-                                <input type="text" id="authName" name="name" autocomplete="name" maxlength="120" placeholder="Your name">
-                            </div>
                             <div class="form-group">
                                 <label for="authEmail">Email</label>
                                 <input type="email" id="authEmail" name="email" autocomplete="email" required placeholder="you@example.com">
@@ -78,7 +74,6 @@
                             </p>
                             <div class="auth-actions" id="authPrimaryActions">
                                 <button type="submit" class="btn btn-primary" id="authSignInBtn">Log in</button>
-                                <button type="button" class="btn btn-secondary" id="authSignUpBtn">Sign up</button>
                             </div>
                         </div>
                         <div id="authForgotPanel" class="auth-forgot-panel hidden" role="region" aria-label="Password reset" aria-hidden="true">
@@ -367,7 +362,9 @@
                     <h3 class="account-card-title">Sessions</h3>
                     <p class="profile-hint">Sign out of Call Log on all devices where you are logged in.</p>
                     <div id="securitySignOutEverywhereError" class="auth-error" role="alert" aria-live="polite"></div>
-                    <button type="button" class="btn btn-secondary" id="securitySignOutEverywhereBtn">Sign out everywhere</button>
+                    <div class="account-form-actions">
+                        <button type="button" class="btn btn-secondary" id="securitySignOutEverywhereBtn">Sign out everywhere</button>
+                    </div>
                 </div>
             </div>
 
@@ -375,23 +372,19 @@
                 <div class="account-card">
                     <h3 class="account-card-title">Invite user</h3>
                     <div id="adminInviteError" class="auth-error" role="alert" aria-live="polite"></div>
-                    <form id="adminInviteForm" class="admin-invite-row">
+                    <form id="adminInviteForm" class="admin-invite-form">
                         <div class="form-group admin-invite-email">
                             <label for="adminInviteEmail">Email</label>
                             <input type="email" id="adminInviteEmail" name="email" autocomplete="off" placeholder="colleague@example.com">
                         </div>
-                        <div class="form-group admin-invite-redirect">
-                            <label for="adminInviteRedirect">Redirect URL (optional)</label>
-                            <input type="url" id="adminInviteRedirect" name="redirectTo" autocomplete="off" placeholder="https://…">
-                        </div>
-                        <div class="account-form-actions admin-invite-actions">
+                        <div class="admin-invite-submit-row">
                             <button type="submit" class="btn btn-primary" id="adminInviteSubmit">Send invite</button>
                         </div>
                     </form>
                 </div>
                 <div class="account-card account-card--spaced">
-                    <div class="account-admin-toolbar">
-                        <h3 class="account-card-title">Users</h3>
+                    <h3 class="account-card-title account-admin-users-title">Users</h3>
+                    <div class="account-admin-users-toolbar">
                         <button type="button" class="btn btn-secondary btn-sm" id="adminUsersRefreshBtn">Refresh</button>
                     </div>
                     <div id="adminUsersError" class="auth-error" role="alert" aria-live="polite"></div>

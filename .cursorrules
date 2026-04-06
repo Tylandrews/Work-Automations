@@ -1,0 +1,37 @@
+# Call Log — Cursor project context
+
+This repository is the **Call Log** Electron desktop app (vanilla HTML/CSS/JS). Primary UI styling lives in `styles.css` using CSS custom properties (`:root` and `[data-theme="dark"]`), not Tailwind. Prefer extending existing tokens and patterns over introducing parallel styling systems unless the task explicitly requires it.
+
+## Design Context
+
+### Users
+
+- **Primary:** Help-desk and IT support agents and technicians who need a dedicated desktop tool to log telephone interactions quickly and consistently, then review or correct history by day.
+- **Secondary:** Team leads who rely on reporting snapshots and aggregates (downstream of the same data).
+- **Context of use:** Running in an Electron window during live support work; users are often task-switching and need predictable layouts, fast forms, and clear feedback that data was saved or why it failed. Network-dependent features (Supabase) should degrade with explicit messaging, not ambiguous empty states.
+
+### Brand Personality
+
+- **Organization:** BigFish Technology — product surfaces use the BigFish mark and “Call Log” naming; auth and shell copy can be direct and slightly characterful without sacrificing clarity.
+- **Three words:** Utilitarian, refined, trustworthy.
+- **Emotional goals:** Calm confidence and efficiency — the interface should feel like a serious tool that stays out of the way, with enough polish that daily use feels intentional rather than temporary.
+
+### Aesthetic Direction
+
+- **Visual tone:** “Utilitarian Pro” — crisp neutrals, a single decisive blue accent family, restrained saturation, clear hierarchy, rounded corners at `--radius-*` scale, subtle depth via borders and soft shadows — not loud marketing chrome.
+- **Environment:** Very subtle layered background (radial tints, optional low-opacity water canvas, fine grain). Decorative layers stay secondary to content; they should never compete with readability or scan speed.
+- **Theme:** Support both light and dark themes using existing `data-theme` patterns; the shipped default in markup may favor dark — preserve user theme choice behavior when extending UI.
+- **Explicit anti-patterns:** Avoid neon palettes, heavy glassmorphism, and gratuitous motion. Honor `prefers-reduced-motion` for animations and transitions.
+- **References:** Treat the current Call Log shell, auth, and form patterns as the reference implementation unless a task explicitly rebrands.
+
+### Design Principles
+
+1. **Capture and recall first.** Every new UI choice should make logging faster or history easier to find, parse, and edit — or it needs a strong justification.
+2. **Clarity over ornament.** Use the established token palette and typography; reach for accent color and weight for hierarchy instead of decorative effects.
+3. **Honest system states.** Loading, empty, error, offline, and permission-denied states should read plainly and suggest the next step.
+4. **Accessible by default.** Keyboard operability, visible focus, meaningful labels, and non-color-only status cues; respect reduced motion. Target sensible defaults aligned with current code — do not regress these patterns.
+5. **Extend tokens, don’t fork them.** New colors, radii, and motion curves should map to or extend `styles.css` variables and existing component classes for visual consistency across the app.
+
+---
+
+_Setup: teach-impeccable one-time design context (April 2026). Update this section when brand or audience materially changes._

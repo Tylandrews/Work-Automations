@@ -242,7 +242,7 @@ textarea {
     border: 0 !important;
 }
 
-/* Auth screen (login/signup) */
+/* Auth screen (sign-in) */
 .auth-screen {
     position: fixed;
     inset: 0;
@@ -2247,12 +2247,24 @@ body[data-shell="admin-statistics"] .app-shell {
     height: 0;
 }
 
-/* Account page */
+/* Account page — shared inset so headers/tabs line up with card inner content */
+.account-page,
+.stats-page {
+    --account-card-inline-pad: 22px;
+}
+
 .account-page {
     max-width: 880px;
     margin: 0 auto;
     padding: 20px 24px 32px;
     width: 100%;
+}
+
+.account-page > .account-page-header,
+.account-page > .account-tabs,
+.stats-page > .account-page-header,
+.stats-page > .account-tabs {
+    padding-inline: var(--account-card-inline-pad);
 }
 
 .account-page-header {
@@ -2331,8 +2343,17 @@ body[data-shell="admin-statistics"] .app-shell {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 20px 22px;
+    padding: 20px var(--account-card-inline-pad, 22px);
     box-shadow: 0 1px 2px var(--shadow);
+}
+
+/* Consistent field rhythm on Account tabs only (stats filters use .stats-filter-field margins) */
+.account-panel .account-card .form-group {
+    margin-bottom: 16px;
+}
+
+.account-panel .account-card .admin-invite-form .form-group {
+    margin-bottom: 0;
 }
 
 .account-card--spaced {
@@ -2392,45 +2413,42 @@ body[data-shell="admin-statistics"] .app-shell {
     gap: 10px;
 }
 
-.admin-invite-row {
+/* Full-width field, then right-aligned primary — same edge as Users / Refresh / table */
+.admin-invite-form {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 16px;
-    align-items: flex-end;
+    width: 100%;
 }
 
 .admin-invite-email {
-    flex: 1 1 220px;
     min-width: 0;
 }
 
-.admin-invite-redirect {
-    flex: 1 1 260px;
-    min-width: 0;
-}
-
-.admin-invite-actions {
-    flex: 0 0 auto;
-    margin-top: 0;
-}
-
-.account-admin-toolbar {
+.admin-invite-submit-row {
     display: flex;
-    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
 }
 
-.account-admin-toolbar .account-card-title {
-    margin: 0;
+/* Avoid global .btn-primary { flex: 1 } stretching in this row */
+.admin-invite-submit-row .btn {
+    flex: 0 0 auto;
+}
+
+.account-admin-users-title {
+    margin-bottom: 6px;
+}
+
+.account-admin-users-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
 }
 
 .account-table-wrap {
     overflow-x: auto;
-    margin: 0 -6px;
-    padding: 0 6px;
+    width: 100%;
     -webkit-overflow-scrolling: touch;
 }
 
@@ -2459,12 +2477,31 @@ body[data-shell="admin-statistics"] .app-shell {
 }
 
 .account-actions-cell {
+    vertical-align: top;
+    width: 1%;
+    min-width: 10.5rem;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+.account-actions-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.account-actions-inner .btn-sm {
+    flex: 0 0 auto;
+    width: 100%;
+    box-sizing: border-box;
     white-space: normal;
-    min-width: 200px;
+    text-align: center;
+    line-height: 1.25;
 }
 
 .admin-row-action {
-    margin: 2px 4px 2px 0;
+    margin: 0;
 }
 
 .btn-sm {
