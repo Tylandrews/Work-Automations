@@ -1,3 +1,15 @@
 {
-  "releases": []
+  "releases": [
+    {
+      "version": "3.4.11",
+      "date": "2026-04-06",
+      "sections": {
+        "Added": [],
+        "Fixed": [],
+        "Changed": [],
+        "Maintenance": [],
+        "Other": []
+      }
+    }
+  ]
 }
