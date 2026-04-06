@@ -2399,6 +2399,64 @@ body[data-shell="admin-statistics"] .app-shell {
     gap: 10px;
 }
 
+.account-changelog-hint {
+    margin-top: 0;
+    margin-bottom: 12px;
+}
+
+.account-changelog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-height: min(52vh, 420px);
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+}
+
+.account-changelog-release {
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-primary) 88%, var(--bg-secondary));
+}
+
+.account-changelog-version {
+    margin: 0 0 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.02em;
+}
+
+.account-changelog-date {
+    font-weight: 500;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+}
+
+.account-changelog-section-title {
+    margin: 10px 0 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--primary);
+}
+
+.account-changelog-list {
+    margin: 0;
+    padding-left: 1.15rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.account-changelog-list li {
+    margin-bottom: 4px;
+}
+
 .account-card-title {
     font-size: 1.05rem;
     font-weight: 600;

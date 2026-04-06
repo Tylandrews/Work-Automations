@@ -17,3 +17,6 @@ testsprite_tests/
 e2e/__pycache__/
 **/__pycache__/
 *.pyc
+
+# CI: generated GitHub Release body (CHANGELOG.md and changelog-bundled.json are committed separately)
+release-notes.md

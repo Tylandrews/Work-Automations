@@ -86,6 +86,7 @@ let accountUpdaterUnsubscribe = null
 let accountUpdaterListenersBound = false
 let accountUpdaterToastVersion = null
 let accountUpdaterToastDownloadedVersion = null
+let accountChangelogLoadPromise = null
 
 function setAppView(view) {
     const main = document.getElementById('mainWorkspace');
@@ -3805,6 +3806,92 @@ async function runReportsNow() {
     }
 }
 
+// ---------- Account page: bundled release notes (changelog-bundled.json) ----------
+async function loadAccountChangelog() {
+    const card = document.getElementById('accountChangelogCard')
+    if (!card) return
+
+    if (accountChangelogLoadPromise) {
+        await accountChangelogLoadPromise.catch(() => {})
+        return
+    }
+
+    accountChangelogLoadPromise = (async () => {
+        const mount = document.getElementById('accountChangelogBody')
+        const hint = document.getElementById('accountChangelogHint')
+        if (!mount || !hint) return
+        try {
+            const res = await fetch('changelog-bundled.json', { cache: 'no-store' })
+            if (!res.ok) {
+                card.classList.add('hidden')
+                return
+            }
+            const data = await res.json()
+            const releases = Array.isArray(data?.releases) ? data.releases : []
+            renderAccountChangelogIntoPanel(releases)
+        } catch (err) {
+            console.error('loadAccountChangelog:', err)
+            card.classList.add('hidden')
+        }
+    })()
+
+    await accountChangelogLoadPromise
+}
+
+function renderAccountChangelogIntoPanel(releases) {
+    const card = document.getElementById('accountChangelogCard')
+    const mount = document.getElementById('accountChangelogBody')
+    const hint = document.getElementById('accountChangelogHint')
+    if (!card || !mount || !hint) return
+
+    if (!releases.length) {
+        hint.textContent =
+            'Notes for each release are added automatically on publish. This build has no bundled entries yet—see CHANGELOG.md in the repository if you need history.'
+        mount.innerHTML = ''
+        card.classList.remove('hidden')
+        return
+    }
+
+    hint.textContent = 'What shipped in recent versions—aligned with the GitHub release pipeline.'
+
+    const maxReleases = 8
+    const slice = releases.slice(0, maxReleases)
+    const parts = []
+    for (const rel of slice) {
+        const ver = String(rel?.version || '').trim() || '0.0.0'
+        const date = String(rel?.date || '').trim()
+        parts.push(`<article class="account-changelog-release" aria-label="Version ${escapeHtml(ver)}">`)
+        parts.push('<h4 class="account-changelog-version">')
+        parts.push(`v${escapeHtml(ver)}`)
+        if (date) {
+            parts.push(` <span class="account-changelog-date">${escapeHtml(date)}</span>`)
+        }
+        parts.push('</h4>')
+        const sec = rel?.sections && typeof rel.sections === 'object' ? rel.sections : {}
+        const order = ['Added', 'Fixed', 'Changed', 'Maintenance', 'Other']
+        let anySection = false
+        for (const title of order) {
+            const items = sec[title]
+            if (!Array.isArray(items) || !items.length) continue
+            anySection = true
+            parts.push(`<p class="account-changelog-section-title">${escapeHtml(title)}</p>`)
+            parts.push('<ul class="account-changelog-list">')
+            for (const t of items) {
+                const line = String(t || '').trim()
+                if (!line) continue
+                parts.push(`<li>${escapeHtml(line)}</li>`)
+            }
+            parts.push('</ul>')
+        }
+        if (!anySection) {
+            parts.push('<p class="profile-hint">See commit history for details.</p>')
+        }
+        parts.push('</article>')
+    }
+    mount.innerHTML = parts.join('')
+    card.classList.remove('hidden')
+}
+
 // ---------- Account page: in-app updater (Electron, Windows NSIS) ----------
 function formatUpdaterBytes(n) {
     if (n == null || typeof n !== 'number' || n < 0) return ''
@@ -4061,7 +4148,8 @@ function selectAccountTab(tabId) {
         }
     }
     if (tabId === 'updates') {
-        window.electronAPI?.updater?.getState().then(renderAccountUpdater).catch(() => {});
+        window.electronAPI?.updater?.getState().then(renderAccountUpdater).catch(() => {})
+        loadAccountChangelog().catch(() => {})
     }
     if (tabId === 'admin' && currentUserProfile?.is_admin) {
         if (!accountAdminLoadedOnce) {

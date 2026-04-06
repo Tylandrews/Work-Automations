@@ -26,6 +26,7 @@
     "test:e2e:ci:firefox": "py -3.10 e2e/run_like_github_ci.py --browser firefox",
     "test:e2e:report": "py -3.10 e2e/run_playwright_report.py",
     "test:unit": "node --test test",
+    "changelog:release": "node scripts/generate-release-changelog.js",
     "admin:live-dashboard": "node scripts/admin-live-dashboard.mjs"
   },
   "keywords": [

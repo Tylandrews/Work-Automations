@@ -50,6 +50,10 @@ jobs:
         shell: bash
         run: node scripts/validate-release-version.js "${{ steps.ref.outputs.release_tag }}"
 
+      - name: Generate changelog and release notes from git
+        shell: bash
+        run: node scripts/generate-release-changelog.js "${{ steps.ref.outputs.release_tag }}"
+
       - name: Create supabaseConfig.js from secrets
         shell: pwsh
         env:
@@ -73,8 +77,27 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ref.outputs.release_tag }}
-          generate_release_notes: true
+          generate_release_notes: false
+          body_path: release-notes.md
           files: |
             dist/*.exe
             dist/*.blockmap
             dist/latest*.yml
+
+      - name: Commit changelog to main
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.ref.outputs.release_tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -f -B main origin/main
+          node scripts/generate-release-changelog.js "$RELEASE_TAG"
+          if git diff --quiet CHANGELOG.md changelog-bundled.json; then
+            echo "No changelog updates to commit."
+            exit 0
+          fi
+          git add CHANGELOG.md changelog-bundled.json
+          git commit -m "chore: update changelog for ${RELEASE_TAG}"
+          git push origin main

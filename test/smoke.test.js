@@ -66,11 +66,14 @@ describe('repository layout', () => {
         assertFile('index.html')
         assertFile('notification.html')
         assertFile('script.js')
+        assertFile('CHANGELOG.md')
+        assertFile('changelog-bundled.json')
     })
 
     test('build and release scripts exist', () => {
         assertFile('scripts/validate-config.js')
         assertFile('scripts/validate-release-version.js')
+        assertFile('scripts/generate-release-changelog.js')
         assertFile('scripts/clean-dist.js')
         assertFile('scripts/build-icon.js')
     })
@@ -98,7 +101,8 @@ describe('syntax (node --check)', () => {
         'scripts/build-icon.js',
         'scripts/clean-dist.js',
         'scripts/validate-config.js',
-        'scripts/validate-release-version.js'
+        'scripts/validate-release-version.js',
+        'scripts/generate-release-changelog.js'
     ]
 
     for (const rel of checked) {

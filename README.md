@@ -87,7 +87,7 @@ Configure `e2e/.env` from `e2e/.env.example` for local credentials.
 This repository uses GitHub Actions for validation and release automation.
 
 - [`.github/workflows/validate.yml`](.github/workflows/validate.yml) validates JavaScript syntax, runs `npm run test:unit`, and builds icon assets on pull requests and pushes to `main` / `release/**`
-- [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml) builds and publishes Windows release assets when a tag in the format `vX.Y.Z` is pushed
+- [`.github/workflows/release-electron.yml`](.github/workflows/release-electron.yml) builds and publishes Windows release assets when a tag in the format `vX.Y.Z` is pushed. It generates `release-notes.md` from commits since the previous semver tag, publishes that as the GitHub Release body, prepends the same summary to [`CHANGELOG.md`](CHANGELOG.md), refreshes [`changelog-bundled.json`](changelog-bundled.json) for the in-app **Account → Updates → Release notes** panel, then pushes those two tracked files to `main` (requires that branch to accept pushes from GitHub Actions)
 - [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml) deploys the committed [`Website/`](Website/) folder to GitHub Pages (no Playwright on Actions)
 
 #### Release policy (version and tag alignment)
