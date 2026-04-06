@@ -301,7 +301,7 @@
             <header class="account-page-header">
                 <div class="account-page-header-text">
                     <h2 class="account-page-title" id="accountPageHeading">Account</h2>
-                    <p class="account-page-lead">Profile, app updates, security, and user management.</p>
+                    <p class="account-page-lead">Profile, app updates, feedback, security, and user management.</p>
                 </div>
             </header>
 
@@ -349,6 +349,29 @@
                         <button type="button" class="btn btn-primary" id="accountUpdateDownloadBtn" style="display: none;">Download update</button>
                         <button type="button" class="btn btn-primary" id="accountUpdateInstallBtn" style="display: none;">Install and restart</button>
                     </div>
+                </div>
+                <div id="accountFeedbackCard" class="account-card account-card--spaced">
+                    <h3 class="account-card-title">Feature requests and feedback</h3>
+                    <p class="profile-hint">Suggest an improvement, report a problem, or share what would help your workflow. Submissions are tied to your signed-in account.</p>
+                    <div id="feedbackError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <form id="feedbackForm">
+                        <div class="form-group">
+                            <label for="feedbackCategory">Type</label>
+                            <select id="feedbackCategory" name="category">
+                                <option value="feature">Feature request</option>
+                                <option value="improvement">Improvement idea</option>
+                                <option value="bug">Bug report</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="feedbackMessage">Details</label>
+                            <textarea id="feedbackMessage" name="message" rows="5" required maxlength="8000" placeholder="Describe what you would like or what went wrong…" autocomplete="off"></textarea>
+                        </div>
+                        <div class="account-form-actions">
+                            <button type="submit" class="btn btn-primary" id="feedbackSubmitBtn">Send feedback</button>
+                        </div>
+                    </form>
                 </div>
                 <div id="accountChangelogCard" class="account-card account-card--spaced hidden" role="region" aria-label="Release notes">
                     <h3 class="account-card-title">Release notes</h3>

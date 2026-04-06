@@ -4652,6 +4652,8 @@ function openAccountPage() {
     document.getElementById('securitySignOutEverywhereError').textContent = '';
     document.getElementById('adminInviteError').textContent = '';
     document.getElementById('adminUsersError').textContent = '';
+    const feedbackErr = document.getElementById('feedbackError');
+    if (feedbackErr) feedbackErr.textContent = '';
     const np = document.getElementById('securityNewPassword');
     const cp = document.getElementById('securityConfirmPassword');
     if (np) np.value = '';
@@ -5518,6 +5520,7 @@ function setupAccountPageListeners() {
     document.getElementById('accountTabAdmin')?.addEventListener('click', () => selectAccountTab('admin'));
 
     document.getElementById('profileForm')?.addEventListener('submit', handleProfileSubmit);
+    document.getElementById('feedbackForm')?.addEventListener('submit', handleFeedbackSubmit);
     document.getElementById('securityPasswordForm')?.addEventListener('submit', handleSecurityPasswordSubmit);
     document.getElementById('securitySignOutEverywhereBtn')?.addEventListener('click', handleSecuritySignOutEverywhere);
     document.getElementById('adminInviteForm')?.addEventListener('submit', handleAdminInviteSubmit);
@@ -5605,6 +5608,79 @@ async function handleProfileSubmit(e) {
         if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.textContent = originalText || 'Save profile';
+        }
+    }
+}
+
+const FEEDBACK_ALLOWED_CATEGORIES = new Set(['feature', 'improvement', 'bug', 'other']);
+
+const getFeedbackAppVersionForPayload = () => {
+    const raw = String(document.getElementById('appVersion')?.textContent || '').trim();
+    const stripped = raw.replace(/^v/i, '').trim();
+    return stripped.length ? stripped : null;
+};
+
+async function handleFeedbackSubmit(e) {
+    e.preventDefault();
+    if (!useSupabase()) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const errEl = document.getElementById('feedbackError');
+    const categoryEl = document.getElementById('feedbackCategory');
+    const messageEl = document.getElementById('feedbackMessage');
+    const btn = document.getElementById('feedbackSubmitBtn');
+    if (errEl) errEl.textContent = '';
+    const rawCategory = (categoryEl?.value || '').trim();
+    const category = FEEDBACK_ALLOWED_CATEGORIES.has(rawCategory) ? rawCategory : 'other';
+    const message = (messageEl?.value || '').trim();
+    if (!message) {
+        if (errEl) errEl.textContent = 'Please add a short description.';
+        messageEl?.focus();
+        return;
+    }
+    if (message.length > 8000) {
+        if (errEl) errEl.textContent = 'Please keep your message under 8000 characters.';
+        messageEl?.focus();
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        if (errEl) errEl.textContent = 'Session expired. Please sign in again.';
+        return;
+    }
+    const originalText = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+    }
+    try {
+        const { error } = await supabase.from('app_feedback').insert({
+            user_id: session.user.id,
+            category,
+            message,
+            app_version: getFeedbackAppVersionForPayload(),
+        });
+        if (error) {
+            const msg = String(error.message || error.details || '');
+            const missingTable =
+                msg.includes('app_feedback') &&
+                (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('Could not find'));
+            if (errEl) {
+                errEl.textContent = missingTable
+                    ? 'Feedback storage is not set up on this project yet. Ask an administrator to apply migration 011_app_feedback.sql.'
+                    : msg || 'Could not send feedback.';
+            }
+            return;
+        }
+        if (messageEl) messageEl.value = '';
+        if (categoryEl) categoryEl.value = 'feature';
+        showNotification('Thanks — your feedback was sent.');
+    } catch (err) {
+        if (errEl) errEl.textContent = err?.message || 'Could not send feedback.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText || 'Send feedback';
         }
     }
 }
