@@ -281,19 +281,6 @@
         height: auto;
       }
 
-      .shot__placeholder {
-        min-height: clamp(12rem, 42vw, 28rem);
-        background: linear-gradient(145deg, #1e293b 0%, #0f172a 50%, #172554 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 2rem;
-        text-align: center;
-        font-size: 0.9375rem;
-        color: rgba(255, 255, 255, 0.72);
-        line-height: 1.5;
-      }
-
       .shot figcaption {
         padding: 0.75rem 1rem;
         font-family: "Haffer Mono", ui-monospace, monospace;
@@ -305,79 +292,45 @@
         background: #0b0e14;
       }
 
-      .feature-surface {
-        margin: 2.5rem 0 0;
-        padding: 1.5rem 0 0;
-        border-top: 1px solid var(--border);
-      }
-
-      .feature-surface .eyebrow {
-        margin: 0 0 1rem;
-      }
-
-      .chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.45rem;
-        margin: 0 0 1.75rem;
-        list-style: none;
-        padding: 0;
-      }
-
-      .chips li {
-        margin: 0;
-      }
-
-      .chip {
-        display: inline-block;
-        padding: 0.35rem 0.75rem;
-        font-family: "Haffer Mono", ui-monospace, monospace;
-        font-size: 0.625rem;
-        font-weight: 500;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--ink-muted);
-        background: rgba(255, 255, 255, 0.65);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-pill);
-      }
-
-      .pillars {
+      .grid {
         display: grid;
-        gap: 1.25rem;
-        grid-template-columns: 1fr;
+        gap: 1rem;
+        margin: 2rem 0;
       }
 
-      @media (min-width: 720px) {
-        .pillars {
-          grid-template-columns: repeat(3, 1fr);
-          gap: 1.5rem;
+      @media (min-width: 640px) {
+        .grid {
+          grid-template-columns: repeat(2, 1fr);
         }
       }
 
-      .pillar {
-        padding: 0;
-        border: none;
-        background: transparent;
+      .card {
+        padding: 1.35rem 1.4rem;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset;
       }
 
-      .pillar h3 {
+      .card h3 {
         margin: 0 0 0.5rem;
-        font-size: 1.0625rem;
-        font-weight: 600;
-        letter-spacing: -0.02em;
-        color: var(--ink);
+        font-family: "Haffer Mono", ui-monospace, monospace;
+        font-size: 0.6875rem;
+        font-weight: 500;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-muted);
       }
 
-      .pillar p {
+      .card p {
         margin: 0;
-        font-size: 0.875rem;
-        color: var(--ink-muted);
-        line-height: 1.5;
+        font-size: 0.9375rem;
+        color: var(--ink);
+        line-height: 1.55;
       }
 
       .quality {
-        margin: 2.25rem 0 1.5rem;
+        margin: 2.75rem 0 2rem;
         padding: 1.75rem 1.5rem;
         background: #fff;
         border: 1px solid var(--border);
@@ -511,18 +464,18 @@
       }
 
       footer {
-        margin-top: 2.25rem;
-        padding-top: 1.25rem;
+        margin-top: 3rem;
+        padding-top: 1.75rem;
         border-top: 1px solid var(--border);
         font-family: "Haffer Mono", ui-monospace, monospace;
-        font-size: 0.625rem;
-        letter-spacing: 0.06em;
+        font-size: 0.6875rem;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
         color: var(--ink-muted);
         display: flex;
         flex-wrap: wrap;
-        gap: 0.5rem 1rem;
-        justify-content: flex-start;
+        gap: 0.75rem 1.5rem;
+        justify-content: space-between;
         align-items: center;
       }
 
@@ -532,11 +485,6 @@
 
       footer a:hover {
         color: var(--electric);
-      }
-
-      footer .sep {
-        opacity: 0.45;
-        user-select: none;
       }
     </style>
   </head>
@@ -571,7 +519,7 @@
             <h2 id="title-b">Support calls, logged clearly</h2>
           </div>
           <p class="lead">
-            Desktop app for the phone queue: log a call, skim today’s list, search the day, and keep one shared timeline with your team—without the spreadsheet chaos.
+            An Electron desktop app built for help-desk and phone support: log a call in <strong>New Call</strong>, then review and search the same day’s entries in <strong>Call History</strong>. You sign in with your work email; calls are stored in <strong>Supabase</strong> so your team shares one timeline. Browse by day (including a calendar picker), run in-app <strong>statistics</strong>, open <strong>reports</strong> when your project has reporting enabled, and get <strong>desktop notifications</strong> when teammates log calls.
           </p>
           <div class="actions">
             <a class="btn btn-primary" href="https://github.com/Tylandrews/Work-Automations/releases/latest">
@@ -582,44 +530,73 @@
         </section>
 
         <figure class="shot">
-          <div class="shot__placeholder" role="img" aria-label="Call Log application showing New Call form and Call History">
-            Install from Releases to see the live UI—form, history, search, and stats in one window.
-          </div>
-          <figcaption>New Call and Call History—same day, searchable</figcaption>
+          <img
+            src="assets/call-log-desktop-screenshot.png"
+            alt="Call Log desktop app showing the New Call form on the left and Call History with day navigation and search on the right"
+            width="1024"
+            height="927"
+            loading="lazy"
+            decoding="async"
+          />
+          <figcaption>New Call (left) and Call History (right)—day controls, search, stats, and reports</figcaption>
         </figure>
 
-        <section class="feature-surface" aria-label="Product capabilities">
-          <p class="eyebrow">What you get</p>
-          <ul class="chips">
-            <li><span class="chip">New call form</span></li>
-            <li><span class="chip">Day-by-day history</span></li>
-            <li><span class="chip">In-day search</span></li>
-            <li><span class="chip">Stats</span></li>
-            <li><span class="chip">Reports</span></li>
-            <li><span class="chip">Supabase sync</span></li>
-            <li><span class="chip">Realtime + tray alerts</span></li>
-            <li><span class="chip">Dark mode</span></li>
-            <li><span class="chip">Electron · Windows</span></li>
-          </ul>
-          <div class="pillars">
-            <div class="pillar">
-              <h3>Log it once</h3>
-              <p>Caller, org, phone, request—plus optional device and ticket when it matters.</p>
-            </div>
-            <div class="pillar">
-              <h3>Own the day</h3>
-              <p>Flip days, search the list, edit or remove entries when someone miskeys a line.</p>
-            </div>
-            <div class="pillar">
-              <h3>Team line of sight</h3>
-              <p>Shared storage and live updates so the queue isn’t a black box.</p>
-            </div>
+        <div class="grid">
+          <div class="card">
+            <h3>New Call form</h3>
+            <p>
+              Required: caller <strong>name</strong>, <strong>organization</strong>, <strong>phone</strong>, and <strong>support request</strong>. Optional <strong>device name</strong> and <strong>ticket number</strong> (when the call relates to an existing ticket).
+              <strong>Date and time</strong> default to now; change them if you are logging a past call. Click <strong>Save Call</strong> to write the entry; <strong>Clear</strong> resets the form.
+            </p>
           </div>
-        </section>
+          <div class="card">
+            <h3>Call History</h3>
+            <p>
+              The right panel lists calls for the <strong>selected day</strong>. Use previous/next day, <strong>Today</strong>, or the <strong>calendar</strong> to change the day.
+              <strong>Search</strong> (including Ctrl+F) filters within that day across name, phone, organization, device, request, and ticket number. Entries can be <strong>edited or removed</strong> from the list when you need to correct a log.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Stats and reports</h3>
+            <p>
+              Open <strong>statistics</strong> from the history toolbar for aggregates on your data. The <strong>reports</strong> control appears when Supabase is configured and can surface periodic snapshots if your backend enables reporting (see the repo’s reporting docs).
+            </p>
+          </div>
+          <div class="card">
+            <h3>Sign-in and cloud data</h3>
+            <p>
+              The app expects a <strong>Supabase</strong> project in the build: you <strong>sign in or sign up</strong> with email and password. Calls are stored per account with row-level security; the app does not save calls without a valid configuration and session.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Team realtime</h3>
+            <p>
+              With Supabase <strong>Realtime</strong> enabled on the calls table, the list refreshes when someone else logs a call. You can get <strong>in-app and desktop (tray) notifications</strong> for teammate activity—without notifying you for your own saves.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Organization lookup (optional)</h3>
+            <p>
+              If your Supabase project has the Autotask integration wired up, the organization field can <strong>suggest companies</strong> as you type (authenticated requests via an Edge Function). If that integration is not deployed, you still type organizations manually.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Desktop shell</h3>
+            <p>
+              Runs as a <strong>native Electron</strong> window with a custom title bar, minimize / maximize / close, <strong>dark mode</strong> toggle, account and logout when online, and optional window height fitting to content on first run.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Open source</h3>
+            <p>
+              MIT-licensed. Download installers from <strong>GitHub Releases</strong>, or build from source with Node.js. Developers configure <code style="font-size:0.85em">supabaseConfig.js</code> before packaging; end users receive a build that already includes your project keys.
+            </p>
+          </div>
+        </div>
 
         <section class="quality" aria-labelledby="quality-heading">
-          <p class="eyebrow">CI</p>
-          <h2 id="quality-heading">Playwright on deploy</h2>
+          <p class="eyebrow">Continuous quality</p>
+          <h2 id="quality-heading">Automated checks</h2>
           <div class="quality__layout">
             <div class="quality__ring-wrap">
               <svg
@@ -644,16 +621,18 @@
             </div>
             <div>
               <p class="quality__summary" id="qualitySummary" aria-live="polite">
-                Loading e2e stats…
+                Loading latest results from this deployment…
               </p>
               <p class="quality__meta" id="qualityMeta" aria-live="polite"></p>
               <div class="quality__actions">
                 <a
                   id="qualityRunLink"
                   href="https://github.com/Tylandrews/Work-Automations/actions/workflows/deploy-pages.yml"
-                  >Runs</a
+                  >Workflow runs</a
                 >
-                <a href="https://github.com/Tylandrews/Work-Automations/tree/main/e2e">Tests</a>
+                <a href="https://github.com/Tylandrews/Work-Automations/tree/main/e2e"
+                  >Test suite</a
+                >
               </div>
             </div>
           </div>
@@ -661,11 +640,12 @@
       </main>
 
       <footer>
-        <a href="https://github.com/Tylandrews/Work-Automations/releases/latest">Download</a>
-        <span class="sep" aria-hidden="true">/</span>
-        <a href="https://github.com/Tylandrews/Work-Automations">Repo</a>
-        <span class="sep" aria-hidden="true">/</span>
-        <span>MIT</span>
+        <span>Call Log</span>
+        <span>
+          <a href="https://github.com/Tylandrews/Work-Automations/releases/latest">Latest release</a>
+          ·
+          <a href="https://github.com/Tylandrews/Work-Automations">Source</a>
+        </span>
       </footer>
     </div>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
@@ -882,7 +862,7 @@
 
           if (runLink && data.runUrl) {
             runLink.href = data.runUrl;
-            runLink.textContent = "This run";
+            runLink.textContent = "This run on GitHub";
           }
 
           if (full) {
@@ -897,21 +877,23 @@
             if (titleEl) {
               titleEl.textContent =
                 passed +
-                " / " +
+                " of " +
                 total +
-                " e2e scenarios passed" +
-                (ok ? " on last deploy." : " (" + failed + " failed).");
+                " end-to-end scenarios passed on the last deploy" +
+                (ok ? "." : "; " + failed + " failed.");
             }
             var failHtml =
               failed > 0
                 ? '<p class="quality__fail-line" role="status">' +
                   failed +
-                  " failed—check the workflow run for logs.</p>"
+                  " scenario" +
+                  (failed === 1 ? "" : "s") +
+                  " failed on the last deploy. Open the workflow run for logs.</p>"
                 : "";
             summaryEl.innerHTML =
-              '<span class="quality__counts" id="qPassed">0</span> / <span class="quality__counts">' +
+              '<span class="quality__counts" id="qPassed">0</span> of <span class="quality__counts">' +
               total +
-              "</span> scenarios green on last deploy." +
+              "</span> Playwright scenarios passed on the last Pages deploy." +
               failHtml;
             animateCount(0, passed, 700, function (v) {
               var el = document.getElementById("qPassed");
@@ -930,8 +912,9 @@
             ringPct.textContent = total ? String(total) : "—";
             if (titleEl) {
               titleEl.textContent =
+                "Scenario count only: " +
                 (total || 0) +
-                " scenarios in repo—pass/fail not wired for this deploy.";
+                " Playwright tests are defined (pass/fail not recorded for this deploy).";
             }
             summaryEl.textContent = "";
             var strongEl = document.createElement("strong");
@@ -941,7 +924,7 @@
             var hintEl = document.createElement("p");
             hintEl.className = "quality__inventory-hint";
             hintEl.textContent =
-              "Ring shows scenario count. Run tests locally or refresh e2e-stats.json when TC files change.";
+              "The number in the ring is how many scenarios exist in the repo. Pass/fail is not published from GitHub Actions; run npm run test:e2e or npm run test:e2e:ci locally. Update Website/e2e-stats.json if you add or remove TC*.py files.";
             summaryEl.appendChild(hintEl);
             var m = [];
             if (data.lastRunAt)
@@ -960,7 +943,8 @@
           if (titleEl) {
             titleEl.textContent = "End-to-end test status unavailable.";
           }
-          summaryEl.textContent = "No e2e-stats.json in this deploy.";
+          summaryEl.textContent =
+            "e2e-stats.json was not found. Ensure Website/e2e-stats.json exists in the repo.";
           metaEl.textContent = "";
         }
 
