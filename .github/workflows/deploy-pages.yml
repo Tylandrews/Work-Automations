@@ -1,20 +1,27 @@
 # Deploy the static marketing site in Website/ to GitHub Pages.
-# Repo Settings → Pages → Build and deployment → Source: GitHub Actions
+#
+# We do not use actions/configure-pages: it calls GET /repos/.../pages and fails with 404
+# until a Pages site exists (chicken-and-egg). Static artifact deploy does not need it.
+#
+# "Ensure GitHub Pages site" tries POST build_type=workflow with GITHUB_TOKEN. If that
+# fails, a repo admin must set Settings → Pages → Source → GitHub Actions, then re-run.
+#
+# Playwright E2E is local-only (npm run test:e2e). Website/e2e-stats.json is committed
+# as a static scenario count for the docs site and README badge.
 name: Deploy GitHub Pages
 
 on:
   push:
     branches:
       - main
-    paths:
-      - "Website/**"
-      - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  # Needed to delete duplicate `github-pages` artifacts (upload-artifact finalize retry bug; see actions/upload-pages-artifact#97)
+  actions: write
 
 concurrency:
   group: pages
@@ -28,13 +35,64 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/checkout@v6
+
+      - name: Ensure GitHub Pages site exists (GitHub Actions / workflow)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          gh api "repos/${{ github.repository }}/pages" --silent >/dev/null 2>&1
+          pages_ok=$?
+          set -e
+          if [ "$pages_ok" -eq 0 ]; then
+            echo "GitHub Pages site is already configured."
+            exit 0
+          fi
+          echo "No GitHub Pages site from API (first-time setup). Creating with build_type=workflow..."
+          set +e
+          post_out=$(echo '{"build_type":"workflow"}' | gh api --method POST "repos/${{ github.repository }}/pages" --input - 2>&1)
+          post_ec=$?
+          set -e
+          if [ "$post_ec" -eq 0 ]; then
+            echo "GitHub Pages enabled for GitHub Actions."
+            exit 0
+          fi
+          echo "$post_out"
+          echo "::error::Could not create the GitHub Pages site via API (exit $post_ec). A repository admin should open Settings → Pages → Build and deployment → set Source to GitHub Actions, save, then re-run this workflow."
+          exit 1
+
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4.0.0
         with:
           path: Website
+
+      # deploy-pages requires exactly one artifact named `github-pages`. A known upload-artifact
+      # finalize retry can create two with the same name (issue #97); keep the newest ID.
+      - name: Deduplicate github-pages artifacts (if any)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          json=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts")
+          ids=$(echo "$json" | jq -r '.artifacts[] | select(.name == "github-pages") | .id' | sort -n)
+          if [ -z "$ids" ]; then
+            echo "No github-pages artifacts found."
+            exit 0
+          fi
+          n=$(echo "$ids" | wc -l | tr -d ' ')
+          if [ "$n" -le 1 ]; then
+            echo "Single github-pages artifact (ok)."
+            exit 0
+          fi
+          keep=$(echo "$ids" | tail -n1)
+          echo "Found $n github-pages artifacts; keeping id=$keep, removing older duplicates."
+          echo "$ids" | head -n -1 | while read -r aid; do
+            [ -z "$aid" ] && continue
+            echo "Deleting artifact id=$aid"
+            gh api --method DELETE "repos/${{ github.repository }}/actions/artifacts/${aid}" --silent
+          done
+
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

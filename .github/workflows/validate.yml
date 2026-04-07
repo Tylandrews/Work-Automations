@@ -8,9 +8,6 @@ on:
     branches:
       - main
       - "release/**"
-    paths-ignore:
-      - "Website/**"
-      - ".github/workflows/deploy-pages.yml"
 
 permissions:
   contents: read
@@ -20,16 +17,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 18
           cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Conventional commits (release notes / in-app changelog)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/validate-pr-conventional-commits.js
+
+      - name: Unit tests
+        run: npm run test:unit
 
       - name: Validate JavaScript syntax
         run: |
@@ -40,6 +49,12 @@ jobs:
           node --check scripts/build-icon.js
           node --check scripts/clean-dist.js
           node --check scripts/validate-config.js
+          node --check scripts/generate-nsis-installer-assets.js
+          node --check scripts/commit-conventions.js
+          node --check scripts/validate-pr-conventional-commits.js
 
       - name: Build icon assets
         run: node scripts/build-icon.js
+
+      - name: Generate NSIS installer bitmaps
+        run: node scripts/generate-nsis-installer-assets.js

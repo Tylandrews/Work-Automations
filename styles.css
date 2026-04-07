@@ -146,7 +146,10 @@ body[data-shell="auth"] .water-canvas {
     filter: blur(6px) saturate(var(--water-sat)) contrast(var(--water-contrast));
 }
 
-body[data-shell="app"] .water-canvas {
+body[data-shell="app"] .water-canvas,
+body[data-shell="account"] .water-canvas,
+body[data-shell="statistics"] .water-canvas,
+body[data-shell="admin-statistics"] .water-canvas {
     opacity: 0.18;
     filter: blur(10px) saturate(calc(var(--water-sat) - 0.10)) contrast(calc(var(--water-contrast) - 0.06));
 }
@@ -239,7 +242,7 @@ textarea {
     border: 0 !important;
 }
 
-/* Auth screen (login/signup) */
+/* Auth screen (sign-in) */
 .auth-screen {
     position: fixed;
     inset: 0;
@@ -271,6 +274,11 @@ textarea {
     width: min(520px, 100%);
     position: relative;
     min-height: 420px;
+}
+
+.auth-layout.auth-layout--supabase-missing .auth-brand,
+.auth-layout.auth-layout--supabase-missing #authFormCard {
+    display: none;
 }
 
 .auth-brand {
@@ -502,6 +510,48 @@ textarea {
     flex: 1;
 }
 
+.auth-forgot {
+    margin: -0.15rem 0 0.5rem;
+    text-align: center;
+}
+
+.auth-text-btn {
+    background: none;
+    border: none;
+    padding: 0.35rem 0.25rem;
+    font: inherit;
+    font-size: 0.875rem;
+    color: var(--primary);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.auth-text-btn:hover {
+    color: var(--primary-dark);
+}
+
+.auth-text-btn:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+.auth-forgot-panel {
+    margin-top: 0.25rem;
+}
+
+.auth-forgot-lead {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    margin-bottom: 1rem;
+}
+
+.auth-forgot-actions {
+    margin-top: 0.25rem;
+}
+
 .auth-no-config {
     text-align: center;
     max-width: 320px;
@@ -660,6 +710,13 @@ textarea {
     border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
 }
 
+/* Same slot width as Settings (icon + label) so titlebar does not shift when toggling views */
+.tb-btn--shell-nav {
+    box-sizing: border-box;
+    width: 7.25rem;
+    justify-content: center;
+}
+
 .tb-theme-toggle {
     padding: 0 8px;
     min-width: 36px;
@@ -768,6 +825,203 @@ main .form-container {
     font-weight: 600;
     color: var(--text-primary);
     margin: 0;
+}
+
+.panel-header--tabs {
+    padding: 0 12px;
+    align-items: stretch;
+}
+
+.history-panel-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    width: 100%;
+    border-bottom: 1px solid var(--border);
+    padding: 8px 0 0;
+    margin: 0;
+}
+
+.history-panel-tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.history-panel-tab:hover {
+    color: var(--text-primary);
+    background: var(--hover-bg);
+}
+
+.history-panel-tab[aria-selected="true"] {
+    color: var(--text-primary);
+    box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.app-panel .entries-container--tabs {
+    padding-top: 12px;
+}
+
+.history-tabpanel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    outline: none;
+}
+
+/* Ensure hidden tab panels stay hidden; author `display: flex` can override the default [hidden] behavior */
+.history-tabpanel[hidden] {
+    display: none !important;
+}
+
+.history-tabpanel:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+}
+
+.recent-tickets-hint {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0 0 10px;
+    line-height: 1.45;
+}
+
+.recent-tickets-status {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    min-height: 1.2em;
+}
+
+.recent-tickets-error {
+    margin-bottom: 10px;
+    font-size: 13px;
+}
+
+.recent-tickets-error[hidden] {
+    display: none !important;
+}
+
+.recent-tickets-list {
+    flex: 1 1 0;
+}
+
+.recent-tickets-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    align-items: center;
+    margin: 0 0 10px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.recent-tickets-legend[hidden] {
+    display: none !important;
+}
+
+.recent-tickets-legend__label {
+    margin-right: 4px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.recent-tickets-legend__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--legend-accent, var(--text-secondary)) 14%, var(--bg-primary));
+    color: var(--text-primary);
+}
+
+.recent-tickets-legend__chip::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--legend-accent, var(--text-secondary));
+    flex-shrink: 0;
+}
+
+.recent-tickets-legend__chip--other {
+    --legend-accent: var(--primary);
+}
+
+.recent-ticket-row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    --recent-ticket-accent: transparent;
+}
+
+.recent-ticket-row--matched {
+    border-left: 3px solid var(--recent-ticket-accent, var(--primary));
+    padding-left: 10px;
+    background: color-mix(in srgb, var(--recent-ticket-accent, var(--primary)) 8%, var(--bg-primary));
+}
+
+.recent-ticket-row--other {
+    border-left: 3px solid var(--primary);
+    padding-left: 10px;
+    background: color-mix(in srgb, var(--primary) 8%, var(--bg-primary));
+}
+
+.recent-ticket-row:hover {
+    background: var(--hover-bg);
+    border-color: var(--primary);
+}
+
+.recent-ticket-row--matched:hover {
+    background: color-mix(in srgb, var(--recent-ticket-accent, var(--primary)) 14%, var(--hover-bg));
+}
+
+.recent-ticket-row--other:hover {
+    background: color-mix(in srgb, var(--primary) 12%, var(--hover-bg));
+}
+
+.recent-ticket-row:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.recent-ticket-row__num {
+    font-weight: 600;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.recent-ticket-row__title {
+    color: var(--text-primary);
+    display: block;
+}
+
+.recent-ticket-row__meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 6px;
 }
 
 .panel-close {
@@ -1464,7 +1718,7 @@ main .form-container {
     color: var(--primary);
 }
 
-.entry-notes {
+.entry-ticket-number {
     margin-top: 10px;
     padding-top: 10px;
     border-top: 1px solid var(--border);
@@ -2119,6 +2373,15 @@ main .form-container {
     z-index: 3000;
     font-size: 14px;
     font-weight: 500;
+    transition: top 180ms var(--ease-out-quart);
+    max-width: 380px;
+    word-break: break-word;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .notification {
+        transition: none;
+    }
 }
 
 @keyframes toastIn {
@@ -2149,5 +2412,769 @@ main .form-container {
     }
     100% {
         box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.0);
+    }
+}
+
+/* App shell: titlebar + workspace fill below (app, account, and statistics all use data-shell other than "app") */
+body[data-shell="app"] .app-shell,
+body[data-shell="account"] .app-shell,
+body[data-shell="statistics"] .app-shell,
+body[data-shell="admin-statistics"] .app-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-workspace {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-workspace--account {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Account workspace: keep scrolling, hide visual scrollbar (match stats workspace) */
+.app-workspace--account::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+
+.app-workspace--stats {
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.app-workspace--stats::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+
+/* Account page — shared inset so headers/tabs line up with card inner content */
+.account-page,
+.stats-page {
+    --account-card-inline-pad: 22px;
+}
+
+.account-page {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 20px 24px 32px;
+    width: 100%;
+}
+
+.account-page > .account-page-header,
+.account-page > .account-tabs,
+.stats-page > .account-page-header,
+.stats-page > .account-tabs {
+    padding-inline: var(--account-card-inline-pad);
+}
+
+.account-page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.account-page-title {
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 6px;
+}
+
+.account-page-lead {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0;
+    max-width: 48ch;
+}
+
+.account-page-header-actions {
+    flex: 0 0 auto;
+    align-self: flex-start;
+}
+
+.account-settings-signout {
+    min-height: 40px;
+    padding-inline: 18px;
+    font-weight: 600;
+}
+
+.account-back-inline {
+    flex: 0 0 auto;
+    width: auto;
+    align-self: flex-start;
+    padding: 8px 14px;
+    font-size: 13px;
+}
+
+.account-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 2px;
+}
+
+.account-tab {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.account-tab:hover {
+    color: var(--text-primary);
+    background: var(--hover-bg);
+}
+
+.account-tab[aria-selected="true"] {
+    color: var(--text-primary);
+    box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.account-panel {
+    outline: none;
+}
+
+.account-panel:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 4px;
+}
+
+.account-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px var(--account-card-inline-pad, 22px);
+    box-shadow: 0 1px 2px var(--shadow);
+}
+
+/* Consistent field rhythm on Account tabs only (stats filters use .stats-filter-field margins) */
+.account-panel .account-card .form-group {
+    margin-bottom: 16px;
+}
+
+/* Native select: match text fields and stats-style polish (custom chevron) */
+.account-panel .account-card .form-group select {
+    width: 100%;
+    max-width: 100%;
+    padding: 10px 38px 10px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.4;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 16px 16px;
+}
+
+[data-theme="dark"] .account-panel .account-card .form-group select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8b4cc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+.account-panel .account-card .form-group select:hover {
+    border-color: color-mix(in srgb, var(--border) 65%, var(--text-secondary));
+}
+
+.account-panel .account-card .form-group select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.account-panel .account-card .form-group select:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.account-panel .account-card .admin-invite-form .form-group {
+    margin-bottom: 0;
+}
+
+.account-card--spaced {
+    margin-top: 20px;
+}
+
+.account-card--nested {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-primary) 92%, var(--bg-secondary));
+}
+
+.account-update-status {
+    margin-top: 8px;
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    line-height: 1.45;
+}
+
+.account-update-progress-wrap {
+    margin-top: 12px;
+}
+
+.account-update-progress-wrap.hidden {
+    display: none;
+}
+
+.account-update-progress-bar {
+    height: 8px;
+    border-radius: var(--radius-sm);
+    background: var(--border);
+    overflow: hidden;
+}
+
+.account-update-progress-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--primary-dark), var(--primary));
+    transition: width 0.2s var(--ease-out-quart);
+}
+
+.account-update-progress-label {
+    margin-top: 6px;
+}
+
+.account-update-actions {
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.account-changelog-hint {
+    margin-top: 0;
+    margin-bottom: 12px;
+}
+
+.account-changelog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-height: min(52vh, 420px);
+    overflow-y: auto;
+    padding-right: 4px;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Release notes: keep scrolling, hide visual scrollbar (match stats workspace / edit modal) */
+.account-changelog-body::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+
+.account-changelog-release {
+    padding: 14px 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-primary) 88%, var(--bg-secondary));
+}
+
+.account-changelog-version {
+    margin: 0 0 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.02em;
+}
+
+.account-changelog-date {
+    font-weight: 500;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    letter-spacing: 0.04em;
+}
+
+.account-changelog-section-title {
+    margin: 10px 0 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--primary);
+}
+
+.account-changelog-list {
+    margin: 0;
+    padding-left: 1.15rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.account-changelog-list li {
+    margin-bottom: 4px;
+}
+
+.account-card-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0 0 14px;
+    color: var(--text-primary);
+}
+
+.account-form-actions {
+    margin-top: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+/* Full-width field, then right-aligned primary — same edge as Users / Refresh / table */
+.admin-invite-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+}
+
+.admin-invite-email {
+    min-width: 0;
+}
+
+.admin-invite-submit-row {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+/* Avoid global .btn-primary { flex: 1 } stretching in this row */
+.admin-invite-submit-row .btn {
+    flex: 0 0 auto;
+}
+
+.account-admin-users-title {
+    margin-bottom: 6px;
+}
+
+.account-admin-users-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+}
+
+.account-table-wrap {
+    overflow-x: auto;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
+}
+
+.account-users-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.account-users-table th,
+.account-users-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.account-users-table th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.account-users-table tbody tr:hover {
+    background: var(--hover-bg);
+}
+
+.account-actions-cell {
+    vertical-align: top;
+    width: 1%;
+    min-width: 10.5rem;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+.account-actions-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.account-actions-inner .btn-sm {
+    flex: 0 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
+}
+
+.admin-row-action {
+    margin: 0;
+}
+
+.btn-sm {
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: var(--radius-sm);
+}
+
+@media (max-width: 720px) {
+    .account-page {
+        padding: 16px 16px 28px;
+    }
+
+    .account-users-table th:nth-child(5),
+    .account-users-table td:nth-child(5) {
+        display: none;
+    }
+}
+
+/* Statistics page */
+.stats-page {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 20px 24px 32px;
+    width: 100%;
+}
+
+.stats-page-header .stats-page-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.stats-filters {
+    margin-bottom: 18px;
+}
+
+.stats-filters-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 14px 18px;
+}
+
+.stats-filter-field {
+    margin: 0;
+    min-width: 0;
+}
+
+.stats-filter-field label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+}
+
+.stats-select {
+    min-width: 160px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.stats-custom-range {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px 14px;
+}
+
+.stats-custom-range.hidden {
+    display: none;
+}
+
+.stats-loading {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.stats-loading.hidden {
+    display: none;
+}
+
+.stats-main.hidden {
+    display: none;
+}
+
+.stats-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.stats-kpi-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    text-align: center;
+    box-shadow: 0 1px 2px var(--shadow);
+}
+
+.stats-kpi-value {
+    font-size: 1.65rem;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1.15;
+    margin-bottom: 4px;
+}
+
+.stats-kpi-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.3;
+}
+
+.stats-pace {
+    margin-bottom: 18px;
+    font-size: 14px;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+.stats-pace.hidden {
+    display: none;
+}
+
+.stats-pace-muted {
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.stats-chart-card {
+    margin-bottom: 18px;
+}
+
+.stats-chart-wrap {
+    margin-top: 10px;
+    min-height: 220px;
+    max-height: 320px;
+    position: relative;
+}
+
+.stats-chart-wrap canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 300px;
+}
+
+.stats-two-col {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    align-items: start;
+}
+
+.stats-dow-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.stats-dow-row {
+    display: grid;
+    grid-template-columns: 36px 1fr 28px;
+    gap: 10px;
+    align-items: center;
+    font-size: 13px;
+}
+
+.stats-dow-label {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-dow-bar-track {
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.stats-dow-bar-fill {
+    height: 100%;
+    background: color-mix(in srgb, var(--primary) 85%, transparent);
+    border-radius: 4px;
+    min-width: 0;
+    transition: width 200ms var(--ease-out-quart);
+}
+
+.stats-dow-count {
+    text-align: right;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-org-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.stats-org-table th,
+.stats-org-table td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.stats-org-table th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.stats-org-table tbody tr:hover {
+    background: var(--hover-bg);
+}
+
+.stats-org-table td:nth-child(3),
+.stats-org-table td:nth-child(4) {
+    font-variant-numeric: tabular-nums;
+}
+
+.stats-empty {
+    text-align: center;
+    padding: 28px 20px;
+}
+
+.stats-empty.hidden {
+    display: none;
+}
+
+.stats-empty-text {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 15px;
+}
+
+.admin-stats-tabs {
+    margin-bottom: 16px;
+}
+
+.admin-stats-panel {
+    margin-top: 4px;
+}
+
+.admin-stats-panel.hidden {
+    display: none;
+}
+
+.admin-live-metrics {
+    margin: 12px 0 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+
+.admin-live-metrics p {
+    margin: 0 0 8px;
+}
+
+.admin-live-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.admin-cli-block {
+    display: block;
+    margin: 12px 0;
+    padding: 14px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-primary);
+    overflow-x: auto;
+}
+
+.admin-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.92em;
+}
+
+.admin-recent-pagination {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.admin-recent-page-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.admin-recent-table-wrap {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.admin-recent-table td:last-child {
+    max-width: 280px;
+    word-break: break-word;
+}
+
+@media (max-width: 720px) {
+    .stats-page {
+        padding: 16px 16px 28px;
+    }
+
+    .stats-two-col {
+        grid-template-columns: 1fr;
+    }
+
+    .stats-chart-wrap {
+        min-height: 200px;
     }
 }

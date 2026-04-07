@@ -1,0 +1,1178 @@
+[
+  {
+    "id": "TC001",
+    "title": "Supabase sign-in shows authenticated main shell after valid credentials submission",
+    "description": "Verifies a user can open the sign-in card, enter credentials, submit, and land in the authenticated main shell when auth is available.",
+    "category": "Supabase sign-in and sign-up",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open the sign-in card from the brand area when shown"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit credentials"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the authenticated main shell is displayed"
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Supabase sign-in shows error state for invalid credentials",
+    "description": "Verifies submitting invalid credentials results in an auth or validation error visible in the UI.",
+    "category": "Supabase sign-in and sign-up",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open the sign-in card from the brand area when shown"
+      },
+      {
+        "type": "action",
+        "description": "Fill invalid-user@example.com into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Fill wrong-password into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit credentials"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a validation or authentication error message is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Local storage mode: continue without Supabase and reach main shell",
+    "description": "Verifies the user can continue with local storage when Supabase is not configured and reach the main shell in local mode.",
+    "category": "Supabase sign-in and sign-up",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Choose Continue with local storage when Supabase is not configured"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the main shell is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the UI indicates local mode is active"
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Sign-in form prevents submission when email is missing",
+    "description": "Verifies client-side validation prevents submitting credentials when required fields are missing.",
+    "category": "Supabase sign-in and sign-up",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open the sign-in card from the brand area when shown"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_PASSWORD}} into the password field"
+      },
+      {
+        "type": "action",
+        "description": "Submit credentials"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a required-field validation error is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Sign-in form prevents submission when password is missing",
+    "description": "Verifies client-side validation prevents submitting credentials when password is not provided.",
+    "category": "Supabase sign-in and sign-up",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open the sign-in card from the brand area when shown"
+      },
+      {
+        "type": "action",
+        "description": "Fill {{LOGIN_USER}} into the email field"
+      },
+      {
+        "type": "action",
+        "description": "Submit credentials"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a required-field validation error is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Open sign-in card reveals email/password inputs",
+    "description": "Verifies that opening the sign-in card exposes the expected credential entry fields.",
+    "category": "Supabase sign-in and sign-up",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open the sign-in card from the brand area when shown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the email field is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the password field is displayed"
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Create a call record with required + optional fields and custom date/time",
+    "description": "Verifies a call can be logged with required fields, optional fields, and adjusted date/time, and then appears in the list for the selected day.",
+    "category": "Call intake form",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Fill Test Caller into the caller name field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Test Org into the organization field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid telephone number into the telephone field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Test Device into the device field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Printer not working into the support request field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Added via UI test into the ticket number field"
+      },
+      {
+        "type": "action",
+        "description": "Adjust date and time for the call to a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form to log the call"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a new call is listed for the selected day"
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Call intake validation blocks submission when a required field is empty",
+    "description": "Verifies required field validation prevents creating a call when a mandatory input is missing.",
+    "category": "Call intake form",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Fill Test Caller into the caller name field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Test Org into the organization field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid telephone number into the telephone field"
+      },
+      {
+        "type": "action",
+        "description": "Leave the support request field empty"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form to log the call"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a validation error is visible preventing submission"
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Organization autocomplete: select a suggestion and save call with resolved organization",
+    "description": "Verifies organization autocomplete selection can be used to populate the organization field and the saved record reflects that organization.",
+    "category": "Call intake form",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Fill Test Caller into the caller name field"
+      },
+      {
+        "type": "action",
+        "description": "Type a partial organization name into the organization field to trigger suggestions"
+      },
+      {
+        "type": "action",
+        "description": "Select a suggested organization from the autocomplete list"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid telephone number into the telephone field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Network access request into the support request field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form to log the call"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new call is listed with the selected organization name"
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Clear the call intake form resets entered values",
+    "description": "Verifies clearing the form removes user-entered data from required/optional fields.",
+    "category": "Call intake form",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Fill Test Caller into the caller name field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Test Org into the organization field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid telephone number into the telephone field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Password reset request into the support request field"
+      },
+      {
+        "type": "action",
+        "description": "Clear the form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the call intake fields are empty"
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Change day and open an entry for details",
+    "description": "Verifies navigating days updates the entries list and an entry can be opened for details.",
+    "category": "History and calendar",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Fill History Caller into the caller name field"
+      },
+      {
+        "type": "action",
+        "description": "Fill History Org into the organization field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid telephone number into the telephone field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Email not syncing into the support request field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form to log the call"
+      },
+      {
+        "type": "action",
+        "description": "Change selected day with arrows or Today"
+      },
+      {
+        "type": "action",
+        "description": "Change selected day with arrows or Today to return to the day containing the new call"
+      },
+      {
+        "type": "action",
+        "description": "Open an entry from the entries list for details"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify call details are displayed for the opened entry"
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Calendar modal: pick a date and show empty list when no calls exist",
+    "description": "Verifies selecting a date via the calendar modal with no saved calls results in an empty entries list state.",
+    "category": "History and calendar",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open calendar modal and pick a date"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the entries list for the selected day is empty"
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Day navigation updates entries list to reflect selected day",
+    "description": "Verifies using day navigation controls updates the visible list of entries.",
+    "category": "History and calendar",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Fill Day A Caller into the caller name field"
+      },
+      {
+        "type": "action",
+        "description": "Fill Day A Org into the organization field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid telephone number into the telephone field"
+      },
+      {
+        "type": "action",
+        "description": "Fill VPN setup into the support request field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form to log the call"
+      },
+      {
+        "type": "action",
+        "description": "Change selected day with arrows or Today"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the entries list updates to reflect the newly selected day"
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Today control returns to current day after navigating away",
+    "description": "Verifies the Today control returns the calendar selection to the current day and updates the list.",
+    "category": "History and calendar",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Change selected day with arrows or Today to move away from the current day"
+      },
+      {
+        "type": "action",
+        "description": "Change selected day with arrows or Today using the Today control"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the selected day is the current day"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the entries list corresponds to the current day"
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Search filters entries for the selected day",
+    "description": "Verifies that searching narrows the visible call entries within the currently selected day and can be closed.",
+    "category": "Search calls",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open search"
+      },
+      {
+        "type": "action",
+        "description": "Type a query using a substring from a visible call entry into the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify only call entries matching the query are displayed for the selected day"
+      },
+      {
+        "type": "action",
+        "description": "Close search"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the full unfiltered list for the selected day is displayed"
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "Search shows no-results state when query has no matches",
+    "description": "Verifies that entering a query with no matches shows a no-results state scoped to the selected day.",
+    "category": "Search calls",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open search"
+      },
+      {
+        "type": "action",
+        "description": "Type a unique query unlikely to exist into the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a no-results state is displayed for the selected day"
+      },
+      {
+        "type": "action",
+        "description": "Close search"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the list view for the selected day is displayed"
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Search updates results as the query changes",
+    "description": "Verifies that modifying the query changes the filtered results accordingly.",
+    "category": "Search calls",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open search"
+      },
+      {
+        "type": "action",
+        "description": "Type a query using a substring from a visible call entry into the search field"
+      },
+      {
+        "type": "action",
+        "description": "Append additional characters to the query to make it more specific"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the displayed results are reduced or updated to match the refined query"
+      },
+      {
+        "type": "action",
+        "description": "Close search"
+      }
+    ]
+  },
+  {
+    "id": "TC018",
+    "title": "Clearing the search query restores the full list while search remains open",
+    "description": "Verifies that clearing the query removes filtering without requiring closing the search UI.",
+    "category": "Search calls",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open search"
+      },
+      {
+        "type": "action",
+        "description": "Type a query using a substring from a visible call entry into the search field"
+      },
+      {
+        "type": "action",
+        "description": "Clear the search field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the full unfiltered list for the selected day is displayed"
+      }
+    ]
+  },
+  {
+    "id": "TC019",
+    "title": "Open entry, edit fields, save, and see updated entry in list",
+    "description": "Verifies that editing a call entry and saving updates the entry shown in the list for the selected day.",
+    "category": "Edit and delete call entries",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open an entry from the list"
+      },
+      {
+        "type": "action",
+        "description": "Change one editable field to a new value named Edit Save Test"
+      },
+      {
+        "type": "action",
+        "description": "Save changes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the entry in the list reflects the updated value Edit Save Test"
+      }
+    ]
+  },
+  {
+    "id": "TC020",
+    "title": "Attempt to save invalid data shows validation error and does not change record",
+    "description": "Verifies that invalid edits are blocked with a validation error and the entry remains unchanged after closing.",
+    "category": "Edit and delete call entries",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open an entry from the list"
+      },
+      {
+        "type": "action",
+        "description": "Note a visible field value to compare later"
+      },
+      {
+        "type": "action",
+        "description": "Clear a required field or enter an invalid value"
+      },
+      {
+        "type": "action",
+        "description": "Attempt to save changes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a validation error is visible"
+      },
+      {
+        "type": "action",
+        "description": "Close the entry editor without saving"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the entry in the list still shows the original value"
+      }
+    ]
+  },
+  {
+    "id": "TC021",
+    "title": "Delete an entry with confirmation removes it from the list",
+    "description": "Verifies that confirming deletion removes the selected call entry from the list for the selected day.",
+    "category": "Edit and delete call entries",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open an entry from the list"
+      },
+      {
+        "type": "action",
+        "description": "Record a unique visible value from the entry to identify it later"
+      },
+      {
+        "type": "action",
+        "description": "Initiate delete"
+      },
+      {
+        "type": "action",
+        "description": "Confirm deletion"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the entry is removed from the list for the selected day"
+      }
+    ]
+  },
+  {
+    "id": "TC022",
+    "title": "Cancel deletion keeps the entry in the list",
+    "description": "Verifies that canceling the delete confirmation leaves the entry intact.",
+    "category": "Edit and delete call entries",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open an entry from the list"
+      },
+      {
+        "type": "action",
+        "description": "Record a unique visible value from the entry to identify it later"
+      },
+      {
+        "type": "action",
+        "description": "Initiate delete"
+      },
+      {
+        "type": "action",
+        "description": "Cancel deletion"
+      },
+      {
+        "type": "action",
+        "description": "Close the entry editor"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the entry with the recorded value is still present in the list"
+      }
+    ]
+  },
+  {
+    "id": "TC023",
+    "title": "Open statistics page and return to Call Log",
+    "description": "Verifies that the statistics page opens from the toolbar, shows summary metrics or a zero-data state, and returns to Call Log.",
+    "category": "Statistics page",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open statistics from the toolbar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify summary statistics or a zero-data message is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Use Back to Call Log on the statistics page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the statistics page is no longer visible"
+      }
+    ]
+  },
+  {
+    "id": "TC024",
+    "title": "Statistics page shows zero-data or metrics when the selected day has no calls",
+    "description": "Verifies that when the selected calendar day has no calls, the statistics page still loads and shows metrics for the chosen range or a zero-data state.",
+    "category": "Statistics page",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Change the selected day to a day with no call entries shown in the list"
+      },
+      {
+        "type": "action",
+        "description": "Open statistics from the toolbar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a zero-data message or summary metrics is displayed on the statistics page"
+      },
+      {
+        "type": "action",
+        "description": "Use Back to Call Log on the statistics page"
+      }
+    ]
+  },
+  {
+    "id": "TC025",
+    "title": "Reports overlay opens and shows reporting UI state",
+    "description": "Verifies the Reports overlay can be opened and displays either reporting controls or an unavailable state.",
+    "category": "Reports overlay",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open Reports"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the Reports overlay is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify either reporting controls are visible or an unavailable/misconfigured state message is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC026",
+    "title": "Run or refresh reports when controls are available",
+    "description": "Verifies a user can trigger report refresh/run from the Reports overlay and see a completion outcome when controls exist.",
+    "category": "Reports overlay",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open Reports"
+      },
+      {
+        "type": "action",
+        "description": "If reporting controls are visible, trigger a refresh or run action"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify report results are displayed or a confirmation of completion is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC027",
+    "title": "Reports unavailable state when backend reporting is not configured",
+    "description": "Verifies the Reports overlay shows an unavailable/misconfigured message when reporting is not configured.",
+    "category": "Reports overlay",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open Reports"
+      },
+      {
+        "type": "action",
+        "description": "If an unavailable/misconfigured state is shown, do not attempt to run reports"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an unavailable or misconfigured reports message is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC028",
+    "title": "Reports overlay can be closed without changing app state",
+    "description": "Verifies the user can exit the Reports overlay and return to the main shell.",
+    "category": "Reports overlay",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open Reports"
+      },
+      {
+        "type": "action",
+        "description": "Close the Reports overlay"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the main Call Log shell is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC029",
+    "title": "Account access requires sign-in when signed out",
+    "description": "Verifies attempting to open Account while signed out results in a sign-in requirement prompt/message.",
+    "category": "Account profile",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Open Account"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a prompt or message requiring sign-in is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC030",
+    "title": "Sign in and open Account profile page",
+    "description": "Verifies a user can sign in, open Account, see the tabbed layout (Profile selected), profile form, save control, and hydrated email.",
+    "category": "Account profile",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open Account"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the account profile fields are displayed"
+      }
+    ]
+  },
+  {
+    "id": "TC031",
+    "title": "Update display name and save changes",
+    "description": "Verifies a signed-in user can update their display name and see the updated value reflected in the UI after saving.",
+    "category": "Account profile",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open Account"
+      },
+      {
+        "type": "action",
+        "description": "Fill \"Test Display Name\" into the display name field"
+      },
+      {
+        "type": "action",
+        "description": "Save changes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the display name field shows \"Test Display Name\""
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a success confirmation is visible"
+      }
+    ]
+  },
+  {
+    "id": "TC032",
+    "title": "Cancel account edits does not persist changes in the form",
+    "description": "Verifies canceling profile edits reverts the form to the previously loaded values.",
+    "category": "Account profile",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Open Account"
+      },
+      {
+        "type": "action",
+        "description": "Fill \"Unsaved Name\" into the display name field"
+      },
+      {
+        "type": "action",
+        "description": "Cancel changes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the display name field does not show \"Unsaved Name\""
+      }
+    ]
+  },
+  {
+    "id": "TC033",
+    "title": "Toggle theme updates UI theme immediately",
+    "description": "Verifies clicking the theme toggle switches the app theme in the current session.",
+    "category": "Theme toggle",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Click the theme toggle in the title area"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the UI theme changes to the opposite mode"
+      }
+    ]
+  },
+  {
+    "id": "TC034",
+    "title": "Theme preference persistence or graceful fallback on reload",
+    "description": "Verifies theme preference either persists across reloads when supported or falls back gracefully without breaking the UI.",
+    "category": "Theme toggle",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Click the theme toggle in the title area"
+      },
+      {
+        "type": "action",
+        "description": "Wait for the UI theme to finish updating"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the UI remains functional and shows either the persisted theme preference or the default theme with graceful fallback"
+      }
+    ]
+  },
+  {
+    "id": "TC035",
+    "title": "Organization autocomplete shows cached companies quickly before slow network",
+    "description": "Verifies suggestions from the org cache appear within a short deadline; Supabase REST and sync Edge URL are stubbed so behavior does not depend on network latency.",
+    "category": "Call intake and organization autocomplete",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Seed localStorage, stub cached_autotask_companies REST, autotask_org_sync_meta, and autotask-sync-all-companies"
+      },
+      {
+        "type": "action",
+        "description": "Sign in and type a two-character query that matches only the cached organization name"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the first autocomplete item is visible within CALLLOG_TEST_ORG_INSTANT_MAX_MS (default 900ms)"
+      }
+    ]
+  },
+  {
+    "id": "TC036",
+    "title": "Account Security tab shows password and session controls",
+    "description": "Verifies the Security tab exposes new-password fields, update action, and Sign out everywhere.",
+    "category": "Account profile",
+    "priority": "High",
+    "steps": [
+      { "type": "action", "description": "Sign in" },
+      { "type": "action", "description": "Open Account and select Security tab" },
+      { "type": "assertion", "description": "Password and session controls are visible" }
+    ]
+  },
+  {
+    "id": "TC037",
+    "title": "Account Escape key returns to Call Log",
+    "description": "Verifies Escape leaves the Account view and restores the main workspace.",
+    "category": "Account profile",
+    "priority": "Medium",
+    "steps": [
+      { "type": "action", "description": "Sign in and open Account" },
+      { "type": "action", "description": "Press Escape" },
+      { "type": "assertion", "description": "Main Call Log workspace is visible" }
+    ]
+  },
+  {
+    "id": "TC038",
+    "title": "Account password mismatch shows validation error",
+    "description": "Verifies mismatched new passwords show a client-side error without changing the account password.",
+    "category": "Account profile",
+    "priority": "Medium",
+    "steps": [
+      { "type": "action", "description": "Sign in, Account, Security tab" },
+      { "type": "action", "description": "Enter two different new passwords and submit" },
+      { "type": "assertion", "description": "Validation error mentions passwords do not match" }
+    ]
+  },
+  {
+    "id": "TC039",
+    "title": "Titlebar Call Log back control on Account view",
+    "description": "Verifies the titlebar back button appears on Account and hides Profile; reverses on return.",
+    "category": "Account profile",
+    "priority": "Medium",
+    "steps": [
+      { "type": "action", "description": "Sign in; open Account" },
+      { "type": "assertion", "description": "Call Log titlebar control visible; Account button hidden" },
+      { "type": "action", "description": "Click Call Log in titlebar" },
+      { "type": "assertion", "description": "Account button visible again" }
+    ]
+  },
+  {
+    "id": "TC040",
+    "title": "Administration tab when CALLLOG_TEST_EXPECT_ADMIN is set",
+    "description": "Optional: with CALLLOG_TEST_EXPECT_ADMIN=1 and an admin user, Administration tab shows invite and user table.",
+    "category": "Account profile",
+    "priority": "Low",
+    "steps": [
+      { "type": "action", "description": "Set CALLLOG_TEST_EXPECT_ADMIN=1 (optional)" },
+      { "type": "action", "description": "Sign in as admin; open Account; Administration tab" },
+      { "type": "assertion", "description": "Invite email field and users table region are visible" }
+    ]
+  }
+]

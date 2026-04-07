@@ -3,11 +3,184 @@ let currentFilter = '';
 let editingEntryId = null;
 let selectedDay = null; // local day key: YYYY-MM-DD
 let calendarMonth = null; // Date representing first day of visible month
+/** Serializes prev/next month clicks so rapid navigation still advances one month per click */
+let calendarMonthNavChain = Promise.resolve()
 let confirmResolver = null;
 let supabaseClient = null;
 let supabaseRealtimeChannel = null;
-let currentUserProfile = null; // { id, full_name, is_admin } for logged-in user (Supabase)
+let currentUserProfile = null; // { id, full_name, is_admin, profile_load_error? } for logged-in user (Supabase)
 const profileCache = new Map(); // user_id -> full_name
+const PROFILE_DISPLAY_NAME_MAX_LEN = 120;
+let authDeepLinkListenerBound = false;
+
+function clampDisplayName(raw) {
+    const t = String(raw ?? '').trim();
+    if (!t) return '';
+    if (t.length <= PROFILE_DISPLAY_NAME_MAX_LEN) return t;
+    return t.slice(0, PROFILE_DISPLAY_NAME_MAX_LEN);
+}
+
+function getPasswordRecoveryRedirectUrl() {
+    const u = String(window.supabaseConfig?.PASSWORD_RESET_REDIRECT_URL || 'calllog://auth/callback').trim();
+    return u || 'calllog://auth/callback';
+}
+
+function parseAuthHashParamsFromUrl(url) {
+    try {
+        const s = String(url);
+        const i = s.indexOf('#');
+        const hash = i >= 0 ? s.slice(i + 1) : '';
+        const q = new URLSearchParams(hash);
+        return {
+            access_token: q.get('access_token'),
+            refresh_token: q.get('refresh_token'),
+            type: q.get('type'),
+        };
+    } catch {
+        return { access_token: null, refresh_token: null, type: null };
+    }
+}
+
+async function applyAuthDeepLinkSession(url) {
+    const supabase = getSupabase();
+    if (!supabase || !url) return { ok: false };
+    const { access_token, refresh_token } = parseAuthHashParamsFromUrl(url);
+    if (!access_token || !refresh_token) return { ok: false };
+    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+    if (error) {
+        console.error('applyAuthDeepLinkSession:', error);
+        return { ok: false, error };
+    }
+    return { ok: true };
+}
+
+/** Deploy: `supabase functions deploy account-admin` (use `--no-verify-jwt` if JWT is verified inside the function). */
+const ACCOUNT_ADMIN_FUNCTION_SLUG = 'account-admin'
+/** Deploy: `supabase functions deploy admin-analytics` */
+const ADMIN_ANALYTICS_FUNCTION_SLUG = 'admin-analytics'
+const ADMIN_LIST_PER_PAGE = 50
+
+let currentAppView = 'calls'
+let logoutClickHandler = null
+let adminDirectoryPage = 1
+/** Chart.js instance for admin team overview */
+let adminStatsPageChart = null
+let adminStatsLiveTimer = null
+let adminRecentPage = 1
+let accountAdminLoadedOnce = false
+
+function destroyAdminStatsPageChart() {
+    if (adminStatsPageChart) {
+        try { adminStatsPageChart.destroy() } catch (_) {}
+        adminStatsPageChart = null
+    }
+}
+
+function stopAdminLivePolling() {
+    if (adminStatsLiveTimer) {
+        clearInterval(adminStatsLiveTimer)
+        adminStatsLiveTimer = null
+    }
+}
+let accountUpdaterUnsubscribe = null
+let accountUpdaterListenersBound = false
+let accountUpdaterToastVersion = null
+let accountUpdaterToastDownloadedVersion = null
+let accountChangelogLoadPromise = null
+
+function setAppView(view) {
+    const main = document.getElementById('mainWorkspace');
+    const account = document.getElementById('accountWorkspace');
+    const stats = document.getElementById('statsWorkspace');
+    const adminStats = document.getElementById('adminStatsWorkspace');
+    const backBtn = document.getElementById('accountBackBtn');
+    const profileBtn = document.getElementById('profileBtn');
+    if (!main || !account) return;
+
+    const hideStats = () => {
+        if (stats) {
+            stats.classList.add('hidden');
+            stats.setAttribute('aria-hidden', 'true');
+        }
+        destroyStatsPageChart();
+    };
+
+    const hideAdminStats = () => {
+        if (adminStats) {
+            adminStats.classList.add('hidden');
+            adminStats.setAttribute('aria-hidden', 'true');
+        }
+        destroyAdminStatsPageChart();
+        stopAdminLivePolling();
+    };
+
+    const showCallsShell = () => {
+        currentAppView = 'calls';
+        main.classList.remove('hidden');
+        main.setAttribute('aria-hidden', 'false');
+        account.classList.add('hidden');
+        account.setAttribute('aria-hidden', 'true');
+        hideStats();
+        hideAdminStats();
+        if (backBtn) backBtn.style.display = 'none';
+        if (profileBtn && useSupabase() && getSupabase()) profileBtn.style.display = '';
+        document.body?.setAttribute('data-shell', 'app');
+    };
+
+    if (view === 'account') {
+        currentAppView = 'account';
+        main.classList.add('hidden');
+        main.setAttribute('aria-hidden', 'true');
+        account.classList.remove('hidden');
+        account.setAttribute('aria-hidden', 'false');
+        hideStats();
+        hideAdminStats();
+        if (backBtn) backBtn.style.display = '';
+        if (profileBtn) profileBtn.style.display = 'none';
+        document.body?.setAttribute('data-shell', 'account');
+        return;
+    }
+
+    if (view === 'statistics') {
+        currentAppView = 'statistics';
+        main.classList.add('hidden');
+        main.setAttribute('aria-hidden', 'true');
+        account.classList.add('hidden');
+        account.setAttribute('aria-hidden', 'true');
+        hideAdminStats();
+        if (stats) {
+            stats.classList.remove('hidden');
+            stats.setAttribute('aria-hidden', 'false');
+        }
+        if (backBtn) backBtn.style.display = '';
+        if (profileBtn) profileBtn.style.display = 'none';
+        document.body?.setAttribute('data-shell', 'statistics');
+        return;
+    }
+
+    if (view === 'adminStatistics') {
+        if (!currentUserProfile?.is_admin) {
+            showCallsShell();
+            return;
+        }
+        currentAppView = 'adminStatistics';
+        main.classList.add('hidden');
+        main.setAttribute('aria-hidden', 'true');
+        account.classList.add('hidden');
+        account.setAttribute('aria-hidden', 'true');
+        hideStats();
+        if (adminStats) {
+            adminStats.classList.remove('hidden');
+            adminStats.setAttribute('aria-hidden', 'false');
+        }
+        if (backBtn) backBtn.style.display = '';
+        if (profileBtn) profileBtn.style.display = 'none';
+        document.body?.setAttribute('data-shell', 'admin-statistics');
+        return;
+    }
+
+    showCallsShell();
+}
 
 const PII_KEY_NAME = 'calls_pii';
 const textEncoder = new TextEncoder();
@@ -32,29 +205,17 @@ function isPiiWriteAllowed() {
 // Autocomplete state
 const autocompleteCache = new Map(); // query -> { results, timestamp }
 const AUTOCACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+/** Debounce before hitting the network; instant path uses localStorage + memory cache first */
+const AUTOCOMPLETE_DEBOUNCE_MS = 150
 let autocompleteDebounceTimer = null;
-let autocompleteAbortController = null;
 let autocompleteActiveInstance = null; // Currently active autocomplete instance
-const ORG_SELECTION_CACHE_PREFIX = 'calllog-org-selection-';
 const CACHED_AUTOTASK_COMPANIES_KEY = 'cached_autotask_companies';
-
-function getCachedOrganizationSelection(inputId) {
-    try {
-        return String(localStorage.getItem(`${ORG_SELECTION_CACHE_PREFIX}${inputId}`) || '').trim();
-    } catch (err) {
-        return '';
-    }
-}
-
-function setCachedOrganizationSelection(inputId, organizationName) {
-    const value = String(organizationName || '').trim();
-    if (!value) return;
-    try {
-        localStorage.setItem(`${ORG_SELECTION_CACHE_PREFIX}${inputId}`, value);
-    } catch (err) {
-        // Ignore localStorage errors
-    }
-}
+/** Align with Edge Function autotask-sync-all-companies (weekly full sync). */
+const ORG_FULL_SYNC_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Upper bound for local org list (localStorage / memory). */
+const CACHED_AUTOTASK_COMPANIES_LOCAL_MAX = 50000;
+/** Parsed org list from localStorage; null means not loaded yet. */
+let persistentAutotaskCompaniesMemory = null;
 
 function addToCachedAutotaskCompanies(organizations) {
     const incoming = Array.isArray(organizations) ? organizations : [organizations];
@@ -69,36 +230,678 @@ function addToCachedAutotaskCompanies(organizations) {
         .filter((org) => org.name);
     if (normalizedIncoming.length === 0) return;
 
+    const existing = loadPersistentAutotaskCompanies();
+    const byName = new Map(
+        existing.map((org) => [org.name.toLowerCase(), org])
+    );
+    normalizedIncoming.forEach((org) => {
+        byName.set(org.name.toLowerCase(), org);
+    });
+    let merged = Array.from(byName.values());
+    if (merged.length > CACHED_AUTOTASK_COMPANIES_LOCAL_MAX) {
+        merged = merged.slice(0, CACHED_AUTOTASK_COMPANIES_LOCAL_MAX);
+    }
+    persistentAutotaskCompaniesMemory = merged;
     try {
-        const existingRaw = localStorage.getItem(CACHED_AUTOTASK_COMPANIES_KEY);
-        const existing = (() => {
-            if (!existingRaw) return [];
-            try {
-                const parsed = JSON.parse(existingRaw);
-                return Array.isArray(parsed) ? parsed : [];
-            } catch (err) {
-                return [];
-            }
-        })();
-
-        const byName = new Map(
-            existing
-                .map((org) => ({
-                    id: String(org?.id || ''),
-                    name: String(org?.name || '').trim()
-                }))
-                .filter((org) => org.name)
-                .map((org) => [org.name.toLowerCase(), org])
-        );
-
-        normalizedIncoming.forEach((org) => {
-            byName.set(org.name.toLowerCase(), org);
-        });
-
-        const merged = Array.from(byName.values()).slice(0, 500);
         localStorage.setItem(CACHED_AUTOTASK_COMPANIES_KEY, JSON.stringify(merged));
     } catch (err) {
         // Ignore localStorage errors
+    }
+}
+
+function loadPersistentAutotaskCompanies() {
+    if (persistentAutotaskCompaniesMemory !== null) {
+        return persistentAutotaskCompaniesMemory;
+    }
+    try {
+        const raw = localStorage.getItem(CACHED_AUTOTASK_COMPANIES_KEY);
+        if (!raw) {
+            persistentAutotaskCompaniesMemory = [];
+            return persistentAutotaskCompaniesMemory;
+        }
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            persistentAutotaskCompaniesMemory = [];
+            return persistentAutotaskCompaniesMemory;
+        }
+        persistentAutotaskCompaniesMemory = parsed
+            .map((org) => ({
+                id: String(org?.id || ''),
+                name: String(org?.name || '').trim()
+            }))
+            .filter((org) => org.name);
+        return persistentAutotaskCompaniesMemory;
+    } catch (err) {
+        persistentAutotaskCompaniesMemory = [];
+        return persistentAutotaskCompaniesMemory;
+    }
+}
+
+/**
+ * Replace local org cache from a full server list (dedupe by autotask id or name).
+ */
+function replaceAllCachedAutotaskCompaniesLocal(organizations) {
+    const byKey = new Map();
+    for (const org of organizations) {
+        const id = String(org?.id || '').trim();
+        const name = String(org?.name || '').trim();
+        if (!name) continue;
+        const key = id || `name:${name.toLowerCase()}`;
+        byKey.set(key, { id, name });
+    }
+    let list = Array.from(byKey.values());
+    if (list.length > CACHED_AUTOTASK_COMPANIES_LOCAL_MAX) {
+        list = list.slice(0, CACHED_AUTOTASK_COMPANIES_LOCAL_MAX);
+    }
+    persistentAutotaskCompaniesMemory = list;
+    try {
+        localStorage.setItem(CACHED_AUTOTASK_COMPANIES_KEY, JSON.stringify(list));
+    } catch (err) {
+        // Ignore localStorage errors
+    }
+    autocompleteCache.clear();
+}
+
+function isAutotaskOrgFullSyncStale(lastFullSyncAtIso) {
+    if (!lastFullSyncAtIso) return true;
+    const t = new Date(lastFullSyncAtIso).getTime();
+    return Number.isNaN(t) || (Date.now() - t > ORG_FULL_SYNC_INTERVAL_MS);
+}
+
+async function loadAllCachedAutotaskCompaniesFromSupabaseIntoLocal(supabase) {
+    const pageSize = 1000;
+    let from = 0;
+    const all = [];
+    for (;;) {
+        const { data, error } = await supabase
+            .from('cached_autotask_companies')
+            .select('autotask_id, company_name')
+            .order('autotask_id', { ascending: true })
+            .range(from, from + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        for (const row of data) {
+            const name = String(row.company_name || '').trim();
+            if (!name) continue;
+            all.push({ id: String(row.autotask_id || ''), name });
+        }
+        if (data.length < pageSize) break;
+        from += pageSize;
+    }
+    replaceAllCachedAutotaskCompaniesLocal(all);
+}
+
+/**
+ * Invoke read-only full Autotask sync into Supabase (Edge Function).
+ * @returns {Promise<boolean>} false if request failed hard; true otherwise (including skipped).
+ */
+async function invokeAutotaskFullCompanySyncEdgeFunction(supabase, force = false) {
+    let { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        console.warn('No session; skipping Autotask full org sync.');
+        return false;
+    }
+    const expiresAtMs = typeof session.expires_at === 'number' ? session.expires_at * 1000 : null;
+    const isExpiringSoon = typeof expiresAtMs === 'number' ? expiresAtMs < (Date.now() + 30 * 1000) : false;
+    if (isExpiringSoon) {
+        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+        if (refreshErr || !refreshed?.session?.access_token) {
+            console.warn('Session refresh failed; skipping Autotask full org sync.');
+            return false;
+        }
+        session = refreshed.session;
+    }
+    if (!session?.access_token) return false;
+
+    const config = window.supabaseConfig || {};
+    const supabaseUrl = (config.SUPABASE_URL || '').trim();
+    const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
+    if (!supabaseUrl || !anonKey) return false;
+
+    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
+    const suffix = force ? '?force=1' : '';
+    const response = await fetch(`${baseFunctionsUrl}/autotask-sync-all-companies${suffix}`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': anonKey,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (response.status === 503) {
+        console.warn('Autotask API not configured on server; org list not synced from PSA.');
+        return true;
+    }
+    if (response.status === 401) {
+        console.warn('Session expired during org sync.');
+        return false;
+    }
+    if (!response.ok) {
+        const txt = await response.text().catch(() => '');
+        console.warn('[autotask-sync-all-companies] failed:', response.status, txt);
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Load orgs from Supabase into local cache; if weekly sync is due, run Edge full sync then reload.
+ * Non-blocking for callers (uses internal async IIFE).
+ */
+function refreshAutotaskOrgCacheAfterAuth() {
+    if (!useSupabase()) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const run = async () => {
+        try {
+            let stale = true;
+            try {
+                const { data: meta, error: metaErr } = await supabase
+                    .from('autotask_org_sync_meta')
+                    .select('last_full_sync_at')
+                    .eq('id', 1)
+                    .maybeSingle();
+                if (!metaErr && meta) {
+                    stale = isAutotaskOrgFullSyncStale(meta.last_full_sync_at);
+                }
+            } catch (metaReadErr) {
+                console.warn('[org-cache] sync meta unreadable; apply migration 008 if missing.', metaReadErr);
+            }
+
+            await loadAllCachedAutotaskCompaniesFromSupabaseIntoLocal(supabase);
+
+            if (stale) {
+                const ok = await invokeAutotaskFullCompanySyncEdgeFunction(supabase, false);
+                if (ok) {
+                    await loadAllCachedAutotaskCompaniesFromSupabaseIntoLocal(supabase);
+                }
+            }
+        } catch (err) {
+            console.warn('[org-cache] refresh failed:', err);
+        }
+    };
+
+    void run();
+}
+
+function filterOrganizationsByQuerySubstring(organizations, queryLower, limit) {
+    const q = String(queryLower || '').trim().toLowerCase();
+    if (q.length < 2) return [];
+    const out = [];
+    const seen = new Set();
+    for (const org of organizations) {
+        const name = String(org?.name || '').trim();
+        const n = name.toLowerCase();
+        if (!n.includes(q)) continue;
+        if (seen.has(n)) continue;
+        seen.add(n);
+        out.push({ id: String(org?.id || ''), name });
+        if (out.length >= limit) break;
+    }
+    return out;
+}
+
+/**
+ * Synchronous suggestions from RAM cache or persisted company list (no network).
+ */
+function getInstantAutocompleteResults(query, limit = 20) {
+    const trimmed = String(query || '').trim();
+    if (trimmed.length < 2) return [];
+    const cacheKey = trimmed.toLowerCase();
+    const cached = autocompleteCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < AUTOCACHE_TTL_MS) {
+        return cached.results;
+    }
+    const results = filterOrganizationsByQuerySubstring(loadPersistentAutotaskCompanies(), cacheKey, limit);
+    autocompleteCache.set(cacheKey, { results, timestamp: Date.now() });
+    return results;
+}
+
+/** Resolved Autotask company for the main call form `#organization` (read-only PSA lookups). */
+let resolvedMainFormOrganization = { autotaskId: '', name: '' };
+let mainFormOrganizationCommitTimer = null;
+let recentTicketsDebounceTimer = null;
+let recentTicketsAbortController = null;
+
+function normalizeHexColor(raw) {
+    let s = String(raw || '').trim();
+    if (!s.startsWith('#')) s = `#${s}`;
+    const hex = s.slice(1).replace(/[^0-9a-fA-F]/g, '');
+    if (hex.length === 3) {
+        const expanded = hex.split('').map((c) => c + c).join('');
+        return `#${expanded}`.toLowerCase();
+    }
+    if (hex.length >= 6) return `#${hex.slice(0, 6).toLowerCase()}`;
+    return '#6b7280';
+}
+
+/**
+ * Recent-ticket accent colors by Autotask Ticket `source` (integer picklist id).
+ * To see every id and label for your tenant: Settings → Administration → Load picklist from Autotask.
+ */
+const RECENT_TICKET_SOURCE_STYLES = [
+    { source: 2, label: '1300 784 889 (SLA)', color: '#16a34a' },
+    { source: 4, label: 'Email (SLA)', color: '#84cc16' },
+    { source: 6, label: 'Face to Face (SLA)', color: '#eab308' },
+    { source: 23, label: 'SaaS Alerts', color: '#7c3aed' },
+    { source: 22, label: 'RMM', color: '#dc2626' },
+];
+
+function buildRecentTicketSourceStyleMap() {
+    const m = new Map();
+    for (const row of RECENT_TICKET_SOURCE_STYLES) {
+        const id = Number(row?.source);
+        if (!Number.isFinite(id)) continue;
+        const label = String(row?.label ?? '').trim() || `Source ${id}`;
+        m.set(id, { label, color: normalizeHexColor(row?.color) });
+    }
+    return m;
+}
+
+const recentTicketSourceStyleMap = buildRecentTicketSourceStyleMap();
+
+function classifyRecentTicketSource(rawSource) {
+    if (rawSource == null || rawSource === '') return null;
+    const id = typeof rawSource === 'number' ? rawSource : Number(rawSource);
+    if (!Number.isFinite(id)) return null;
+    const entry = recentTicketSourceStyleMap.get(id);
+    if (!entry) return null;
+    return { label: entry.label, color: entry.color };
+}
+
+function updateRecentTicketsLegend() {
+    const el = document.getElementById('recentTicketsLegend');
+    if (!el) return;
+    const rows = RECENT_TICKET_SOURCE_STYLES.filter((r) => Number.isFinite(Number(r?.source)));
+    if (rows.length === 0) {
+        el.innerHTML = '';
+        el.setAttribute('hidden', '');
+        return;
+    }
+    const chips = rows
+        .map((r) => {
+            const lab = escapeHtml(String(r.label || '').trim() || `Source ${r.source}`);
+            const col = normalizeHexColor(r.color);
+            return `<span class="recent-tickets-legend__chip" style="--legend-accent:${escapeHtmlAttr(col)}">${lab}</span>`;
+        })
+        .join('');
+    const other = '<span class="recent-tickets-legend__chip recent-tickets-legend__chip--other">Other</span>';
+    el.innerHTML = `<span class="recent-tickets-legend__label">Key</span>${chips}${other}`;
+    el.removeAttribute('hidden');
+}
+
+function resolveAutotaskCompanyIdFromCache(organizationName) {
+    const want = String(organizationName || '').trim().toLowerCase();
+    if (!want) return '';
+    const companies = loadPersistentAutotaskCompanies();
+    for (const org of companies) {
+        const name = String(org?.name || '').trim();
+        if (!name) continue;
+        if (name.toLowerCase() !== want) continue;
+        const id = String(org?.id || '').trim();
+        return id;
+    }
+    return '';
+}
+
+function selectHistoryPanelTab(which) {
+    const tabRecent = document.getElementById('historyTabRecentTickets');
+    const tabHistory = document.getElementById('historyTabCallHistory');
+    const panelRecent = document.getElementById('historyPanelRecentTickets');
+    const panelHistory = document.getElementById('historyPanelCallHistory');
+    if (!tabRecent || !tabHistory || !panelRecent || !panelHistory) return;
+
+    const isRecent = which === 'recent';
+    tabRecent.setAttribute('aria-selected', isRecent ? 'true' : 'false');
+    tabRecent.tabIndex = isRecent ? 0 : -1;
+    tabHistory.setAttribute('aria-selected', isRecent ? 'false' : 'true');
+    tabHistory.tabIndex = isRecent ? -1 : 0;
+
+    if (isRecent) {
+        panelRecent.removeAttribute('hidden');
+        panelHistory.setAttribute('hidden', '');
+        updateRecentTicketsLegend();
+    } else {
+        panelRecent.setAttribute('hidden', '');
+        panelHistory.removeAttribute('hidden');
+    }
+}
+
+function setupHistoryPanelTabs() {
+    const tabRecent = document.getElementById('historyTabRecentTickets');
+    const tabHistory = document.getElementById('historyTabCallHistory');
+    const tablist = tabRecent?.closest('[role="tablist"]');
+    tabRecent?.addEventListener('click', () => selectHistoryPanelTab('recent'));
+    tabHistory?.addEventListener('click', () => selectHistoryPanelTab('history'));
+
+    tablist?.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
+        e.preventDefault();
+        const onRecent = tabRecent?.getAttribute('aria-selected') === 'true';
+        if (e.key === 'Home') {
+            selectHistoryPanelTab('recent');
+            tabRecent?.focus();
+            return;
+        }
+        if (e.key === 'End') {
+            selectHistoryPanelTab('history');
+            tabHistory?.focus();
+            return;
+        }
+        if (e.key === 'ArrowRight') {
+            if (onRecent) {
+                selectHistoryPanelTab('history');
+                tabHistory?.focus();
+            } else {
+                selectHistoryPanelTab('recent');
+                tabRecent?.focus();
+            }
+            return;
+        }
+        if (e.key === 'ArrowLeft') {
+            if (onRecent) {
+                selectHistoryPanelTab('history');
+                tabHistory?.focus();
+            } else {
+                selectHistoryPanelTab('recent');
+                tabRecent?.focus();
+            }
+        }
+    });
+
+    const showRecentOnLoad = tabRecent?.getAttribute('aria-selected') === 'true';
+    selectHistoryPanelTab(showRecentOnLoad ? 'recent' : 'history');
+}
+
+function updateRecentTicketsHintVisibility() {
+    const hint = document.getElementById('recentTicketsHint');
+    if (!hint) return;
+    const orgInput = document.getElementById('organization');
+    const name = String(orgInput?.value || '').trim();
+    const hasId = !!String(resolvedMainFormOrganization.autotaskId || '').trim();
+    const show = !hasId && !!name;
+    hint.style.display = show ? '' : 'none';
+}
+
+function clearRecentTicketsListUi() {
+    const list = document.getElementById('recentTicketsList');
+    if (list) list.innerHTML = '';
+    const status = document.getElementById('recentTicketsStatus');
+    if (status) status.textContent = '';
+    const errEl = document.getElementById('recentTicketsError');
+    if (errEl) {
+        errEl.textContent = '';
+        errEl.setAttribute('hidden', '');
+    }
+}
+
+function scheduleMainOrganizationResolution() {
+    if (mainFormOrganizationCommitTimer) {
+        clearTimeout(mainFormOrganizationCommitTimer);
+    }
+    mainFormOrganizationCommitTimer = setTimeout(() => {
+        mainFormOrganizationCommitTimer = null;
+        commitMainOrganizationResolution();
+    }, 350);
+}
+
+function commitMainOrganizationResolution(explicitOrg) {
+    const orgInput = document.getElementById('organization');
+    if (!orgInput) return;
+
+    let name = String(orgInput.value || '').trim();
+    let autotaskId = '';
+
+    if (explicitOrg && typeof explicitOrg === 'object') {
+        const exName = String(explicitOrg.name || '').trim();
+        const exId = String(explicitOrg.id || '').trim();
+        const nameLo = name.toLowerCase();
+        const exLo = exName.toLowerCase();
+        if (exId && exName && nameLo === exLo) {
+            autotaskId = exId;
+        }
+    }
+
+    if (!autotaskId && name) {
+        autotaskId = resolveAutotaskCompanyIdFromCache(name);
+    }
+
+    resolvedMainFormOrganization = { autotaskId, name };
+
+    if (!name) {
+        resolvedMainFormOrganization = { autotaskId: '', name: '' };
+        selectHistoryPanelTab('history');
+        clearRecentTicketsListUi();
+        updateRecentTicketsHintVisibility();
+        return;
+    }
+
+    if (!autotaskId) {
+        selectHistoryPanelTab('history');
+        clearRecentTicketsListUi();
+        updateRecentTicketsHintVisibility();
+        return;
+    }
+
+    updateRecentTicketsHintVisibility();
+    selectHistoryPanelTab('recent');
+    scheduleRecentTicketsFetch(autotaskId);
+}
+
+function scheduleRecentTicketsFetch(companyId) {
+    if (recentTicketsDebounceTimer) {
+        clearTimeout(recentTicketsDebounceTimer);
+    }
+    recentTicketsDebounceTimer = setTimeout(() => {
+        recentTicketsDebounceTimer = null;
+        void loadRecentTicketsForCompanyId(companyId);
+    }, 300);
+}
+
+function formatRecentTicketWhen(iso) {
+    if (!iso || typeof iso !== 'string') return '';
+    const ms = Date.parse(iso);
+    if (!Number.isFinite(ms)) return '';
+    try {
+        return new Date(ms).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+    } catch (e) {
+        return '';
+    }
+}
+
+function renderRecentTicketsList(tickets) {
+    const list = document.getElementById('recentTicketsList');
+    if (!list) return;
+    const rows = Array.isArray(tickets) ? tickets : [];
+    if (rows.length === 0) {
+        list.innerHTML = '<p class="recent-tickets-hint">No tickets with activity in the last 14 days.</p>';
+        return;
+    }
+    list.innerHTML = rows
+        .map((t) => {
+            const num = escapeHtml(String(t.ticketNumber || '').trim() || String(t.id || ''));
+            const rawTitle = String(t.title || '').trim();
+            const title = escapeHtml(rawTitle || '(No title)');
+            const match = classifyRecentTicketSource(t.source);
+            const rowCls = match ? 'recent-ticket-row recent-ticket-row--matched' : 'recent-ticket-row recent-ticket-row--other';
+            const accentStyle = match ? ` style="--recent-ticket-accent:${escapeHtmlAttr(normalizeHexColor(match.color))}"` : '';
+            const when = formatRecentTicketWhen(t.lastActivityDate);
+            const metaParts = [];
+            if (when) metaParts.push(when);
+            const statusLabel = String(t.statusName || '').trim();
+            if (statusLabel) metaParts.push(statusLabel);
+            else if (t.status != null && t.status !== '') metaParts.push(`Status ${t.status}`);
+            const prr = String(t.primaryResourceRole || '').trim();
+            if (prr) metaParts.push(prr);
+            const meta = metaParts.join(' · ');
+            const rawNum = String(t.ticketNumber || '').trim() || String(t.id || '');
+            const ticketValue = escapeHtmlAttr(rawNum);
+            const ariaExtra = match
+                ? ` Ticket source: ${match.label}.`
+                : ' No mapped ticket source color.';
+            const ariaUse = escapeHtmlAttr(`Use ticket ${rawNum} in ticket number field.${ariaExtra}`);
+            const metaBlock = meta ? `<span class="recent-ticket-row__meta">${escapeHtml(meta)}</span>` : '';
+            return `<div class="recent-ticket-row-wrap" role="listitem"><button type="button" class="${rowCls}" data-ticket-number="${ticketValue}" aria-label="${ariaUse}"${accentStyle}><span class="recent-ticket-row__num">${num}</span><span class="recent-ticket-row__title">${title}</span>${metaBlock}</button></div>`;
+        })
+        .join('');
+}
+
+function bindRecentTicketsListClicks() {
+    const list = document.getElementById('recentTicketsList');
+    if (!list || list.dataset.boundRecentClicks === '1') return;
+    list.dataset.boundRecentClicks = '1';
+    list.addEventListener('click', (e) => {
+        const btn = e.target.closest('.recent-ticket-row');
+        if (!btn) return;
+        const raw = btn.getAttribute('data-ticket-number') || '';
+        const ticketNumberEl = document.getElementById('ticketNumber');
+        if (ticketNumberEl) {
+            ticketNumberEl.value = raw;
+            ticketNumberEl.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        const status = document.getElementById('recentTicketsStatus');
+        if (status && raw) {
+            status.textContent = `Ticket number filled: ${raw}`;
+        }
+        ticketNumberEl?.focus();
+    });
+}
+
+async function loadRecentTicketsForCompanyId(companyId) {
+    const cid = String(companyId || '').trim();
+    if (!cid) return;
+
+    const orgInput = document.getElementById('organization');
+    const currentResolved = String(resolvedMainFormOrganization.autotaskId || '').trim();
+    if (currentResolved !== cid) return;
+
+    if (recentTicketsAbortController) {
+        recentTicketsAbortController.abort();
+    }
+    recentTicketsAbortController = new AbortController();
+    const { signal } = recentTicketsAbortController;
+
+    const status = document.getElementById('recentTicketsStatus');
+    const errEl = document.getElementById('recentTicketsError');
+    if (errEl) {
+        errEl.textContent = '';
+        errEl.setAttribute('hidden', '');
+    }
+    if (status) status.textContent = 'Loading tickets…';
+    const list = document.getElementById('recentTicketsList');
+    if (list) list.innerHTML = '';
+
+    if (!useSupabase()) {
+        if (status) status.textContent = '';
+        if (errEl) {
+            errEl.textContent = 'Sign-in is required to load Autotask tickets.';
+            errEl.removeAttribute('hidden');
+        }
+        return;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+        if (status) status.textContent = '';
+        return;
+    }
+
+    // getSession() alone can return a stale JWT; Edge verify_jwt then returns 401. getUser() validates/refreshes with the server first.
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+        if (status) status.textContent = '';
+        if (errEl) {
+            errEl.textContent = 'Sign in to load Autotask tickets.';
+            errEl.removeAttribute('hidden');
+        }
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+        if (status) status.textContent = '';
+        if (errEl) {
+            errEl.textContent = 'Session expired. Sign in again to load tickets.';
+            errEl.removeAttribute('hidden');
+        }
+        return;
+    }
+
+    const config = window.supabaseConfig || {};
+    const supabaseUrl = (config.SUPABASE_URL || '').trim();
+    const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
+    if (!supabaseUrl || !anonKey) {
+        if (status) status.textContent = '';
+        return;
+    }
+
+    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
+    const url = `${baseFunctionsUrl}/autotask-recent-tickets?companyId=${encodeURIComponent(cid)}`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${session.access_token}`,
+                apikey: anonKey,
+                'Content-Type': 'application/json',
+            },
+            signal,
+        });
+
+        if (signal.aborted) return;
+
+        if (String(resolvedMainFormOrganization.autotaskId || '').trim() !== cid) return;
+        if (String(orgInput?.value || '').trim() !== resolvedMainFormOrganization.name) return;
+
+        if (response.status === 503) {
+            if (status) status.textContent = '';
+            if (errEl) {
+                errEl.textContent = 'Autotask is not configured on the server.';
+                errEl.removeAttribute('hidden');
+            }
+            return;
+        }
+        if (response.status === 401) {
+            if (status) status.textContent = '';
+            if (errEl) {
+                errEl.textContent = 'Session expired. Sign in again to load tickets.';
+                errEl.removeAttribute('hidden');
+            }
+            return;
+        }
+        if (response.status === 400) {
+            if (status) status.textContent = '';
+            if (errEl) {
+                errEl.textContent = 'Could not load tickets for this organization.';
+                errEl.removeAttribute('hidden');
+            }
+            return;
+        }
+        if (!response.ok) {
+            const txt = await response.text().catch(() => '');
+            if (status) status.textContent = '';
+            if (errEl) {
+                errEl.textContent = 'Failed to load tickets. Please try again.';
+                errEl.removeAttribute('hidden');
+            }
+            console.warn('[autotask-recent-tickets]', response.status, txt);
+            return;
+        }
+
+        const data = await response.json().catch(() => ({}));
+        const tickets = Array.isArray(data?.tickets) ? data.tickets : [];
+        if (status) status.textContent = '';
+        updateRecentTicketsLegend();
+        renderRecentTicketsList(tickets);
+    } catch (err) {
+        if (signal.aborted) return;
+        if (status) status.textContent = '';
+        if (errEl && err?.name !== 'AbortError') {
+            errEl.textContent = 'Failed to load tickets. Please try again.';
+            errEl.removeAttribute('hidden');
+        }
     }
 }
 
@@ -332,170 +1135,8 @@ async function initializeEncryption() {
 }
 
 // ========== Autotask Organization Autocomplete ==========
-// SECURITY: This function NEVER contains or sends API keys.
-// All API calls go through a Supabase Edge Function which stores Autotask credentials server-side.
-
-/**
- * Search organizations via Supabase Edge Function (secure proxy)
- * @param {string} query - Search query (minimum 2 characters)
- * @param {number} limit - Maximum number of results (default: 20)
- * @returns {Promise<Array<{id: string, name: string}>>}
- */
-async function searchOrganizationsViaProxy(query, limit = 20) {
-    if (!query || query.trim().length < 2) {
-        return [];
-    }
-
-    const supabase = getSupabase();
-    if (!supabase) {
-        console.warn('Supabase not configured. Autocomplete disabled.');
-        return [];
-    }
-
-    // Check cache first
-    const cacheKey = query.toLowerCase().trim();
-    const cached = autocompleteCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < AUTOCACHE_TTL_MS) {
-        return cached.results;
-    }
-
-    // Get Supabase session for authentication
-    let { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-        console.warn('No active session. Autocomplete requires authentication.');
-        return [];
-    }
-    const expiresAtMs = typeof session.expires_at === 'number' ? session.expires_at * 1000 : null;
-    const isExpiringSoon = typeof expiresAtMs === 'number' ? expiresAtMs < (Date.now() + 30 * 1000) : false;
-    if (isExpiringSoon) {
-        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-        if (refreshErr || !refreshed?.session?.access_token) {
-            console.warn('Session expired. Please log in again.');
-            return [];
-        }
-        session = refreshed.session;
-    }
-    if (!session?.access_token) {
-        console.warn('Session expired. Please log in again.');
-        return [];
-    }
-
-    // Get Supabase project URL
-    const config = window.supabaseConfig || {};
-    const supabaseUrl = (config.SUPABASE_URL || '').trim();
-    if (!supabaseUrl) {
-        console.warn('Supabase URL not configured.');
-        return [];
-    }
-
-    // Call Edge Function (never sends API key - it's stored server-side)
-    // Prefer the canonical function that performs Supabase cache writes.
-    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
-    const edgeFunctionCandidates = [
-        `${baseFunctionsUrl}/autotask-search-companies-v3`,
-        `${baseFunctionsUrl}/autotask-search-companies`
-    ];
-    const searchParams = new URLSearchParams({
-        q: query.trim(),
-        limit: String(Math.min(Math.max(limit, 1), 50))
-    });
-
-    try {
-        const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
-        // Debug (safe): confirm headers are present without logging sensitive values
-        // Remove later once stable.
-        console.debug('[autotask-autocomplete] session?', !!session, 'tokenLen', String(session?.access_token || '').length, 'apikey?', anonKey.length > 0);
-        const isJwtLike = (token) => typeof token === 'string' && token.split('.').length === 3;
-        let response = null;
-        for (const endpoint of edgeFunctionCandidates) {
-            const candidateResponse = await fetch(`${endpoint}?${searchParams}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${session.access_token}`,
-                    // Supabase Edge Functions expect the project anon/publishable key as `apikey`
-                    // This is safe to include client-side (as with the rest of the app).
-                    'apikey': anonKey,
-                    'Content-Type': 'application/json'
-                }
-            });
-            if (candidateResponse.ok || candidateResponse.status !== 404) {
-                response = candidateResponse;
-                break;
-            }
-        }
-        if (!response) {
-            throw new Error('No deployed Autotask search edge function found.');
-        }
-
-        if (response.status === 401) {
-            const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-            const refreshedToken = refreshed?.session?.access_token;
-            if (!refreshErr && isJwtLike(refreshedToken)) {
-                session = refreshed.session;
-                response = null;
-                for (const endpoint of edgeFunctionCandidates) {
-                    const candidateResponse = await fetch(`${endpoint}?${searchParams}`, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${session.access_token}`,
-                            // Supabase Edge Functions expect the project anon/publishable key as `apikey`
-                            // This is safe to include client-side (as with the rest of the app).
-                            'apikey': anonKey,
-                            'Content-Type': 'application/json'
-                        }
-                    });
-                    if (candidateResponse.ok || candidateResponse.status !== 404) {
-                        response = candidateResponse;
-                        break;
-                    }
-                }
-                if (!response) {
-                    throw new Error('No deployed Autotask search edge function found.');
-                }
-            }
-        }
-
-        if (!response.ok) {
-            const txt = await response.text().catch(() => '');
-            let errorDetails = '';
-            let fullError = '';
-            try {
-                const errorJson = JSON.parse(txt);
-                errorDetails = errorJson.details || errorJson.error || '';
-                fullError = JSON.stringify(errorJson, null, 2);
-            } catch {
-                errorDetails = txt;
-                fullError = txt;
-            }
-            console.warn('[autotask-autocomplete] non-2xx', response.status);
-            console.warn('[autotask-autocomplete] Full error response:', fullError);
-            if (response.status === 401) {
-                console.warn('Session expired. Please log in again.');
-                return [];
-            }
-            if (response.status === 503) {
-                console.warn('Autotask API not configured on server.');
-                return [];
-            }
-            throw new Error(`Edge Function returned ${response.status}: ${errorDetails || 'See console for details'}`);
-        }
-
-        const data = await response.json();
-        const organizations = Array.isArray(data.organizations) ? data.organizations : [];
-        addToCachedAutotaskCompanies(organizations);
-
-        // Cache results
-        autocompleteCache.set(cacheKey, {
-            results: organizations,
-            timestamp: Date.now()
-        });
-
-        return organizations;
-    } catch (err) {
-        console.error('Failed to search organizations:', err);
-        return [];
-    }
-}
+// Organization names are served from a local cache hydrated from Supabase `cached_autotask_companies`
+// (weekly full sync via Edge Function `autotask-sync-all-companies`). No per-keystroke Autotask calls.
 
 /**
  * Setup autocomplete for an organization input field
@@ -510,11 +1151,6 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
     let selectedIndex = -1;
     let suggestions = [];
     let suppressNextInputSearch = false;
-
-    const cachedOrganization = getCachedOrganizationSelection(inputId);
-    if (!input.value.trim() && cachedOrganization) {
-        input.value = cachedOrganization;
-    }
 
     function hideDropdown() {
         dropdown.classList.remove('show');
@@ -567,8 +1203,9 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
 
         dropdown.innerHTML = ranked.map((org, index) => {
             const escapedName = escapeHtml(org.name);
+            const atId = escapeHtmlAttr(String(org?.id || ''));
             return `
-                <div class="autocomplete-item" role="option" data-index="${index}" data-value="${escapeHtmlAttr(org.name)}" aria-selected="false">
+                <div class="autocomplete-item" data-testid="autocomplete-item" role="option" data-index="${index}" data-value="${escapeHtmlAttr(org.name)}" data-autotask-id="${atId}" aria-selected="false">
                     ${escapedName}
                 </div>
             `;
@@ -585,7 +1222,6 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
 
         const org = suggestions[index];
         input.value = org.name;
-        setCachedOrganizationSelection(inputId, org.name);
         addToCachedAutotaskCompanies(org);
         suppressNextInputSearch = true;
         hideDropdown();
@@ -593,6 +1229,14 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
         // Trigger input event for form validation
         input.dispatchEvent(new Event('input', { bubbles: true }));
         input.focus();
+
+        if (inputId === 'organization') {
+            if (mainFormOrganizationCommitTimer) {
+                clearTimeout(mainFormOrganizationCommitTimer);
+                mainFormOrganizationCommitTimer = null;
+            }
+            commitMainOrganizationResolution(org);
+        }
     }
 
     function highlightItem(index) {
@@ -613,37 +1257,22 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
         }
     }
 
-    // Debounced search
-    async function performSearch(query) {
-        // Cancel previous request
-        if (autocompleteAbortController) {
-            autocompleteAbortController.abort();
-        }
-        autocompleteAbortController = new AbortController();
-
-        // Clear previous timer
+    // Debounced local filter (Supabase-backed list loaded at startup / after weekly sync)
+    function performSearch(query) {
         if (autocompleteDebounceTimer) {
             clearTimeout(autocompleteDebounceTimer);
         }
 
-        autocompleteDebounceTimer = setTimeout(async () => {
+        autocompleteDebounceTimer = setTimeout(() => {
             if (query.length < 2) {
                 hideDropdown();
                 return;
             }
-
-            try {
-                const orgs = await searchOrganizationsViaProxy(query, 20);
-                if (autocompleteActiveInstance === inputId) {
-                    renderSuggestions(orgs, query);
-                }
-            } catch (err) {
-                if (err.name !== 'AbortError') {
-                    console.error('Autocomplete search error:', err);
-                    hideDropdown();
-                }
+            const orgs = getInstantAutocompleteResults(query, 20);
+            if (autocompleteActiveInstance === inputId) {
+                renderSuggestions(orgs, query);
             }
-        }, 300); // 300ms debounce
+        }, AUTOCOMPLETE_DEBOUNCE_MS);
     }
 
     // Input event handler
@@ -661,6 +1290,11 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
             return;
         }
 
+        const instantOrgs = getInstantAutocompleteResults(query, 20);
+        if (instantOrgs.length > 0) {
+            renderSuggestions(instantOrgs, query);
+        }
+
         performSearch(query);
     });
 
@@ -668,6 +1302,13 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
     input.addEventListener('focus', () => {
         autocompleteActiveInstance = inputId;
         const query = input.value.trim();
+        if (query.length >= 2) {
+            const inst = getInstantAutocompleteResults(query, 20);
+            if (inst.length > 0) {
+                renderSuggestions(inst, query);
+                return;
+            }
+        }
         if (query.length >= 2 && suggestions.length > 0) {
             showDropdown();
         }
@@ -686,8 +1327,12 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
     input.addEventListener('keydown', (e) => {
         if (!dropdown.classList.contains('show')) {
             if (e.key === 'ArrowDown' && input.value.trim().length >= 2) {
-                // Trigger search if dropdown not visible
-                performSearch(input.value.trim());
+                const qv = input.value.trim();
+                const inst = getInstantAutocompleteResults(qv, 20);
+                if (inst.length > 0) {
+                    renderSuggestions(inst, qv);
+                }
+                performSearch(qv);
                 e.preventDefault();
             }
             return;
@@ -745,6 +1390,15 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
             }
         }
     });
+
+    if (inputId === 'organization') {
+        input.addEventListener('input', () => {
+            scheduleMainOrganizationResolution();
+        });
+        input.addEventListener('blur', () => {
+            setTimeout(() => scheduleMainOrganizationResolution(), 280);
+        });
+    }
 }
 
 async function mapRowToEntry(row) {
@@ -801,23 +1455,107 @@ async function loadCurrentUserProfile() {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
             currentUserProfile = null;
+            updateRecentTicketsLegend();
             return;
         }
-        const { data, error } = await supabase
-            .from('profiles')
-            .select('full_name, is_admin')
-            .eq('id', session.user.id)
-            .single();
+        const uid = session.user.id;
+        const prevSameUser = currentUserProfile?.id === uid ? currentUserProfile : null;
+        const emailFallback = session.user.email || 'You';
+        const metaName = clampDisplayName(session.user.user_metadata?.full_name);
+
+        const fetchProfileRow = async () =>
+            supabase.from('profiles').select('full_name, is_admin').eq('id', uid).maybeSingle();
+
+        let { data, error } = await fetchProfileRow();
+        if (error) {
+            await new Promise((r) => setTimeout(r, 400));
+            ({ data, error } = await fetchProfileRow());
+        }
+
         if (error) {
             console.error('loadCurrentUserProfile error:', error);
-            currentUserProfile = { id: session.user.id, full_name: session.user.email || 'You', is_admin: false };
+            currentUserProfile = {
+                id: uid,
+                full_name: (prevSameUser && prevSameUser.full_name) || metaName || emailFallback,
+                is_admin: prevSameUser ? !!prevSameUser.is_admin : false,
+                profile_load_error: true,
+            };
+            profileCache.set(uid, currentUserProfile.full_name);
+            updateAccountAdminTabVisibility();
+            updateRecentTicketsLegend();
             return;
         }
-        currentUserProfile = { id: session.user.id, full_name: data.full_name || (session.user.email || 'You'), is_admin: !!data.is_admin };
-        profileCache.set(session.user.id, currentUserProfile.full_name);
+
+        if (!data) {
+            const seedName = metaName || (emailFallback.includes('@') ? emailFallback.split('@')[0] : emailFallback) || 'User';
+            const { error: upErr } = await supabase
+                .from('profiles')
+                .upsert(
+                    { id: uid, full_name: seedName, updated_at: new Date().toISOString() },
+                    { onConflict: 'id' },
+                );
+            if (upErr) console.error('loadCurrentUserProfile self-heal upsert:', upErr);
+            ({ data, error } = await fetchProfileRow());
+        }
+
+        if (error || !data) {
+            currentUserProfile = {
+                id: uid,
+                full_name: metaName || emailFallback,
+                is_admin: false,
+            };
+        } else {
+            currentUserProfile = {
+                id: uid,
+                full_name: data.full_name || metaName || emailFallback,
+                is_admin: !!data.is_admin,
+            };
+        }
+        profileCache.set(uid, currentUserProfile.full_name);
+        updateAccountAdminTabVisibility();
+        updateRecentTicketsLegend();
     } catch (err) {
         console.error('loadCurrentUserProfile exception:', err);
     }
+}
+
+async function completeAuthenticatedStartup(appShell, authScreen) {
+    await loadCurrentUserProfile();
+    showApp(appShell, authScreen);
+    setupLogout();
+    subscribeRealtime();
+    await initApp();
+}
+
+async function tryConsumePendingAuthDeepLink(appShell, authScreen) {
+    const getPending = window.electronAPI?.getPendingAuthDeepLink;
+    if (typeof getPending !== 'function') return false;
+    const url = await getPending();
+    if (!url) return false;
+    const { ok } = await applyAuthDeepLinkSession(url);
+    if (!ok) return false;
+    const supabase = getSupabase();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return false;
+    await completeAuthenticatedStartup(appShell, authScreen);
+    showNotification('You are signed in. If you reset your password, set a new one under Settings, then Security.');
+    return true;
+}
+
+function ensureAuthDeepLinkListener(appShell, authScreen) {
+    if (authDeepLinkListenerBound) return;
+    authDeepLinkListenerBound = true;
+    window.electronAPI?.onAuthDeepLink?.(async (url) => {
+        const { ok } = await applyAuthDeepLinkSession(url);
+        if (!ok) return;
+        const supabase = getSupabase();
+        if (!supabase) return;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        if (document.body?.getAttribute('data-shell') !== 'auth') return;
+        await completeAuthenticatedStartup(appShell, authScreen);
+        showNotification('You are signed in. If you reset your password, set a new one under Settings, then Security.');
+    });
 }
 
 async function getProfileNameByUserId(userId) {
@@ -874,26 +1612,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             const { data: { session } } = await supabase.auth.getSession();
             if (session) {
-                await loadCurrentUserProfile();
-                showApp(appShell, authScreen);
-                await initApp();
-                setupLogout();
-                subscribeRealtime();
+                await completeAuthenticatedStartup(appShell, authScreen);
             } else {
-                showAuth(authScreen, appShell);
-                setupAuthListeners();
+                const openedViaDeepLink = await tryConsumePendingAuthDeepLink(appShell, authScreen);
+                if (!openedViaDeepLink) {
+                    setupAuthListeners();
+                }
             }
         } else {
-            // Supabase is required - show error message
+            // Supabase is required — show configuration message only
             showAuth(authScreen, appShell);
+            document.querySelector('.auth-layout')?.classList.add('auth-layout--supabase-missing');
             const noConfigEl = document.getElementById('authNoConfig');
             if (noConfigEl) {
                 noConfigEl.classList.remove('hidden');
-                noConfigEl.querySelector('.auth-no-config-title').textContent = 'Supabase configuration required';
-                noConfigEl.querySelector('.auth-no-config-body').textContent = 'Please configure Supabase by creating supabaseConfig.js with your project URL and anon key.';
-                const useLocalBtn = noConfigEl.querySelector('#authUseLocalBtn');
-                if (useLocalBtn) {
-                    useLocalBtn.style.display = 'none';
+                const titleEl = noConfigEl.querySelector('.auth-no-config-title');
+                const bodyEl = noConfigEl.querySelector('.auth-no-config-body');
+                if (titleEl) titleEl.textContent = 'Supabase configuration required';
+                if (bodyEl) {
+                    bodyEl.textContent = 'Call Log requires Supabase. Add your project URL and anon key in supabaseConfig.js (see supabaseConfig.example.js).';
                 }
             }
         }
@@ -1154,24 +1891,41 @@ function showAuth(authScreen, appShell) {
             }
         }
     }
+    resetAuthForgotToLogin();
+}
+
+function resetAuthForgotToLogin() {
+    const panel = document.getElementById('authForgotPanel');
+    const pwdG = document.getElementById('authPasswordGroup');
+    const act = document.getElementById('authPrimaryActions');
+    const forgotLink = document.getElementById('authForgotWrap');
+    const title = document.querySelector('#authFormCard .auth-title');
+    const subtitle = document.querySelector('#authFormCard .auth-subtitle');
+    if (panel) {
+        panel.classList.add('hidden');
+        panel.setAttribute('aria-hidden', 'true');
+    }
+    pwdG?.classList.remove('hidden');
+    act?.classList.remove('hidden');
+    forgotLink?.classList.remove('hidden');
+    if (title) title.textContent = 'Sign in';
+    if (subtitle) {
+        subtitle.textContent =
+            'Sign in with the account an administrator invited. New users receive an email invite.';
+    }
 }
 
 function setupAuthListeners() {
     const form = document.getElementById('authForm');
-    const signUpBtn = document.getElementById('authSignUpBtn');
     const signInBtn = document.getElementById('authSignInBtn');
     const authError = document.getElementById('authError');
     const authScreen = document.getElementById('authScreen');
     const appShell = document.getElementById('appShell');
-    const nameInput = document.getElementById('authName');
-    const authNameGroup = document.getElementById('authNameGroup');
     const layout = document.querySelector('.auth-layout');
     const brandCard = document.getElementById('authBrandCard');
     const formCard = document.getElementById('authFormCard');
     const supabase = getSupabase();
     if (!supabase || !form) return;
-
-    let authMode = 'login'; // 'login' | 'signup'
 
     function showAuthBrand() {
         layout?.classList.remove('is-form');
@@ -1227,24 +1981,24 @@ function setupAuthListeners() {
         }
     });
 
-    function switchToSignupMode() {
-        authMode = 'signup';
-        showAuthForm();
-        if (authNameGroup) authNameGroup.style.display = '';
-        if (nameInput) nameInput.setAttribute('required', '');
-        if (signInBtn) signInBtn.textContent = 'Create account';
-        if (signUpBtn) signUpBtn.textContent = 'Back to log in';
+    function enterAuthForgotMode() {
         authError.textContent = '';
-    }
-
-    function switchToLoginMode() {
-        authMode = 'login';
-        showAuthForm();
-        if (authNameGroup) authNameGroup.style.display = 'none';
-        if (nameInput) nameInput.removeAttribute('required');
-        if (signInBtn) signInBtn.textContent = 'Log in';
-        if (signUpBtn) signUpBtn.textContent = 'Sign up';
-        authError.textContent = '';
+        authError.style.color = '';
+        resetAuthForgotToLogin();
+        const pwdG = document.getElementById('authPasswordGroup');
+        const act = document.getElementById('authPrimaryActions');
+        const forgotLink = document.getElementById('authForgotWrap');
+        const panel = document.getElementById('authForgotPanel');
+        const title = document.querySelector('#authFormCard .auth-title');
+        const subtitle = document.querySelector('#authFormCard .auth-subtitle');
+        pwdG?.classList.add('hidden');
+        act?.classList.add('hidden');
+        forgotLink?.classList.add('hidden');
+        panel?.classList.remove('hidden');
+        panel?.setAttribute('aria-hidden', 'false');
+        if (title) title.textContent = 'Reset password';
+        if (subtitle) subtitle.textContent = 'We will email you a secure link.';
+        setTimeout(() => document.getElementById('authEmail')?.focus(), 0);
     }
 
     async function doLogin() {
@@ -1261,90 +2015,17 @@ function setupAuthListeners() {
             return;
         }
         if (data.session) {
-            // Save email for next time
             try {
                 localStorage.setItem('calllog-saved-email', email);
             } catch (e) {
                 // Ignore localStorage errors
             }
-            await loadCurrentUserProfile();
-            showApp(appShell, authScreen);
-            setupLogout();
-            subscribeRealtime();
-            await initApp();
-        }
-    }
-
-    async function doSignUp() {
-        authError.textContent = '';
-        authError.style.color = '';
-        const fullName = nameInput?.value.trim();
-        if (!fullName) {
-            authError.textContent = 'Please enter your name.';
-            return;
-        }
-        const email = document.getElementById('authEmail').value.trim();
-        const password = document.getElementById('authPassword').value;
-        if (!email || !password) {
-            authError.textContent = 'Please enter email and password.';
-            return;
-        }
-        const btn = signInBtn;
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Signing up…';
-        }
-        try {
-            const { data, error } = await supabase.auth.signUp({ email, password });
-            if (error) {
-                authError.textContent = error.message || 'Sign up failed';
-                return;
-            }
-            if (data.user) {
-                try {
-                    const { error: profileError } = await supabase
-                        .from('profiles')
-                        .upsert({ id: data.user.id, full_name: fullName })
-                        .single();
-                    if (profileError) console.error('Profile upsert error:', profileError);
-                } catch (profileErr) {
-                    console.error('Profile upsert exception:', profileErr);
-                }
-            }
-            if (data.user && !data.session) {
-                authError.textContent = 'Check your email to confirm your account.';
-                authError.style.color = 'var(--success)';
-                return;
-            }
-            if (data.session) {
-                // Save email for next time
-                try {
-                    localStorage.setItem('calllog-saved-email', email);
-                } catch (e) {
-                    // Ignore localStorage errors
-                }
-                await loadCurrentUserProfile();
-                showApp(appShell, authScreen);
-                setupLogout();
-                subscribeRealtime();
-                await initApp();
-            }
-        } catch (err) {
-            authError.textContent = err?.message || 'Sign up failed. Check your connection.';
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = 'Create account';
-            }
+            await completeAuthenticatedStartup(appShell, authScreen);
         }
     }
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (authMode === 'signup') {
-            await doSignUp();
-            return;
-        }
         if (signInBtn) {
             signInBtn.disabled = true;
             const originalText = signInBtn.textContent;
@@ -1360,16 +2041,49 @@ function setupAuthListeners() {
         }
     });
 
-    if (signUpBtn) {
-        signUpBtn.addEventListener('click', () => {
-            if (authMode === 'login') {
-                switchToSignupMode();
-                nameInput?.focus();
-            } else {
-                switchToLoginMode();
+    document.getElementById('authForgotBtn')?.addEventListener('click', () => {
+        enterAuthForgotMode();
+    });
+    document.getElementById('authForgotBackBtn')?.addEventListener('click', () => {
+        authError.textContent = '';
+        authError.style.color = '';
+        resetAuthForgotToLogin();
+    });
+    document.getElementById('authForgotSendBtn')?.addEventListener('click', async () => {
+        authError.textContent = '';
+        authError.style.color = '';
+        const email = document.getElementById('authEmail')?.value.trim() || '';
+        if (!email) {
+            authError.textContent = 'Enter your email address.';
+            return;
+        }
+        const sendBtn = document.getElementById('authForgotSendBtn');
+        if (sendBtn) {
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending…';
+        }
+        try {
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: getPasswordRecoveryRedirectUrl(),
+            });
+            if (error) {
+                authError.textContent = error.message || 'Could not send reset email.';
+                return;
             }
-        });
-    }
+            authError.textContent =
+                'If an account exists for that email, you will receive a link shortly. Open it on this computer.';
+            authError.style.color = 'var(--success)';
+        } catch (err) {
+            authError.textContent = err?.message || 'Could not send reset email.';
+        } finally {
+            if (sendBtn) {
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send reset link';
+            }
+        }
+    });
+
+    ensureAuthDeepLinkListener(appShell, authScreen);
 
     // Window controls on auth screen (move, minimize, maximize, close)
     setupWindowControls(
@@ -1382,39 +2096,53 @@ function setupAuthListeners() {
     }
 }
 
+async function runAuthSignOutAndTeardown(signOutOptions) {
+    const supabase = getSupabase();
+    const logoutBtn = document.getElementById('logoutBtn');
+    const profileBtn = document.getElementById('profileBtn');
+    const accountBackBtn = document.getElementById('accountBackBtn');
+    if (supabase) {
+        await supabase.auth.signOut(signOutOptions);
+        if (supabaseRealtimeChannel) {
+            supabase.removeChannel(supabaseRealtimeChannel);
+            supabaseRealtimeChannel = null;
+        }
+    }
+
+    encryptionState.enabled = false
+    encryptionState.initialized = false
+    encryptionState.keyVersion = 1
+    encryptionState.dataKey = null
+    encryptionState.blindKey = null
+    encryptionState.initPromise = null
+
+    setAppView('calls');
+    if (logoutBtn) logoutBtn.style.display = 'none';
+    if (profileBtn) profileBtn.style.display = 'none';
+    if (accountBackBtn) accountBackBtn.style.display = 'none';
+    if (logoutClickHandler) {
+        logoutBtn?.removeEventListener('click', logoutClickHandler);
+        logoutClickHandler = null;
+    }
+    const authScreen = document.getElementById('authScreen');
+    const appShell = document.getElementById('appShell');
+    updateRecentTicketsLegend();
+    showAuth(authScreen, appShell);
+    setupAuthListeners();
+}
+
 function setupLogout() {
     const logoutBtn = document.getElementById('logoutBtn');
     const profileBtn = document.getElementById('profileBtn');
     if (logoutBtn) logoutBtn.style.display = '';
     if (profileBtn) profileBtn.style.display = '';
-    const handler = async () => {
-        const supabase = getSupabase();
-        if (supabase) {
-            await supabase.auth.signOut();
-            if (supabaseRealtimeChannel) {
-                supabase.removeChannel(supabaseRealtimeChannel);
-                supabaseRealtimeChannel = null;
-            }
-        }
+    const accountBackBtn = document.getElementById('accountBackBtn');
+    if (accountBackBtn) accountBackBtn.style.display = 'none';
 
-        // Reset in-memory encryption keys so next login always re-initializes.
-        encryptionState.enabled = false
-        encryptionState.initialized = false
-        encryptionState.keyVersion = 1
-        encryptionState.dataKey = null
-        encryptionState.blindKey = null
-        encryptionState.initPromise = null
-
-        if (logoutBtn) logoutBtn.style.display = 'none';
-        if (profileBtn) profileBtn.style.display = 'none';
-        logoutBtn?.removeEventListener('click', handler);
-        const authScreen = document.getElementById('authScreen');
-        const appShell = document.getElementById('appShell');
-        showAuth(authScreen, appShell);
-        // Re-setup auth listeners so the brand card is clickable again
-        setupAuthListeners();
+    logoutClickHandler = async () => {
+        await runAuthSignOutAndTeardown();
     };
-    logoutBtn?.addEventListener('click', handler);
+    logoutBtn?.addEventListener('click', logoutClickHandler);
 }
 
 function subscribeRealtime() {
@@ -1434,6 +2162,8 @@ function subscribeRealtime() {
 
                 // Always refresh entries when a new call is inserted
                 await loadEntries();
+                refreshStatisticsPageIfVisible();
+                refreshAdminStatsIfVisible();
 
                 // Do not show a \"teammate\" notification for your own inserts
                 if (!user || !takerId || takerId === user.id) return;
@@ -1474,6 +2204,8 @@ async function initApp() {
     }
     setCurrentDateTime();
     setupEventListeners();
+    setupStatisticsPageListeners();
+    setupAdminStatisticsPageListeners();
     setupKeyboardShortcuts();
     setupTitlebar();
 
@@ -1485,6 +2217,8 @@ async function initApp() {
     if (useSupabase()) {
         setupOrganizationAutocomplete('organization', 'organization-autocomplete-list');
         setupOrganizationAutocomplete('editOrganization', 'editOrganization-autocomplete-list');
+        refreshAutotaskOrgCacheAfterAuth();
+        setTimeout(() => scheduleMainOrganizationResolution(), 900);
     }
 
     await initializeHistoryDay();
@@ -1492,6 +2226,7 @@ async function initApp() {
     await loadEntries();
     await updateStats();
     fitWindowToContent();
+    setupAccountUpdaterPanel();
 }
 
 // Size the main window height to fit the full content (Electron only)
@@ -1595,8 +2330,10 @@ function setupEventListeners() {
     document.getElementById('closeSearch').addEventListener('click', toggleSearch);
     document.getElementById('searchInput').addEventListener('input', handleSearch);
 
-    // Stats button
-    document.getElementById('statsBtn').addEventListener('click', showStats);
+    // Statistics page
+    document.getElementById('statsBtn').addEventListener('click', () => {
+        openStatisticsPage()
+    })
     document.getElementById('reportsBtn')?.addEventListener('click', openReportsModal);
 
     // Day / calendar controls
@@ -1609,8 +2346,16 @@ function setupEventListeners() {
     document.getElementById('calendarModal')?.addEventListener('click', (e) => {
         if (e.target?.id === 'calendarModal') closeCalendar();
     });
-    document.getElementById('calPrevMonth')?.addEventListener('click', () => navigateCalendarMonth(-1));
-    document.getElementById('calNextMonth')?.addEventListener('click', () => navigateCalendarMonth(1));
+    document.getElementById('calPrevMonth')?.addEventListener('click', () => {
+        calendarMonthNavChain = calendarMonthNavChain
+            .then(() => navigateCalendarMonth(-1))
+            .catch((err) => console.warn('[calendar] navigate prev', err));
+    });
+    document.getElementById('calNextMonth')?.addEventListener('click', () => {
+        calendarMonthNavChain = calendarMonthNavChain
+            .then(() => navigateCalendarMonth(1))
+            .catch((err) => console.warn('[calendar] navigate next', err));
+    });
     
     // Confirm modal
     document.getElementById('closeConfirmModal')?.addEventListener('click', () => closeConfirm(false));
@@ -1626,29 +2371,20 @@ function setupEventListeners() {
     document.getElementById('editModalDeleteBtn').addEventListener('click', showEditModalDeleteConfirm);
     document.getElementById('editModalDeleteCancel').addEventListener('click', hideEditModalDeleteConfirm);
     document.getElementById('editModalDeleteConfirmBtn').addEventListener('click', confirmEditModalDelete);
-    document.getElementById('closeStatsModal').addEventListener('click', closeStatsModal);
     document.getElementById('closeReportsModal')?.addEventListener('click', closeReportsModal);
     document.getElementById('editForm').addEventListener('submit', handleEditSubmit);
 
-    // Profile / Account modal (Supabase only)
-    document.getElementById('profileBtn')?.addEventListener('click', openProfileModal);
-    document.getElementById('closeProfileModal')?.addEventListener('click', closeProfileModal);
-    document.getElementById('profileCancelBtn')?.addEventListener('click', closeProfileModal);
-    document.getElementById('profileForm')?.addEventListener('submit', handleProfileSubmit);
-    
+    setupAccountPageListeners();
+    setupHistoryPanelTabs();
+    bindRecentTicketsListClicks();
+
     // Close modals on outside click
     // Keep Edit modal open on backdrop clicks to prevent accidental dismiss while editing.
     document.getElementById('editModal').addEventListener('click', (e) => {
         if (e.target.id === 'editModal') return;
     });
-    document.getElementById('statsModal').addEventListener('click', (e) => {
-        if (e.target.id === 'statsModal') closeStatsModal();
-    });
     document.getElementById('reportsModal')?.addEventListener('click', (e) => {
         if (e.target.id === 'reportsModal') closeReportsModal();
-    });
-    document.getElementById('profileModal')?.addEventListener('click', (e) => {
-        if (e.target.id === 'profileModal') closeProfileModal();
     });
 
     setupEntriesListClick();
@@ -1760,7 +2496,7 @@ function closeCalendar() {
     modal.setAttribute('aria-hidden', 'true');
 }
 
-function navigateCalendarMonth(deltaMonths) {
+async function navigateCalendarMonth(deltaMonths) {
     if (!calendarMonth) {
         calendarMonth = new Date();
         calendarMonth.setDate(1);
@@ -1769,7 +2505,7 @@ function navigateCalendarMonth(deltaMonths) {
     d.setMonth(d.getMonth() + deltaMonths);
     d.setDate(1);
     calendarMonth = d;
-    renderCalendar(calendarMonth);
+    await renderCalendar(calendarMonth);
 }
 
 async function renderCalendar(monthDate) {
@@ -1779,11 +2515,12 @@ async function renderCalendar(monthDate) {
 
     const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
 
-    label.textContent = monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-
     const entries = await getEntries();
     const daysWithCalls = getDaysWithCalls(entries);
     const todayKey = getTodayKey();
+
+    // Update header only after data is loaded so it stays in sync with the grid (avoids stale cells)
+    label.textContent = monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
     // Build a 6x7 grid, Monday-first
     // JS getDay(): Sun=0..Sat=6. Convert so Mon=0..Sun=6
@@ -1810,7 +2547,7 @@ async function renderCalendar(monthDate) {
         ].filter(Boolean).join(' ');
 
         cells.push(`
-            <button class="${classes}" type="button" data-day="${key}" aria-label="${key}">
+            <button class="${classes}" type="button" data-testid="calendar-day" data-day="${key}" aria-label="${key}">
                 ${d.getDate()}
             </button>
         `);
@@ -1819,7 +2556,7 @@ async function renderCalendar(monthDate) {
     grid.innerHTML = cells.join('');
 
     // Day click handlers
-    grid.querySelectorAll('.cal-day').forEach((btn) => {
+    grid.querySelectorAll('[data-testid="calendar-day"]').forEach((btn) => {
         btn.addEventListener('click', () => {
             const key = btn.getAttribute('data-day');
             if (key) setSelectedDay(key, true);
@@ -1886,16 +2623,14 @@ function setupKeyboardShortcuts() {
         if (e.key === 'Escape') {
             if (document.getElementById('editModal').classList.contains('show')) {
                 closeEditModal();
-            } else if (document.getElementById('statsModal').classList.contains('show')) {
-                closeStatsModal();
             } else if (document.getElementById('reportsModal')?.classList.contains('show')) {
                 closeReportsModal();
             } else if (document.getElementById('calendarModal')?.classList.contains('show')) {
                 closeCalendar();
             } else if (document.getElementById('confirmModal')?.classList.contains('show')) {
                 closeConfirm(false);
-            } else if (document.getElementById('profileModal')?.classList.contains('show')) {
-                closeProfileModal();
+            } else if (currentAppView === 'account' || currentAppView === 'statistics' || currentAppView === 'adminStatistics') {
+                setAppView('calls');
             } else if (document.getElementById('searchContainer').style.display !== 'none') {
                 toggleSearch();
             }
@@ -1982,11 +2717,10 @@ async function handleFormSubmit(e) {
         organization: document.getElementById('organization').value.trim(),
         deviceName: (document.getElementById('deviceName') && document.getElementById('deviceName').value) ? document.getElementById('deviceName').value.trim() : '',
         supportRequest: document.getElementById('supportRequest').value.trim(),
-        notes: (document.getElementById('notes') && document.getElementById('notes').value) ? document.getElementById('notes').value.trim() : '',
+        notes: (document.getElementById('ticketNumber') && document.getElementById('ticketNumber').value) ? document.getElementById('ticketNumber').value.trim() : '',
         timestamp: entryDate.toISOString()
     };
     if (formData.organization) {
-        setCachedOrganizationSelection('organization', formData.organization);
         addToCachedAutotaskCompanies({ id: '', name: formData.organization });
     }
 
@@ -2339,12 +3073,9 @@ async function loadEntries() {
         })
     }
 
-    // Immediate loading state to avoid pop-in
     setEntriesLoading(true);
-    const loadStartedAt = performance.now();
 
     const entries = await getEntries();
-    const dynamicMinMs = getDynamicMinLoadingMs(entries.length);
 
     // First filter by selected day (local day boundaries)
     const dayKey = selectedDay || getTodayKey();
@@ -2360,7 +3091,7 @@ async function loadEntries() {
         }
         filteredEntries = filteredEntries.filter(entry =>
             entry.name.toLowerCase().includes(filterLower) ||
-            (entry.phone || entry.mobile || '').includes(filterLower) ||
+            String(entry.phone || entry.mobile || '').toLowerCase().includes(filterLower) ||
             (exactPhoneMatches ? exactPhoneMatches.has(String(entry.id)) : false) ||
             entry.organization.toLowerCase().includes(filterLower) ||
             (entry.deviceName && entry.deviceName.toLowerCase().includes(filterLower)) ||
@@ -2386,7 +3117,6 @@ async function loadEntries() {
                 </p>
             </div>
         `;
-        await waitForMinLoading(loadStartedAt, dynamicMinMs);
         entriesList.innerHTML = html;
         setEntriesLoading(false);
         return;
@@ -2395,27 +3125,8 @@ async function loadEntries() {
     const html = filteredEntries.map(entry => createEntryCard(entry)).join('');
 
     await updateStats();
-    await waitForMinLoading(loadStartedAt, dynamicMinMs);
     entriesList.innerHTML = html;
     setEntriesLoading(false);
-}
-
-function getDynamicMinLoadingMs(totalEntries) {
-    const base = 2000;
-    // As the DB grows, keep the transition feeling intentional without becoming slow.
-    // Adds up to +1500ms max, in small steps.
-    const extra = Math.min(1500, Math.floor((Number(totalEntries) || 0) / 200) * 150);
-    return base + extra;
-}
-
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForMinLoading(startedAt, minMs) {
-    const elapsed = performance.now() - startedAt;
-    const remaining = (minMs || 0) - elapsed;
-    if (remaining > 0) await sleep(remaining);
 }
 
 function setEntriesLoading(isLoading) {
@@ -2497,7 +3208,7 @@ function createEntryCard(entry) {
         : escapeHtml(rawPhone);
     
     return `
-        <div class="entry-card" data-id="${escapeHtmlAttr(String(entry.id))}" role="button" tabindex="0" title="Click to edit">
+        <div class="entry-card" data-testid="entry-card" data-id="${escapeHtmlAttr(String(entry.id))}" role="button" tabindex="0" title="Click to edit">
             <div class="entry-header">
                 <div class="entry-name">${escapeHtml(entry.name)}</div>
                 <span class="entry-date">${formattedDate}</span>
@@ -2512,7 +3223,7 @@ function createEntryCard(entry) {
             <div class="entry-request copyable-request" data-copy-text="${escapeHtmlAttr((entry.supportRequest || '').trim() + (entry.deviceName ? '\n' + (entry.deviceName || '').trim() : ''))}" title="Click to copy request and device">
                 <strong>Request:</strong> ${escapeHtml(entry.supportRequest)}
             </div>
-            ${entry.notes ? `<div class="entry-notes"><strong>Notes:</strong> ${escapeHtml(entry.notes)}</div>` : ''}
+            ${entry.notes ? `<div class="entry-ticket-number"><strong>Ticket number:</strong> ${escapeHtml(entry.notes)}</div>` : ''}
         </div>
     `;
 }
@@ -2576,8 +3287,8 @@ async function editEntry(id) {
     const editDeviceEl = document.getElementById('editDeviceName');
     if (editDeviceEl) editDeviceEl.value = entry.deviceName || '';
     document.getElementById('editSupportRequest').value = entry.supportRequest || '';
-    const notesEl = document.getElementById('editNotes');
-    if (notesEl) notesEl.value = entry.notes || '';
+    const ticketNumberEl = document.getElementById('editTicketNumber');
+    if (ticketNumberEl) ticketNumberEl.value = entry.notes || '';
     
     // Set date
     const date = new Date(entry.timestamp);
@@ -2603,7 +3314,7 @@ async function handleEditSubmit(e) {
         organization: document.getElementById('editOrganization').value.trim(),
         deviceName: (document.getElementById('editDeviceName') && document.getElementById('editDeviceName').value) ? document.getElementById('editDeviceName').value.trim() : '',
         supportRequest: document.getElementById('editSupportRequest').value.trim(),
-        notes: document.getElementById('editNotes') ? document.getElementById('editNotes').value.trim() : ''
+        notes: document.getElementById('editTicketNumber') ? document.getElementById('editTicketNumber').value.trim() : ''
     };
     const editDateVal = document.getElementById('editDate').value;
     if (editDateVal) fields.callTime = new Date(editDateVal).toISOString();
@@ -2752,18 +3463,19 @@ function closeEditModal() {
     document.getElementById('editForm').reset();
 }
 
-// Close stats modal
-function closeStatsModal() {
-    document.getElementById('statsModal').classList.remove('show');
-}
-
 // ---------- Reports modal (Supabase) ----------
 function openReportsModal() {
-    if (!useSupabase()) return;
     const modal = document.getElementById('reportsModal');
     if (!modal) return;
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
+    if (!useSupabase()) {
+        const errEl = document.getElementById('reportsError');
+        const grid = document.getElementById('reportsGrid');
+        if (errEl) errEl.textContent = 'Reporting requires Supabase. Configure your project URL and anon key.';
+        if (grid) grid.innerHTML = '';
+        return;
+    }
     updateReportsAdminUI();
     refreshReports().catch(() => {});
 }
@@ -2782,6 +3494,7 @@ function updateReportsAdminUI() {
     if (!runBtn) return;
     const isAdmin = !!currentUserProfile?.is_admin;
     runBtn.style.display = isAdmin ? '' : 'none';
+    updateAccountAdminTabVisibility();
 }
 
 function formatPeriodLabel(periodStart, periodEnd) {
@@ -2791,6 +3504,482 @@ function formatPeriodLabel(periodStart, periodEnd) {
 
 /** Chart.js instances for report cards; destroyed on refresh */
 let reportCharts = [];
+
+/** Single Chart.js instance for statistics activity chart */
+let statsPageChart = null
+
+const STATS_DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function destroyStatsPageChart() {
+    if (statsPageChart) {
+        try { statsPageChart.destroy() } catch (_) {}
+        statsPageChart = null
+    }
+}
+
+function startOfLocalDay(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+function endOfLocalDay(d) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+}
+
+function localDayIndexFromDate(date) {
+    const day = date.getDay()
+    return day === 0 ? 6 : day - 1
+}
+
+function addLocalDays(d, delta) {
+    const x = new Date(d.getTime())
+    x.setDate(x.getDate() + delta)
+    return x
+}
+
+function parseDayKeyToLocalStart(dayKey) {
+    const [y, m, da] = dayKey.split('-').map(Number)
+    if (!y || !m || !da) return null
+    return new Date(y, m - 1, da)
+}
+
+function enumerateLocalDayKeys(fromDayKey, toDayKey) {
+    const start = parseDayKeyToLocalStart(fromDayKey)
+    const end = parseDayKeyToLocalStart(toDayKey)
+    if (!start || !end || start > end) return []
+    const out = []
+    let d = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+    const endT = new Date(end.getFullYear(), end.getMonth(), end.getDate()).getTime()
+    while (d.getTime() <= endT) {
+        out.push(toLocalDayKey(d))
+        d = addLocalDays(d, 1)
+    }
+    return out
+}
+
+function calendarDaysInclusive(startDate, endDate) {
+    const s = startOfLocalDay(startDate)
+    const e = startOfLocalDay(endDate)
+    const msPerDay = 86400000
+    return Math.max(1, Math.round((e.getTime() - s.getTime()) / msPerDay) + 1)
+}
+
+/**
+ * @param {{ startIso: string|null, endIso: string|null }} range
+ * @returns {Promise<{ rows: Array<{ call_time: string, organization: string|null, device_name: string|null, support_request: string|null }>, error: Error|null }>}
+ */
+async function fetchMyCallsForStats(range) {
+    if (!useSupabase()) {
+        return { rows: [], error: new Error('Supabase is not configured.') }
+    }
+    const supabase = getSupabase()
+    if (!supabase) {
+        return { rows: [], error: new Error('Supabase client not available.') }
+    }
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+        return { rows: [], error: new Error('Sign in to load statistics.') }
+    }
+    let q = supabase
+        .from('calls')
+        .select('call_time, organization, device_name, support_request')
+        .order('call_time', { ascending: true })
+    if (range.startIso) q = q.gte('call_time', range.startIso)
+    if (range.endIso) q = q.lte('call_time', range.endIso)
+    const { data, error } = await q
+    if (error) {
+        console.error('fetchMyCallsForStats error:', error)
+        return { rows: [], error: new Error(error.message || 'Failed to load statistics.') }
+    }
+    return { rows: data || [], error: null }
+}
+
+/**
+ * @param {Array<{ call_time: string, organization: string|null, device_name: string|null }>} rows
+ * @param {{ fromDayKey: string, toDayKey: string, rangeDaysInclusive: number, showPace: boolean }} rangeMeta
+ */
+function computeStatsBundle(rows, rangeMeta) {
+    const total = rows.length
+    const orgCounts = new Map()
+    const deviceSet = new Set()
+    const perDay = new Map()
+    const dowCounts = [0, 0, 0, 0, 0, 0, 0]
+
+    let minTs = null
+    let maxTs = null
+
+    for (const r of rows) {
+        const org = (r.organization || '').trim() || '(Unknown)'
+        orgCounts.set(org, (orgCounts.get(org) || 0) + 1)
+        const dev = (r.device_name || '').trim()
+        if (dev) deviceSet.add(dev)
+
+        const dt = new Date(r.call_time)
+        if (Number.isNaN(dt.getTime())) continue
+        if (minTs == null || dt < minTs) minTs = dt
+        if (maxTs == null || dt > maxTs) maxTs = dt
+
+        const dk = toLocalDayKey(dt)
+        perDay.set(dk, (perDay.get(dk) || 0) + 1)
+        dowCounts[localDayIndexFromDate(dt)] += 1
+    }
+
+    const dayKeys = enumerateLocalDayKeys(rangeMeta.fromDayKey, rangeMeta.toDayKey)
+    const dailyTimeseries = dayKeys.map((day) => ({ day, calls: perDay.get(day) || 0 }))
+
+    const maxDow = Math.max(1, ...dowCounts)
+    const topOrgs = [...orgCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+        .map(([name, count], i) => ({
+            rank: i + 1,
+            name,
+            count,
+            pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0
+        }))
+
+    const avgPerDay = total > 0 ? Math.round((total / rangeMeta.rangeDaysInclusive) * 10) / 10 : 0
+
+    let firstLabel = '—'
+    let lastLabel = '—'
+    if (minTs && maxTs) {
+        firstLabel = toLocalDayKey(minTs)
+        lastLabel = toLocalDayKey(maxTs)
+    }
+
+    let pace = null
+    if (rangeMeta.showPace && maxTs) {
+        const anchorEnd = startOfLocalDay(maxTs)
+        const lastStart = addLocalDays(anchorEnd, -6)
+        const prevEnd = addLocalDays(lastStart, -1)
+        const prevStart = addLocalDays(prevEnd, -6)
+
+        let last7 = 0
+        let prev7 = 0
+        for (const r of rows) {
+            const dt = new Date(r.call_time)
+            if (Number.isNaN(dt.getTime())) continue
+            const t = dt.getTime()
+            if (t >= lastStart.getTime() && t <= endOfLocalDay(anchorEnd).getTime()) last7 += 1
+            if (t >= prevStart.getTime() && t <= endOfLocalDay(prevEnd).getTime()) prev7 += 1
+        }
+        let pct = null
+        if (prev7 > 0) pct = Math.round(((last7 - prev7) / prev7) * 1000) / 10
+        pace = { last7, prev7, pct }
+    }
+
+    return {
+        total,
+        uniqueOrgs: orgCounts.size,
+        uniqueDevices: deviceSet.size,
+        firstLabel,
+        lastLabel,
+        avgPerDay,
+        dailyTimeseries,
+        dowCounts,
+        maxDow,
+        topOrgs,
+        pace
+    }
+}
+
+function renderStatisticsKpis(bundle) {
+    return `
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${bundle.total}</div>
+            <div class="stats-kpi-label">Total Calls</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${bundle.uniqueOrgs}</div>
+            <div class="stats-kpi-label">Organizations</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${bundle.uniqueDevices}</div>
+            <div class="stats-kpi-label">Devices named</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${escapeHtml(bundle.firstLabel)} – ${escapeHtml(bundle.lastLabel)}</div>
+            <div class="stats-kpi-label">First / last call</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${bundle.avgPerDay}</div>
+            <div class="stats-kpi-label">Avg / day in range</div>
+        </div>
+    `
+}
+
+function renderStatisticsDow(bundle) {
+    return STATS_DOW_LABELS.map((label, i) => {
+        const n = bundle.dowCounts[i] || 0
+        const w = bundle.maxDow > 0 ? Math.round((n / bundle.maxDow) * 100) : 0
+        return `
+            <div class="stats-dow-row">
+                <span class="stats-dow-label">${label}</span>
+                <div class="stats-dow-bar-track" role="presentation">
+                    <div class="stats-dow-bar-fill" style="width: ${w}%"></div>
+                </div>
+                <span class="stats-dow-count">${n}</span>
+            </div>
+        `
+    }).join('')
+}
+
+function renderStatisticsOrgsTable(bundle) {
+    if (!bundle.topOrgs.length) {
+        return '<tr><td colspan="4">No organizations in range</td></tr>'
+    }
+    return bundle.topOrgs.map((o) => `
+        <tr>
+            <td>${o.rank}</td>
+            <td>${escapeHtml(o.name)}</td>
+            <td>${o.count}</td>
+            <td>${o.pct}%</td>
+        </tr>
+    `).join('')
+}
+
+function attachStatsActivityChart(timeseries) {
+    destroyStatsPageChart()
+    const wrap = document.querySelector('[data-stats-chart]')
+    const canvas = document.getElementById('statsActivityCanvas')
+    if (!wrap || !canvas || typeof Chart === 'undefined') return
+    if (!Array.isArray(timeseries) || timeseries.length === 0) return
+    const config = makeReportChartConfig(timeseries)
+    statsPageChart = new Chart(canvas, config)
+}
+
+function getStatisticsRangeFromUI() {
+    const presetEl = document.getElementById('statsRangePreset')
+    const preset = presetEl ? presetEl.value : '30'
+    const today = new Date()
+    const todayStart = startOfLocalDay(today)
+
+    if (preset === 'all') {
+        return {
+            preset,
+            startIso: null,
+            endIso: null,
+            fromDayKey: null,
+            toDayKey: null,
+            rangeDaysInclusive: 1,
+            showPace: true
+        }
+    }
+
+    if (preset === 'custom') {
+        const startInp = document.getElementById('statsRangeStart')
+        const endInp = document.getElementById('statsRangeEnd')
+        const sk = (startInp && startInp.value) ? startInp.value : toLocalDayKey(today)
+        const ek = (endInp && endInp.value) ? endInp.value : toLocalDayKey(today)
+        const sDate = parseDayKeyToLocalStart(sk)
+        const eDate = parseDayKeyToLocalStart(ek)
+        if (!sDate || !eDate || sDate > eDate) {
+            return {
+                preset,
+                startIso: null,
+                endIso: null,
+                fromDayKey: toLocalDayKey(today),
+                toDayKey: toLocalDayKey(today),
+                rangeDaysInclusive: 1,
+                showPace: false,
+                invalid: true
+            }
+        }
+        const startIso = startOfLocalDay(sDate).toISOString()
+        const endIso = endOfLocalDay(eDate).toISOString()
+        const rangeDaysInclusive = calendarDaysInclusive(sDate, eDate)
+        return {
+            preset,
+            startIso,
+            endIso,
+            fromDayKey: sk,
+            toDayKey: ek,
+            rangeDaysInclusive,
+            showPace: rangeDaysInclusive >= 14
+        }
+    }
+
+    const days = preset === '7' ? 7 : preset === '90' ? 90 : 30
+    const startDate = addLocalDays(todayStart, -(days - 1))
+    const fromDayKey = toLocalDayKey(startDate)
+    const toDayKey = toLocalDayKey(today)
+    return {
+        preset,
+        startIso: startOfLocalDay(startDate).toISOString(),
+        endIso: endOfLocalDay(today).toISOString(),
+        fromDayKey,
+        toDayKey,
+        rangeDaysInclusive: days,
+        showPace: days >= 14
+    }
+}
+
+async function loadStatisticsPage() {
+    const errEl = document.getElementById('statsPageError')
+    const loadingEl = document.getElementById('statsLoading')
+    const mainEl = document.getElementById('statsMainContent')
+    const emptyEl = document.getElementById('statsEmptyState')
+    if (errEl) errEl.textContent = ''
+
+    const rangeSpec = getStatisticsRangeFromUI()
+    if (rangeSpec.invalid) {
+        if (errEl) errEl.textContent = 'Choose a valid custom range (from on or before to).'
+        if (loadingEl) loadingEl.classList.add('hidden')
+        if (mainEl) mainEl.classList.add('hidden')
+        if (emptyEl) emptyEl.classList.add('hidden')
+        return
+    }
+
+    if (loadingEl) loadingEl.classList.remove('hidden')
+    if (mainEl) mainEl.classList.add('hidden')
+    if (emptyEl) emptyEl.classList.add('hidden')
+
+    const fetchRange = rangeSpec.preset === 'all'
+        ? { startIso: null, endIso: null }
+        : { startIso: rangeSpec.startIso, endIso: rangeSpec.endIso }
+
+    const { rows, error } = await fetchMyCallsForStats(fetchRange)
+    if (loadingEl) loadingEl.classList.add('hidden')
+
+    if (error) {
+        if (errEl) errEl.textContent = error.message || 'Failed to load statistics.'
+        destroyStatsPageChart()
+        if (mainEl) mainEl.classList.add('hidden')
+        if (emptyEl) emptyEl.classList.add('hidden')
+        return
+    }
+
+    let fromDayKey = rangeSpec.fromDayKey
+    let toDayKey = rangeSpec.toDayKey
+    let rangeDaysInclusive = rangeSpec.rangeDaysInclusive
+    let showPace = rangeSpec.showPace
+
+    if (rangeSpec.preset === 'all') {
+        if (rows.length === 0) {
+            fromDayKey = toLocalDayKey(new Date())
+            toDayKey = fromDayKey
+            rangeDaysInclusive = 1
+            showPace = false
+        } else {
+            let minD = null
+            let maxD = null
+            for (const r of rows) {
+                const dt = new Date(r.call_time)
+                if (Number.isNaN(dt.getTime())) continue
+                if (!minD || dt < minD) minD = dt
+                if (!maxD || dt > maxD) maxD = dt
+            }
+            fromDayKey = minD ? toLocalDayKey(minD) : toLocalDayKey(new Date())
+            toDayKey = maxD ? toLocalDayKey(maxD) : fromDayKey
+            rangeDaysInclusive = calendarDaysInclusive(parseDayKeyToLocalStart(fromDayKey), parseDayKeyToLocalStart(toDayKey))
+            showPace = rangeDaysInclusive >= 14
+        }
+    }
+
+    const rangeMeta = { fromDayKey, toDayKey, rangeDaysInclusive, showPace }
+    const bundle = computeStatsBundle(rows, rangeMeta)
+
+    if (bundle.total === 0) {
+        if (emptyEl) {
+            emptyEl.classList.remove('hidden')
+            const p = emptyEl.querySelector('.stats-empty-text')
+            if (p) p.textContent = 'No data available'
+        }
+        destroyStatsPageChart()
+        return
+    }
+
+    if (emptyEl) emptyEl.classList.add('hidden')
+    if (mainEl) mainEl.classList.remove('hidden')
+
+    const kpi = document.getElementById('statsKpiRow')
+    if (kpi) kpi.innerHTML = renderStatisticsKpis(bundle)
+
+    const paceEl = document.getElementById('statsPace')
+    if (paceEl) {
+        if (bundle.pace && rangeMeta.showPace) {
+            paceEl.classList.remove('hidden')
+            const { last7, prev7, pct } = bundle.pace
+            let line = `<strong>Last 7 days:</strong> ${last7} calls · <strong>Previous 7:</strong> ${prev7} calls`
+            if (pct != null) {
+                const dir = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat'
+                const sign = pct > 0 ? '+' : ''
+                line += ` <span class="stats-pace-muted">(${sign}${pct}% vs prior week, ${dir})</span>`
+            }
+            paceEl.innerHTML = line
+        } else {
+            paceEl.classList.add('hidden')
+            paceEl.innerHTML = ''
+        }
+    }
+
+    const dowEl = document.getElementById('statsDowBars')
+    if (dowEl) dowEl.innerHTML = renderStatisticsDow(bundle)
+
+    const orgBody = document.getElementById('statsOrgTableBody')
+    if (orgBody) orgBody.innerHTML = renderStatisticsOrgsTable(bundle)
+
+    attachStatsActivityChart(bundle.dailyTimeseries)
+}
+
+function openStatisticsPage() {
+    setAppView('statistics')
+    const errEl = document.getElementById('statsPageError')
+    if (errEl) errEl.textContent = ''
+    loadStatisticsPage().catch((e) => {
+        console.error('loadStatisticsPage error:', e)
+        if (errEl) errEl.textContent = e?.message || 'Failed to load statistics.'
+    })
+}
+
+function refreshStatisticsPageIfVisible() {
+    if (currentAppView !== 'statistics') return
+    loadStatisticsPage().catch((e) => console.warn('refreshStatisticsPageIfVisible:', e))
+}
+
+function setupStatisticsPageListeners() {
+    const preset = document.getElementById('statsRangePreset')
+    const customWrap = document.getElementById('statsCustomRange')
+    const applyCustom = document.getElementById('statsApplyCustomBtn')
+    const refreshBtn = document.getElementById('statsRefreshBtn')
+    const backInline = document.getElementById('statsBackInlineBtn')
+    const openReports = document.getElementById('statsOpenReportsBtn')
+
+    const syncCustomVisibility = () => {
+        if (!preset || !customWrap) return
+        const isCustom = preset.value === 'custom'
+        customWrap.classList.toggle('hidden', !isCustom)
+        if (isCustom) {
+            const startInp = document.getElementById('statsRangeStart')
+            const endInp = document.getElementById('statsRangeEnd')
+            const t = new Date()
+            if (startInp && !startInp.value) startInp.value = toLocalDayKey(addLocalDays(startOfLocalDay(t), -29))
+            if (endInp && !endInp.value) endInp.value = toLocalDayKey(t)
+        }
+    }
+
+    preset?.addEventListener('change', () => {
+        syncCustomVisibility()
+        if (preset.value !== 'custom') {
+            loadStatisticsPage().catch((e) => console.error(e))
+        }
+    })
+
+    applyCustom?.addEventListener('click', () => {
+        loadStatisticsPage().catch((e) => console.error(e))
+    })
+
+    refreshBtn?.addEventListener('click', () => {
+        loadStatisticsPage().catch((e) => console.error(e))
+    })
+
+    backInline?.addEventListener('click', () => setAppView('calls'))
+
+    openReports?.addEventListener('click', () => {
+        openReportsModal()
+    })
+
+    syncCustomVisibility()
+}
 
 function getReportChartCssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '';
@@ -2858,7 +4047,7 @@ function makeReportChartConfig(timeseries) {
 function renderReportCard({ title, subtitle, callsTotal, orgsUnique, timeseries }, chartIndex) {
     const chartPlaceholder = `<div class="report-chart" data-chart-id="${chartIndex}" role="img" aria-label="Bar chart"></div>`;
     return `
-        <div class="report-card">
+        <div class="report-card" data-testid="report-card">
             <div class="report-card-header">
                 <div class="report-card-title">${escapeHtml(title)}</div>
                 <div class="report-card-subtitle">${escapeHtml(subtitle || '')}</div>
@@ -2917,16 +4106,26 @@ async function refreshReports() {
     if (errEl) errEl.textContent = '';
 
     const supabase = getSupabase();
-    if (!supabase) return;
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
+    if (!supabase) {
+        if (errEl) errEl.textContent = 'Unable to load reports. Check Supabase configuration.';
+        grid.innerHTML = '';
+        return;
+    }
 
-    grid.innerHTML = `
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
-        <div class="report-card"><div class="report-card-title">Loading…</div></div>
+    const loadingCardsHtml = `
+        <div class="report-card" data-testid="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card" data-testid="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card" data-testid="report-card"><div class="report-card-title">Loading…</div></div>
+        <div class="report-card" data-testid="report-card"><div class="report-card-title">Loading…</div></div>
     `;
+    grid.innerHTML = loadingCardsHtml;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        if (errEl) errEl.textContent = 'Sign in to load reports.';
+        grid.innerHTML = '';
+        return;
+    }
 
     try {
         const [tw, tm, uw, um] = await Promise.all([
@@ -2981,6 +4180,18 @@ async function refreshReports() {
     }
 }
 
+async function getSupabaseAccessToken() {
+    const supabase = getSupabase();
+    if (!supabase) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token && String(session.access_token).split('.').length === 3) return session.access_token;
+    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+    if (refreshErr) throw refreshErr;
+    const tok = refreshed?.session?.access_token;
+    if (tok && String(tok).split('.').length === 3) return tok;
+    return null;
+}
+
 async function runReportsNow() {
     if (!useSupabase()) return;
     if (!currentUserProfile?.is_admin) return;
@@ -2996,18 +4207,7 @@ async function runReportsNow() {
         btn.textContent = 'Running…';
     }
     try {
-        const getToken = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (session?.access_token && String(session.access_token).split('.').length === 3) return session.access_token;
-            // Attempt refresh once (covers expired/invalid access token)
-            const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-            if (refreshErr) throw refreshErr;
-            const tok = refreshed?.session?.access_token;
-            if (tok && String(tok).split('.').length === 3) return tok;
-            return null;
-        };
-
-        const accessToken = await getToken();
+        const accessToken = await getSupabaseAccessToken();
         if (!accessToken) throw new Error('Session expired. Please log in again.');
 
         const url = (window.supabaseConfig?.SUPABASE_URL || '').trim();
@@ -3065,8 +4265,385 @@ async function runReportsNow() {
     }
 }
 
-// ---------- Profile / Account modal (Supabase) ----------
-function openProfileModal() {
+// ---------- Account page: bundled release notes (changelog-bundled.json) ----------
+async function loadAccountChangelog() {
+    const card = document.getElementById('accountChangelogCard')
+    if (!card) return
+
+    if (accountChangelogLoadPromise) {
+        await accountChangelogLoadPromise.catch(() => {})
+        return
+    }
+
+    accountChangelogLoadPromise = (async () => {
+        const mount = document.getElementById('accountChangelogBody')
+        const hint = document.getElementById('accountChangelogHint')
+        if (!mount || !hint) return
+        try {
+            const res = await fetch('changelog-bundled.json', { cache: 'no-store' })
+            if (!res.ok) {
+                card.classList.add('hidden')
+                return
+            }
+            const data = await res.json()
+            const releases = Array.isArray(data?.releases) ? data.releases : []
+            renderAccountChangelogIntoPanel(releases)
+        } catch (err) {
+            console.error('loadAccountChangelog:', err)
+            card.classList.add('hidden')
+        }
+    })()
+
+    await accountChangelogLoadPromise
+}
+
+function renderAccountChangelogIntoPanel(releases) {
+    const card = document.getElementById('accountChangelogCard')
+    const mount = document.getElementById('accountChangelogBody')
+    const hint = document.getElementById('accountChangelogHint')
+    if (!card || !mount || !hint) return
+
+    if (!releases.length) {
+        hint.textContent =
+            'Notes for each release are added automatically on publish. This build has no bundled entries yet—see CHANGELOG.md in the repository if you need history.'
+        mount.innerHTML = ''
+        card.classList.remove('hidden')
+        return
+    }
+
+    hint.textContent = 'What shipped in recent versions—aligned with the GitHub release pipeline.'
+
+    const maxReleases = 8
+    const slice = releases.slice(0, maxReleases)
+    const parts = []
+    for (const rel of slice) {
+        const ver = String(rel?.version || '').trim() || '0.0.0'
+        const date = String(rel?.date || '').trim()
+        parts.push(`<article class="account-changelog-release" aria-label="Version ${escapeHtml(ver)}">`)
+        parts.push('<h4 class="account-changelog-version">')
+        parts.push(`v${escapeHtml(ver)}`)
+        if (date) {
+            parts.push(` <span class="account-changelog-date">${escapeHtml(date)}</span>`)
+        }
+        parts.push('</h4>')
+        const sec = rel?.sections && typeof rel.sections === 'object' ? rel.sections : {}
+        const order = ['Added', 'Fixed', 'Changed', 'Maintenance', 'Other']
+        let anySection = false
+        for (const title of order) {
+            const items = sec[title]
+            if (!Array.isArray(items) || !items.length) continue
+            anySection = true
+            parts.push(`<p class="account-changelog-section-title">${escapeHtml(title)}</p>`)
+            parts.push('<ul class="account-changelog-list">')
+            for (const t of items) {
+                const line = String(t || '').trim()
+                if (!line) continue
+                parts.push(`<li>${escapeHtml(line)}</li>`)
+            }
+            parts.push('</ul>')
+        }
+        if (!anySection) {
+            parts.push('<p class="profile-hint">See commit history for details.</p>')
+        }
+        parts.push('</article>')
+    }
+    mount.innerHTML = parts.join('')
+    card.classList.remove('hidden')
+}
+
+// ---------- Account page: in-app updater (Electron, Windows NSIS) ----------
+function formatUpdaterBytes(n) {
+    if (n == null || typeof n !== 'number' || n < 0) return ''
+    if (n < 1024) return `${n} B`
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function maybeToastAccountUpdater(state) {
+    if (!state || !state.supported) return
+    if (state.phase === 'available' && state.availableVersion) {
+        const v = String(state.availableVersion)
+        if (accountUpdaterToastVersion !== v) {
+            accountUpdaterToastVersion = v
+            showNotification(`Update available: v${v}. Open Settings, Updates tab, to download when you are ready.`)
+        }
+    }
+    if (state.phase === 'downloaded' && state.downloadedVersion) {
+        const v = String(state.downloadedVersion)
+        if (accountUpdaterToastDownloadedVersion !== v) {
+            accountUpdaterToastDownloadedVersion = v
+            showNotification(`Update v${v} is ready. Open Settings, Updates tab, to install and restart.`)
+        }
+    }
+}
+
+function renderAccountUpdater(state) {
+    if (!state || typeof state !== 'object') return
+    const card = document.getElementById('accountUpdateCard')
+    const hint = document.getElementById('accountUpdateHint')
+    const statusEl = document.getElementById('accountUpdateStatus')
+    const errEl = document.getElementById('accountUpdateError')
+    const progressWrap = document.getElementById('accountUpdateProgressWrap')
+    const progressFill = document.getElementById('accountUpdateProgressFill')
+    const progressBar = document.getElementById('accountUpdateProgressBar')
+    const progressLabel = document.getElementById('accountUpdateProgressLabel')
+    const checkBtn = document.getElementById('accountUpdateCheckBtn')
+    const dlBtn = document.getElementById('accountUpdateDownloadBtn')
+    const installBtn = document.getElementById('accountUpdateInstallBtn')
+    if (!card) return
+
+    if (!window.electronAPI?.updater) {
+        card.classList.add('hidden')
+        return
+    }
+    card.classList.remove('hidden')
+
+    const cv = state.currentVersion ? `v${state.currentVersion}` : 'this version'
+
+    if (!state.supported) {
+        if (hint) {
+            hint.textContent =
+                'In-app updates apply only when Call Log is installed with the Windows setup program (not the portable .exe).'
+        }
+        if (statusEl) statusEl.textContent = `You are running ${cv}.`
+        if (errEl) errEl.textContent = ''
+        if (progressWrap) progressWrap.classList.add('hidden')
+        if (checkBtn) checkBtn.style.display = 'none'
+        if (dlBtn) dlBtn.style.display = 'none'
+        if (installBtn) installBtn.style.display = 'none'
+        return
+    }
+
+    if (hint) {
+        hint.textContent =
+            'Check for new releases, download in the background, then install and restart when you are ready.'
+    }
+
+    const phase = state.phase || 'idle'
+    if (phase !== 'error' && errEl) errEl.textContent = ''
+    if (phase === 'error' && errEl && state.errorMessage) {
+        errEl.textContent = String(state.errorMessage)
+    }
+
+    let statusText = ''
+    if (phase === 'idle') {
+        statusText = `You are on ${cv}.`
+    } else if (phase === 'checking') {
+        statusText = 'Checking for updates…'
+    } else if (phase === 'available' && state.availableVersion) {
+        statusText = `Version v${state.availableVersion} is available (you are on ${cv}).`
+    } else if (phase === 'downloading') {
+        statusText = 'Downloading update…'
+    } else if (phase === 'downloaded' && state.downloadedVersion) {
+        statusText = `Version v${state.downloadedVersion} is downloaded and ready to install.`
+    } else if (phase === 'error') {
+        statusText = 'Something went wrong with the updater.'
+    } else {
+        statusText = `You are on ${cv}.`
+    }
+    if (statusEl) statusEl.textContent = statusText
+
+    const showProgress = phase === 'downloading' && state.progress
+    if (progressWrap) {
+        if (showProgress) {
+            progressWrap.classList.remove('hidden')
+            const pct = state.progress.percent != null ? state.progress.percent : 0
+            if (progressFill) progressFill.style.width = `${Math.min(100, Math.max(0, pct))}%`
+            if (progressBar) {
+                progressBar.setAttribute('aria-valuenow', String(Math.round(pct)))
+            }
+            if (progressLabel) {
+                const t = state.progress.total
+                const x = state.progress.transferred
+                let extra = ''
+                if (typeof t === 'number' && t > 0 && typeof x === 'number') {
+                    extra = ` (${formatUpdaterBytes(x)} / ${formatUpdaterBytes(t)})`
+                }
+                progressLabel.textContent = `${Math.round(pct)}%${extra}`
+            }
+        } else {
+            progressWrap.classList.add('hidden')
+        }
+    }
+
+    const busy = phase === 'checking' || phase === 'downloading'
+    if (checkBtn) {
+        checkBtn.style.display = ''
+        checkBtn.disabled = busy || phase === 'downloaded'
+    }
+    if (dlBtn) {
+        const showDl = phase === 'available'
+        dlBtn.style.display = showDl ? '' : 'none'
+        dlBtn.disabled = busy
+    }
+    if (installBtn) {
+        const showIn = phase === 'downloaded'
+        installBtn.style.display = showIn ? '' : 'none'
+        installBtn.disabled = false
+    }
+
+    maybeToastAccountUpdater(state)
+}
+
+const handleAccountUpdaterCheck = async () => {
+    const api = window.electronAPI?.updater
+    if (!api) return
+    const errEl = document.getElementById('accountUpdateError')
+    if (errEl) errEl.textContent = ''
+    try {
+        await api.checkForUpdates()
+    } catch (err) {
+        console.error('checkForUpdates:', err)
+        if (errEl) errEl.textContent = err?.message || 'Update check failed.'
+    }
+}
+
+const handleAccountUpdaterDownload = async () => {
+    const api = window.electronAPI?.updater
+    if (!api) return
+    const errEl = document.getElementById('accountUpdateError')
+    if (errEl) errEl.textContent = ''
+    try {
+        const res = await api.downloadUpdate()
+        if (!res?.ok && errEl) {
+            errEl.textContent = res?.message || 'Download failed.'
+        }
+    } catch (err) {
+        console.error('downloadUpdate:', err)
+        if (errEl) errEl.textContent = err?.message || 'Download failed.'
+    }
+}
+
+const handleAccountUpdaterInstall = async () => {
+    const api = window.electronAPI?.updater
+    if (!api) return
+    try {
+        await api.quitAndInstall()
+    } catch (err) {
+        console.error('quitAndInstall:', err)
+    }
+}
+
+function setupAccountUpdaterPanel() {
+    const card = document.getElementById('accountUpdateCard')
+    const api = window.electronAPI?.updater
+    if (!card) return
+    if (!api) {
+        card.classList.add('hidden')
+        return
+    }
+    card.classList.remove('hidden')
+
+    if (!accountUpdaterListenersBound) {
+        accountUpdaterListenersBound = true
+        document.getElementById('accountUpdateCheckBtn')?.addEventListener('click', handleAccountUpdaterCheck)
+        document.getElementById('accountUpdateDownloadBtn')?.addEventListener('click', handleAccountUpdaterDownload)
+        document.getElementById('accountUpdateInstallBtn')?.addEventListener('click', handleAccountUpdaterInstall)
+    }
+
+    if (accountUpdaterUnsubscribe) {
+        accountUpdaterUnsubscribe()
+        accountUpdaterUnsubscribe = null
+    }
+    accountUpdaterUnsubscribe = api.onEvent((payload) => {
+        if (payload?.type === 'state') {
+            renderAccountUpdater(payload)
+        }
+    })
+
+    api.getState().then(renderAccountUpdater).catch(() => {})
+}
+
+// ---------- Account page (Supabase) ----------
+function updateAccountAdminTabVisibility() {
+    const tab = document.getElementById('accountTabAdmin');
+    const teamStatsBtn = document.getElementById('adminStatsBtn');
+    const isAdmin = !!currentUserProfile?.is_admin;
+    const showTeamStats = isAdmin && useSupabase() && getSupabase();
+    if (teamStatsBtn) {
+        teamStatsBtn.classList.toggle('hidden', !showTeamStats);
+    }
+    if (!tab) return;
+    if (isAdmin) {
+        tab.classList.remove('hidden');
+    } else {
+        tab.classList.add('hidden');
+        if (tab.getAttribute('aria-selected') === 'true') {
+            selectAccountTab('profile');
+        }
+    }
+}
+
+function selectAccountTab(tabId) {
+    const rows = [
+        { id: 'profile', tabEl: 'accountTabProfile', panelEl: 'accountPanelProfile' },
+        { id: 'updates', tabEl: 'accountTabUpdates', panelEl: 'accountPanelUpdates' },
+        { id: 'security', tabEl: 'accountTabSecurity', panelEl: 'accountPanelSecurity' },
+        { id: 'admin', tabEl: 'accountTabAdmin', panelEl: 'accountPanelAdmin' },
+    ];
+    for (const row of rows) {
+        const active = row.id === tabId;
+        const te = document.getElementById(row.tabEl);
+        const pe = document.getElementById(row.panelEl);
+        if (te?.classList.contains('hidden')) {
+            if (pe) {
+                pe.classList.add('hidden');
+                pe.setAttribute('hidden', '');
+            }
+            continue;
+        }
+        if (te) {
+            te.setAttribute('aria-selected', active ? 'true' : 'false');
+            te.tabIndex = active ? 0 : -1;
+        }
+        if (pe) {
+            if (active) {
+                pe.classList.remove('hidden');
+                pe.removeAttribute('hidden');
+            } else {
+                pe.classList.add('hidden');
+                pe.setAttribute('hidden', '');
+            }
+        }
+    }
+    if (tabId === 'updates') {
+        window.electronAPI?.updater?.getState().then(renderAccountUpdater).catch(() => {})
+        loadAccountChangelog().catch(() => {})
+    }
+    if (tabId === 'admin' && currentUserProfile?.is_admin) {
+        if (!accountAdminLoadedOnce) {
+            accountAdminLoadedOnce = true;
+            fetchAdminDirectory(true).catch((err) => console.error('fetchAdminDirectory', err));
+        }
+    }
+}
+
+async function updateProfileEmailPendingHint() {
+    const hint = document.getElementById('profileEmailPendingHint');
+    if (!hint) return;
+    const supabase = getSupabase();
+    if (!supabase) {
+        hint.textContent = '';
+        hint.classList.add('hidden');
+        return;
+    }
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+        hint.textContent = '';
+        hint.classList.add('hidden');
+        return;
+    }
+    const pending = user.new_email;
+    if (pending) {
+        hint.textContent = `Confirm ${pending} using the link emailed to that address. You can still sign in with your current email until you confirm.`;
+        hint.classList.remove('hidden');
+    } else {
+        hint.textContent = '';
+        hint.classList.add('hidden');
+    }
+}
+
+function hydrateAccountProfileForm() {
     if (!useSupabase() || !currentUserProfile) return;
     const supabase = getSupabase();
     if (!supabase) return;
@@ -3074,22 +4651,912 @@ function openProfileModal() {
     const nameEl = document.getElementById('profileName');
     const emailEl = document.getElementById('profileEmail');
     if (!nameEl || !emailEl) return;
-    errEl.textContent = '';
+    if (errEl) errEl.textContent = '';
     nameEl.value = currentUserProfile.full_name || '';
     supabase.auth.getSession().then(({ data: { session } }) => {
         emailEl.value = session?.user?.email || '';
+        updateProfileEmailPendingHint().catch(() => {});
     });
-    document.getElementById('profileModal').classList.add('show');
-    document.getElementById('profileModal').setAttribute('aria-hidden', 'false');
-    setTimeout(() => nameEl.focus(), 0);
 }
 
-function closeProfileModal() {
-    const modal = document.getElementById('profileModal');
-    if (!modal) return;
-    modal.classList.remove('show');
-    modal.setAttribute('aria-hidden', 'true');
-    document.getElementById('profileError').textContent = '';
+function openAccountPage() {
+    if (!useSupabase() || !currentUserProfile) return;
+    hydrateAccountProfileForm();
+    document.getElementById('securityPasswordError').textContent = '';
+    document.getElementById('securitySignOutEverywhereError').textContent = '';
+    document.getElementById('adminInviteError').textContent = '';
+    document.getElementById('adminUsersError').textContent = '';
+    const feedbackErr = document.getElementById('feedbackError');
+    if (feedbackErr) feedbackErr.textContent = '';
+    const np = document.getElementById('securityNewPassword');
+    const cp = document.getElementById('securityConfirmPassword');
+    if (np) np.value = '';
+    if (cp) cp.value = '';
+    updateAccountAdminTabVisibility();
+    selectAccountTab('profile');
+    setAppView('account');
+    window.electronAPI?.updater?.getState().then(renderAccountUpdater).catch(() => {});
+    setTimeout(() => document.getElementById('profileName')?.focus(), 0);
+}
+
+async function invokeAccountAdmin(body) {
+    if (!useSupabase()) throw new Error('Supabase is not configured.');
+    const accessToken = await getSupabaseAccessToken();
+    if (!accessToken) throw new Error('Session expired. Please log in again.');
+    const url = (window.supabaseConfig?.SUPABASE_URL || '').trim();
+    const anonKey = (window.supabaseConfig?.SUPABASE_ANON_KEY || '').trim();
+    if (!url || !anonKey) throw new Error('Supabase is not configured.');
+    const res = await fetch(`${url.replace(/\/+$/, '')}/functions/v1/${ACCOUNT_ADMIN_FUNCTION_SLUG}`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            apikey: anonKey,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    });
+    const responseText = await res.text().catch(() => '');
+    const payload = (() => {
+        try {
+            return responseText ? JSON.parse(responseText) : null;
+        } catch {
+            return null;
+        }
+    })();
+    if (!res.ok) {
+        const raw = payload?.error ?? payload?.detail ?? payload?.message ?? responseText;
+        const detail = raw == null ? '' : typeof raw === 'string' ? raw : JSON.stringify(raw);
+        const haystack = `${detail} ${responseText}`.toLowerCase();
+        const missingFn =
+            res.status === 404 ||
+            haystack.includes('requested function was not found') ||
+            haystack.includes('function not found');
+        if (missingFn) {
+            throw new Error(
+                `The account-admin API is not deployed to this Supabase project. From a machine with the Supabase CLI, run: supabase functions deploy ${ACCOUNT_ADMIN_FUNCTION_SLUG} --no-verify-jwt`,
+            );
+        }
+        const invalidGatewayJwt = res.status === 401 && haystack.includes('invalid jwt');
+        if (invalidGatewayJwt) {
+            throw new Error(
+                `The account-admin function is rejecting the token at the Supabase gateway. Redeploy with gateway JWT verification off (the function still checks your session and is_admin): supabase functions deploy ${ACCOUNT_ADMIN_FUNCTION_SLUG} --no-verify-jwt`,
+            );
+        }
+        throw new Error(detail || `HTTP ${res.status}`);
+    }
+    if (payload && payload.ok === false) {
+        throw new Error(payload.error || payload.detail || 'Request failed');
+    }
+    return payload;
+}
+
+async function invokeAdminAnalytics(body) {
+    if (!useSupabase()) throw new Error('Supabase is not configured.');
+    const accessToken = await getSupabaseAccessToken();
+    if (!accessToken) throw new Error('Session expired. Please log in again.');
+    const url = (window.supabaseConfig?.SUPABASE_URL || '').trim();
+    const anonKey = (window.supabaseConfig?.SUPABASE_ANON_KEY || '').trim();
+    if (!url || !anonKey) throw new Error('Supabase is not configured.');
+    const res = await fetch(`${url.replace(/\/+$/, '')}/functions/v1/${ADMIN_ANALYTICS_FUNCTION_SLUG}`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            apikey: anonKey,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    });
+    const responseText = await res.text().catch(() => '');
+    const payload = (() => {
+        try {
+            return responseText ? JSON.parse(responseText) : null;
+        } catch {
+            return null;
+        }
+    })();
+    if (!res.ok) {
+        const raw =
+            payload?.error ?? payload?.detail ?? payload?.message ?? payload?.msg ?? responseText;
+        const detail = raw == null ? '' : typeof raw === 'string' ? raw : JSON.stringify(raw);
+        const haystack = `${detail} ${responseText}`.toLowerCase();
+        const missingFn =
+            res.status === 404 ||
+            haystack.includes('requested function was not found') ||
+            haystack.includes('function not found');
+        if (missingFn) {
+            throw new Error(
+                'The admin-analytics API is not deployed to this Supabase project. From a machine with the Supabase CLI, run: supabase functions deploy admin-analytics --no-verify-jwt',
+            );
+        }
+        const invalidGatewayJwt = res.status === 401 && haystack.includes('invalid jwt');
+        if (invalidGatewayJwt) {
+            throw new Error(
+                'The admin-analytics function is rejecting the token at the Supabase gateway. Redeploy with gateway JWT verification off (the function still checks your session and is_admin): supabase functions deploy admin-analytics --no-verify-jwt',
+            );
+        }
+        throw new Error(detail || `HTTP ${res.status}`);
+    }
+    if (payload && payload.ok === false) {
+        throw new Error(payload.error || payload.detail || payload.msg || 'Request failed');
+    }
+    return payload;
+}
+
+let currentAdminStatsTabId = 'overview';
+
+function getAdminStatisticsRangeFromUI() {
+    const presetEl = document.getElementById('adminStatsRangePreset');
+    const preset = presetEl ? presetEl.value : '30';
+    const today = new Date();
+    const todayStart = startOfLocalDay(today);
+
+    if (preset === 'all') {
+        return {
+            preset,
+            startIso: null,
+            endIso: null,
+            fromDayKey: null,
+            toDayKey: null,
+            rangeDaysInclusive: 1,
+            invalid: false,
+        };
+    }
+
+    if (preset === 'custom') {
+        const startInp = document.getElementById('adminStatsRangeStart');
+        const endInp = document.getElementById('adminStatsRangeEnd');
+        const sk = (startInp && startInp.value) ? startInp.value : toLocalDayKey(today);
+        const ek = (endInp && endInp.value) ? endInp.value : toLocalDayKey(today);
+        const sDate = parseDayKeyToLocalStart(sk);
+        const eDate = parseDayKeyToLocalStart(ek);
+        if (!sDate || !eDate || sDate > eDate) {
+            return {
+                preset,
+                startIso: null,
+                endIso: null,
+                fromDayKey: toLocalDayKey(today),
+                toDayKey: toLocalDayKey(today),
+                rangeDaysInclusive: 1,
+                invalid: true,
+            };
+        }
+        const startIso = startOfLocalDay(sDate).toISOString();
+        const endIso = endOfLocalDay(eDate).toISOString();
+        const rangeDaysInclusive = calendarDaysInclusive(sDate, eDate);
+        return {
+            preset,
+            startIso,
+            endIso,
+            fromDayKey: sk,
+            toDayKey: ek,
+            rangeDaysInclusive,
+            invalid: false,
+        };
+    }
+
+    const days = preset === '7' ? 7 : preset === '90' ? 90 : 30;
+    const startDate = addLocalDays(todayStart, -(days - 1));
+    const fromDayKey = toLocalDayKey(startDate);
+    const toDayKey = toLocalDayKey(today);
+    return {
+        preset,
+        startIso: startOfLocalDay(startDate).toISOString(),
+        endIso: endOfLocalDay(today).toISOString(),
+        fromDayKey,
+        toDayKey,
+        rangeDaysInclusive: days,
+        invalid: false,
+    };
+}
+
+function setAdminStatsLoading(show) {
+    const el = document.getElementById('adminStatsLoading');
+    if (!el) return;
+    el.classList.toggle('hidden', !show);
+}
+
+function renderAdminKpis(p) {
+    const first = p.first_call ? escapeHtml(toLocalDayKey(new Date(p.first_call))) : '—';
+    const last = p.last_call ? escapeHtml(toLocalDayKey(new Date(p.last_call))) : '—';
+    return `
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${Number(p.total || 0)}</div>
+            <div class="stats-kpi-label">Total calls</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${Number(p.unique_users || 0)}</div>
+            <div class="stats-kpi-label">Users</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${Number(p.unique_orgs || 0)}</div>
+            <div class="stats-kpi-label">Organizations</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${first} – ${last}</div>
+            <div class="stats-kpi-label">First / last (local day)</div>
+        </div>
+        <div class="stats-kpi-card">
+            <div class="stats-kpi-value">${escapeHtml(String(p.avg_per_day ?? 0))}</div>
+            <div class="stats-kpi-label">Avg / day in range</div>
+        </div>
+    `;
+}
+
+function renderAdminOrgsTable(topOrgs) {
+    const list = topOrgs || [];
+    if (!list.length) {
+        return '<tr><td colspan="4">No organizations in range</td></tr>';
+    }
+    return list.map((o) => `
+        <tr>
+            <td>${o.rank}</td>
+            <td>${escapeHtml(o.name)}</td>
+            <td>${o.count}</td>
+            <td>${o.pct}%</td>
+        </tr>
+    `).join('');
+}
+
+function attachAdminOverviewChart(dailyTimeseries, perUserSeries) {
+    destroyAdminStatsPageChart();
+    const canvas = document.getElementById('adminStatsOverviewCanvas');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (!Array.isArray(dailyTimeseries) || dailyTimeseries.length === 0) return;
+    const labels = dailyTimeseries.map((p) => formatReportChartDay(p.day));
+    const primary = getReportChartPrimaryColor();
+    const textSecondary = getReportChartCssVar('--text-secondary') || 'rgba(255,255,255,0.68)';
+    const borderColor = getReportChartCssVar('--border') || 'rgba(255,255,255,0.1)';
+    const palette = ['#86a3ff', '#7ad7a6', '#f0b27a', '#e070c8', '#9bdcff', '#d4b8ff', '#ff8a8a', '#c9f068'];
+    const series = Array.isArray(perUserSeries) ? perUserSeries : [];
+    const datasets = [{
+        label: 'Total',
+        data: dailyTimeseries.map((p) => Number(p.calls ?? 0)),
+        borderColor: primary,
+        backgroundColor: 'transparent',
+        tension: 0.2,
+        fill: false,
+        borderWidth: 2,
+    }];
+    series.forEach((s, i) => {
+        datasets.push({
+            label: s.title || s.user_id,
+            data: (s.y || []).map((n) => Number(n)),
+            borderColor: palette[i % palette.length],
+            backgroundColor: 'transparent',
+            tension: 0.2,
+            fill: false,
+            borderWidth: 1.5,
+        });
+    });
+    adminStatsPageChart = new Chart(canvas, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    display: series.length > 0,
+                    labels: { color: textSecondary, boxWidth: 10, font: { size: 10 } },
+                },
+                tooltip: { enabled: true },
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        maxRotation: 0,
+                        font: { size: 10 },
+                        color: textSecondary,
+                    },
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: borderColor },
+                    ticks: {
+                        font: { size: 10 },
+                        color: textSecondary,
+                    },
+                },
+            },
+        },
+    });
+}
+
+async function loadAdminOverviewTab() {
+    const errEl = document.getElementById('adminStatsPageError');
+    const mainEl = document.getElementById('adminStatsOverviewMain');
+    const emptyEl = document.getElementById('adminStatsOverviewEmpty');
+    if (errEl) errEl.textContent = '';
+    const rangeSpec = getAdminStatisticsRangeFromUI();
+    if (rangeSpec.invalid) {
+        if (errEl) errEl.textContent = 'Choose a valid custom range (from on or before to).';
+        if (mainEl) mainEl.classList.add('hidden');
+        if (emptyEl) emptyEl.classList.add('hidden');
+        return;
+    }
+    setAdminStatsLoading(true);
+    if (mainEl) mainEl.classList.add('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+    destroyAdminStatsPageChart();
+    try {
+        const fetchRange = rangeSpec.preset === 'all'
+            ? { startIso: null, endIso: null }
+            : { startIso: rangeSpec.startIso, endIso: rangeSpec.endIso };
+        const payload = await invokeAdminAnalytics({
+            action: 'summary',
+            timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+            startIso: fetchRange.startIso,
+            endIso: fetchRange.endIso,
+            fromDayKey: rangeSpec.fromDayKey,
+            toDayKey: rangeSpec.toDayKey,
+        });
+        setAdminStatsLoading(false);
+        if (Number(payload.total || 0) === 0) {
+            if (emptyEl) emptyEl.classList.remove('hidden');
+            return;
+        }
+        if (mainEl) mainEl.classList.remove('hidden');
+        const kpi = document.getElementById('adminStatsKpiRow');
+        if (kpi) kpi.innerHTML = renderAdminKpis(payload);
+        const orgBody = document.getElementById('adminStatsOrgTableBody');
+        if (orgBody) orgBody.innerHTML = renderAdminOrgsTable(payload.top_orgs);
+        attachAdminOverviewChart(payload.daily_timeseries, payload.per_user_series);
+    } catch (e) {
+        setAdminStatsLoading(false);
+        console.error('loadAdminOverviewTab', e);
+        if (errEl) errEl.textContent = e?.message || 'Failed to load team overview.';
+        destroyAdminStatsPageChart();
+    }
+}
+
+async function loadAdminByUserTab() {
+    const errEl = document.getElementById('adminStatsPageError');
+    const mainEl = document.getElementById('adminStatsByUserMain');
+    const emptyEl = document.getElementById('adminStatsByUserEmpty');
+    if (errEl) errEl.textContent = '';
+    const rangeSpec = getAdminStatisticsRangeFromUI();
+    if (rangeSpec.invalid) {
+        if (errEl) errEl.textContent = 'Choose a valid custom range (from on or before to).';
+        if (mainEl) mainEl.classList.add('hidden');
+        if (emptyEl) emptyEl.classList.add('hidden');
+        return;
+    }
+    setAdminStatsLoading(true);
+    if (mainEl) mainEl.classList.add('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
+    try {
+        const fetchRange = rangeSpec.preset === 'all'
+            ? { startIso: null, endIso: null }
+            : { startIso: rangeSpec.startIso, endIso: rangeSpec.endIso };
+        const payload = await invokeAdminAnalytics({
+            action: 'byUser',
+            startIso: fetchRange.startIso,
+            endIso: fetchRange.endIso,
+        });
+        setAdminStatsLoading(false);
+        const users = payload.users || [];
+        if (users.length === 0) {
+            if (emptyEl) emptyEl.classList.remove('hidden');
+            return;
+        }
+        if (mainEl) mainEl.classList.remove('hidden');
+        const tbody = document.getElementById('adminStatsByUserTableBody');
+        if (tbody) {
+            tbody.innerHTML = users.map((u) => {
+                const t = u.last_call_time ? escapeHtml(new Date(u.last_call_time).toLocaleString()) : '—';
+                return `<tr><td>${escapeHtml(u.user_label || u.user_id)}</td><td>${u.call_count}</td><td>${t}</td></tr>`;
+            }).join('');
+        }
+    } catch (e) {
+        setAdminStatsLoading(false);
+        console.error('loadAdminByUserTab', e);
+        if (errEl) errEl.textContent = e?.message || 'Failed to load users.';
+    }
+}
+
+const ADMIN_RECENT_PER_PAGE = 25;
+
+async function loadAdminRecentTab() {
+    const errEl = document.getElementById('adminStatsPageError');
+    const tbody = document.getElementById('adminStatsRecentTableBody');
+    const pageLabel = document.getElementById('adminStatsRecentPageLabel');
+    const prevBtn = document.getElementById('adminStatsRecentPrevBtn');
+    const nextBtn = document.getElementById('adminStatsRecentNextBtn');
+    if (errEl) errEl.textContent = '';
+    const rangeSpec = getAdminStatisticsRangeFromUI();
+    if (rangeSpec.invalid) {
+        if (tbody) tbody.innerHTML = '';
+        if (pageLabel) pageLabel.textContent = '';
+        if (errEl) errEl.textContent = 'Choose a valid custom range (from on or before to).';
+        return;
+    }
+    setAdminStatsLoading(true);
+    try {
+        const fetchRange = rangeSpec.preset === 'all'
+            ? { startIso: null, endIso: null }
+            : { startIso: rangeSpec.startIso, endIso: rangeSpec.endIso };
+        const payload = await invokeAdminAnalytics({
+            action: 'recentCalls',
+            startIso: fetchRange.startIso,
+            endIso: fetchRange.endIso,
+            page: adminRecentPage,
+            perPage: ADMIN_RECENT_PER_PAGE,
+        });
+        setAdminStatsLoading(false);
+        const calls = payload.calls || [];
+        const total = Number(payload.total ?? calls.length);
+        const totalPages = Math.max(1, Math.ceil(total / ADMIN_RECENT_PER_PAGE));
+        if (adminRecentPage > totalPages) {
+            adminRecentPage = totalPages;
+            await loadAdminRecentTab();
+            return;
+        }
+        if (tbody) {
+            if (calls.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5">No calls in this range</td></tr>';
+            } else {
+                tbody.innerHTML = calls.map((c) => {
+                    const snip = (c.support_request || '').trim();
+                    const short = snip.length > 80 ? `${escapeHtml(snip.slice(0, 80))}…` : escapeHtml(snip);
+                    const when = c.call_time ? escapeHtml(new Date(c.call_time).toLocaleString()) : '—';
+                    return `<tr><td>${when}</td><td>${escapeHtml(c.user_label || '')}</td><td>${escapeHtml((c.organization || '').trim() || '—')}</td><td>${escapeHtml((c.device_name || '').trim() || '—')}</td><td>${short || '—'}</td></tr>`;
+                }).join('');
+            }
+        }
+        if (pageLabel) pageLabel.textContent = `Page ${adminRecentPage} of ${totalPages} (${total} calls)`;
+        if (prevBtn) prevBtn.disabled = adminRecentPage <= 1;
+        if (nextBtn) nextBtn.disabled = adminRecentPage >= totalPages;
+    } catch (e) {
+        setAdminStatsLoading(false);
+        console.error('loadAdminRecentTab', e);
+        if (errEl) errEl.textContent = e?.message || 'Failed to load recent calls.';
+        if (tbody) tbody.innerHTML = '';
+    }
+}
+
+async function loadAdminLiveTabData() {
+    const errEl = document.getElementById('adminStatsPageError');
+    const metricsEl = document.getElementById('adminLiveMetrics');
+    try {
+        const payload = await invokeAdminAnalytics({ action: 'liveSeries', windowMinutes: 60 });
+        const counts = payload.counts || [];
+        const sum = counts.reduce((a, b) => a + Number(b || 0), 0);
+        const peak = counts.length ? Math.max(...counts.map((n) => Number(n || 0))) : 0;
+        const gen = payload.generatedAt ? new Date(payload.generatedAt).toLocaleString() : '—';
+        if (metricsEl) {
+            metricsEl.innerHTML = `
+                <p><strong>Calls in the last hour (UTC buckets):</strong> ${sum}</p>
+                <p><strong>Peak calls in one minute:</strong> ${peak}</p>
+                <p class="profile-hint">Server time at refresh: ${escapeHtml(gen)}</p>
+            `;
+        }
+    } catch (e) {
+        console.error('loadAdminLiveTabData', e);
+        if (errEl) errEl.textContent = e?.message || 'Failed to load live metrics.';
+        if (metricsEl) metricsEl.innerHTML = '';
+    }
+}
+
+function fillAdminCliBlock() {
+    const url = (window.supabaseConfig?.SUPABASE_URL || '').trim();
+    const block = document.getElementById('adminCliCommandBlock');
+    if (!block) return;
+    const lines = [
+        '# PowerShell (example):',
+        `$env:SUPABASE_URL="${url || 'https://YOUR_PROJECT.supabase.co'}"`,
+        '$env:SUPABASE_ANON_KEY="<copy from supabaseConfig.js>"',
+        '$env:CALL_LOG_ACCESS_TOKEN="<use Copy access token in this tab>"',
+        'npm run admin:live-dashboard',
+        '',
+        'Quit the terminal dashboard with q or Ctrl+C.',
+    ];
+    block.textContent = lines.join('\n');
+}
+
+function startAdminLivePolling() {
+    stopAdminLivePolling();
+    adminStatsLiveTimer = setInterval(() => {
+        if (currentAppView !== 'adminStatistics') return;
+        if (currentAdminStatsTabId !== 'live') return;
+        loadAdminLiveTabData().catch(() => {});
+    }, 30000);
+}
+
+const handleAdminCopyToken = async () => {
+    const feedback = document.getElementById('adminCopyTokenFeedback');
+    try {
+        const tok = await getSupabaseAccessToken();
+        if (!tok) throw new Error('No active session');
+        await navigator.clipboard.writeText(tok);
+        if (feedback) feedback.textContent = 'Token copied. Treat it like a password.'
+    } catch (e) {
+        if (feedback) feedback.textContent = e?.message || 'Copy failed';
+    }
+    setTimeout(() => {
+        if (feedback) feedback.textContent = '';
+    }, 5000);
+};
+
+function selectAdminStatsTab(tabId) {
+    const rows = [
+        { id: 'overview', tabEl: 'adminStatsTabOverview', panelEl: 'adminStatsPanelOverview' },
+        { id: 'byUser', tabEl: 'adminStatsTabByUser', panelEl: 'adminStatsPanelByUser' },
+        { id: 'recent', tabEl: 'adminStatsTabRecent', panelEl: 'adminStatsPanelRecent' },
+        { id: 'live', tabEl: 'adminStatsTabLive', panelEl: 'adminStatsPanelLive' },
+    ];
+    currentAdminStatsTabId = tabId;
+    stopAdminLivePolling();
+    for (const row of rows) {
+        const active = row.id === tabId;
+        const te = document.getElementById(row.tabEl);
+        const pe = document.getElementById(row.panelEl);
+        if (te) {
+            te.setAttribute('aria-selected', active ? 'true' : 'false');
+            te.tabIndex = active ? 0 : -1;
+        }
+        if (pe) {
+            if (active) {
+                pe.classList.remove('hidden');
+                pe.removeAttribute('hidden');
+            } else {
+                pe.classList.add('hidden');
+                pe.setAttribute('hidden', '');
+            }
+        }
+    }
+    if (tabId === 'live') {
+        fillAdminCliBlock();
+        loadAdminLiveTabData().catch((e) => console.error(e));
+        startAdminLivePolling();
+    }
+    if (tabId === 'overview') {
+        loadAdminOverviewTab().catch((e) => console.error(e));
+    }
+    if (tabId === 'byUser') {
+        loadAdminByUserTab().catch((e) => console.error(e));
+    }
+    if (tabId === 'recent') {
+        adminRecentPage = 1;
+        loadAdminRecentTab().catch((e) => console.error(e));
+    }
+}
+
+function openAdminStatisticsPage() {
+    if (!currentUserProfile?.is_admin) return;
+    const errEl = document.getElementById('adminStatsPageError');
+    if (errEl) errEl.textContent = '';
+    setAppView('adminStatistics');
+    const preset = document.getElementById('adminStatsRangePreset');
+    const customWrap = document.getElementById('adminStatsCustomRange');
+    if (preset && customWrap) {
+        customWrap.classList.toggle('hidden', preset.value !== 'custom');
+    }
+    selectAdminStatsTab('overview');
+}
+
+function refreshAdminStatsIfVisible() {
+    if (currentAppView !== 'adminStatistics') return;
+    const id = currentAdminStatsTabId;
+    if (id === 'overview') loadAdminOverviewTab().catch((e) => console.warn(e));
+    else if (id === 'byUser') loadAdminByUserTab().catch((e) => console.warn(e));
+    else if (id === 'recent') loadAdminRecentTab().catch((e) => console.warn(e));
+    else if (id === 'live') loadAdminLiveTabData().catch((e) => console.warn(e));
+}
+
+function setupAdminStatisticsPageListeners() {
+    const preset = document.getElementById('adminStatsRangePreset');
+    const customWrap = document.getElementById('adminStatsCustomRange');
+    const applyCustom = document.getElementById('adminStatsApplyCustomBtn');
+    const refreshBtn = document.getElementById('adminStatsRefreshBtn');
+    const backInline = document.getElementById('adminStatsBackInlineBtn');
+    const adminBtn = document.getElementById('adminStatsBtn');
+
+    const syncCustomVisibility = () => {
+        if (!preset || !customWrap) return;
+        const isCustom = preset.value === 'custom';
+        customWrap.classList.toggle('hidden', !isCustom);
+        if (isCustom) {
+            const startInp = document.getElementById('adminStatsRangeStart');
+            const endInp = document.getElementById('adminStatsRangeEnd');
+            const t = new Date();
+            if (startInp && !startInp.value) startInp.value = toLocalDayKey(addLocalDays(startOfLocalDay(t), -29));
+            if (endInp && !endInp.value) endInp.value = toLocalDayKey(t);
+        }
+    };
+
+    preset?.addEventListener('change', () => {
+        syncCustomVisibility();
+        if (preset.value !== 'custom' && currentAppView === 'adminStatistics') {
+            refreshAdminStatsIfVisible();
+        }
+    });
+
+    applyCustom?.addEventListener('click', () => {
+        refreshAdminStatsIfVisible();
+    });
+
+    refreshBtn?.addEventListener('click', () => {
+        refreshAdminStatsIfVisible();
+    });
+
+    backInline?.addEventListener('click', () => setAppView('calls'));
+
+    adminBtn?.addEventListener('click', () => openAdminStatisticsPage());
+
+    document.getElementById('adminStatsTabOverview')?.addEventListener('click', () => selectAdminStatsTab('overview'));
+    document.getElementById('adminStatsTabByUser')?.addEventListener('click', () => selectAdminStatsTab('byUser'));
+    document.getElementById('adminStatsTabRecent')?.addEventListener('click', () => selectAdminStatsTab('recent'));
+    document.getElementById('adminStatsTabLive')?.addEventListener('click', () => selectAdminStatsTab('live'));
+
+    document.getElementById('adminStatsRecentPrevBtn')?.addEventListener('click', () => {
+        if (adminRecentPage > 1) {
+            adminRecentPage -= 1;
+            loadAdminRecentTab().catch((e) => console.error(e));
+        }
+    });
+    document.getElementById('adminStatsRecentNextBtn')?.addEventListener('click', () => {
+        adminRecentPage += 1;
+        loadAdminRecentTab().catch((e) => console.error(e));
+    });
+
+    document.getElementById('adminLiveRefreshBtn')?.addEventListener('click', () => {
+        loadAdminLiveTabData().catch((e) => console.error(e));
+    });
+
+    document.getElementById('adminCopyTokenBtn')?.addEventListener('click', () => {
+        handleAdminCopyToken().catch((e) => console.error(e));
+    });
+
+    syncCustomVisibility();
+}
+
+function appendAdminUserRows(users) {
+    const tbody = document.getElementById('adminUsersTableBody');
+    if (!tbody) return;
+    const selfId = currentUserProfile?.id;
+    for (const u of users) {
+        const tr = document.createElement('tr');
+        tr.dataset.userId = u.id;
+        tr.dataset.isAdmin = u.is_admin ? '1' : '0';
+        tr.dataset.banned = u.banned ? '1' : '0';
+        const isSelf = u.id === selfId;
+        const tdEmail = document.createElement('td');
+        tdEmail.textContent = u.email || '';
+        const tdName = document.createElement('td');
+        tdName.textContent = u.full_name || '';
+        const tdAdmin = document.createElement('td');
+        tdAdmin.textContent = u.is_admin ? 'Yes' : 'No';
+        const tdStatus = document.createElement('td');
+        tdStatus.textContent = u.banned ? 'Banned' : 'Active';
+        const tdLast = document.createElement('td');
+        tdLast.textContent = u.last_sign_in_at
+            ? new Date(u.last_sign_in_at).toLocaleString()
+            : '—';
+        const tdAct = document.createElement('td');
+        tdAct.className = 'account-actions-cell';
+
+        const mkBtn = (label, action, extraClass) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = `btn btn-secondary btn-sm admin-row-action ${extraClass || ''}`;
+            b.textContent = label;
+            b.dataset.action = action;
+            b.dataset.userId = u.id;
+            if (isSelf && (action === 'ban' || action === 'delete')) {
+                b.disabled = true;
+                b.title = 'Not available for your own account';
+            }
+            return b;
+        };
+
+        const actionsInner = document.createElement('div');
+        actionsInner.className = 'account-actions-inner';
+        actionsInner.appendChild(mkBtn(u.is_admin ? 'Remove admin' : 'Make admin', 'toggleAdmin', ''));
+        actionsInner.appendChild(mkBtn(u.banned ? 'Enable' : 'Disable', 'toggleBan', ''));
+        actionsInner.appendChild(mkBtn('Delete', 'deleteUser', 'btn-danger-outline'));
+        tdAct.appendChild(actionsInner);
+
+        tr.appendChild(tdEmail);
+        tr.appendChild(tdName);
+        tr.appendChild(tdAdmin);
+        tr.appendChild(tdStatus);
+        tr.appendChild(tdLast);
+        tr.appendChild(tdAct);
+        tbody.appendChild(tr);
+    }
+}
+
+async function handleAdminLoadAutotaskTicketSources() {
+    if (!currentUserProfile?.is_admin) return;
+    const errEl = document.getElementById('adminTicketSourcesError');
+    const tbody = document.getElementById('adminTicketSourcesTableBody');
+    const wrap = document.getElementById('adminTicketSourcesWrap');
+    const btn = document.getElementById('adminTicketSourcesBtn');
+    if (errEl) errEl.textContent = '';
+    if (!useSupabase()) {
+        if (errEl) errEl.textContent = 'Sign-in is required.';
+        return;
+    }
+    const supabase = getSupabase();
+    if (!supabase) {
+        if (errEl) errEl.textContent = 'Sign-in is required.';
+        return;
+    }
+    const { error: userError } = await supabase.auth.getUser();
+    if (userError) {
+        if (errEl) errEl.textContent = 'Session invalid. Please sign in again.';
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+        if (errEl) errEl.textContent = 'Session expired. Please sign in again.';
+        return;
+    }
+    const config = window.supabaseConfig || {};
+    const supabaseUrl = String(config.SUPABASE_URL || '').trim();
+    if (!supabaseUrl) {
+        if (errEl) errEl.textContent = 'Supabase is not configured.';
+        return;
+    }
+    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
+    const origLabel = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Loading…';
+    }
+    try {
+        const res = await fetch(`${baseFunctionsUrl}/autotask-ticket-sources`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            if (errEl) errEl.textContent = data?.error || `Request failed (${res.status}).`;
+            return;
+        }
+        const sources = Array.isArray(data?.sources) ? data.sources : [];
+        if (tbody) {
+            tbody.innerHTML = sources
+                .map((s) => {
+                    const id = escapeHtml(String(s.value));
+                    const lab = escapeHtml(String(s.label || '—'));
+                    const act = s.isActive === false ? 'No' : 'Yes';
+                    return `<tr><td>${id}</td><td>${lab}</td><td>${act}</td></tr>`;
+                })
+                .join('');
+        }
+        if (wrap) wrap.removeAttribute('hidden');
+    } catch (e) {
+        if (errEl) errEl.textContent = 'Could not load ticket sources.';
+        console.error('[autotask-ticket-sources]', e);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            if (origLabel) btn.textContent = origLabel;
+        }
+    }
+}
+
+async function fetchAdminDirectory(reset) {
+    if (!currentUserProfile?.is_admin) return;
+    const errEl = document.getElementById('adminUsersError');
+    const tbody = document.getElementById('adminUsersTableBody');
+    const loadMoreBtn = document.getElementById('adminLoadMoreBtn');
+    if (errEl) errEl.textContent = '';
+    let pageToFetch;
+    if (reset) {
+        adminDirectoryPage = 1;
+        if (tbody) tbody.innerHTML = '';
+        pageToFetch = 1;
+    } else {
+        pageToFetch = adminDirectoryPage;
+    }
+    try {
+        const payload = await invokeAccountAdmin({
+            action: 'list',
+            page: pageToFetch,
+            perPage: ADMIN_LIST_PER_PAGE,
+        });
+        const users = payload.users || [];
+        appendAdminUserRows(users);
+        adminDirectoryPage = pageToFetch + 1;
+        const hasMore = users.length >= ADMIN_LIST_PER_PAGE;
+        if (loadMoreBtn) loadMoreBtn.style.display = hasMore ? '' : 'none';
+    } catch (err) {
+        if (errEl) errEl.textContent = err?.message || 'Failed to load users.';
+    }
+}
+
+async function handleAdminTableAction(action, userId, sourceBtn) {
+    const errEl = document.getElementById('adminUsersError');
+    if (errEl) errEl.textContent = '';
+    const tr = sourceBtn?.closest?.('tr');
+    const rowIsAdmin = tr?.dataset.isAdmin === '1';
+    const rowBanned = tr?.dataset.banned === '1';
+    try {
+        if (action === 'toggleAdmin') {
+            const next = !rowIsAdmin;
+            const ok = await openConfirm({
+                title: next ? 'Grant administrator' : 'Remove administrator',
+                message: next
+                    ? 'This user will be able to manage accounts and run privileged actions.'
+                    : 'This user will lose administrator access.',
+                detail: 'You can change this again later.',
+                okLabel: next ? 'Grant' : 'Remove',
+            });
+            if (!ok) return;
+            await invokeAccountAdmin({ action: 'setAdmin', userId, is_admin: next });
+        } else if (action === 'toggleBan') {
+            const nextBan = !rowBanned;
+            const ok = await openConfirm({
+                title: nextBan ? 'Disable user' : 'Enable user',
+                message: nextBan
+                    ? 'The user will not be able to sign in until re-enabled.'
+                    : 'The user will be able to sign in again.',
+                detail: nextBan ? 'They remain in the directory until deleted.' : '',
+                okLabel: nextBan ? 'Disable' : 'Enable',
+            });
+            if (!ok) return;
+            await invokeAccountAdmin({ action: 'setBanned', userId, banned: nextBan });
+        } else if (action === 'deleteUser') {
+            const ok = await openConfirm({
+                title: 'Delete user',
+                message: 'Permanently delete this user and their auth record?',
+                detail: 'This cannot be undone. Profile data for this user will be removed.',
+                okLabel: 'Delete user',
+            });
+            if (!ok) return;
+            await invokeAccountAdmin({ action: 'deleteUser', userId });
+        }
+        await fetchAdminDirectory(true);
+        accountAdminLoadedOnce = true;
+    } catch (err) {
+        const msg = err?.message || String(err);
+        if (errEl) {
+            if (msg.includes('last_admin')) {
+                errEl.textContent = 'Cannot remove the last administrator.';
+            } else {
+                errEl.textContent = msg;
+            }
+        }
+    }
+}
+
+function setupAccountPageListeners() {
+    document.getElementById('profileBtn')?.addEventListener('click', openAccountPage);
+    document.getElementById('accountBackBtn')?.addEventListener('click', () => setAppView('calls'));
+
+    document.getElementById('accountTabProfile')?.addEventListener('click', () => selectAccountTab('profile'));
+    document.getElementById('accountTabUpdates')?.addEventListener('click', () => selectAccountTab('updates'));
+    document.getElementById('accountTabSecurity')?.addEventListener('click', () => selectAccountTab('security'));
+    document.getElementById('accountTabAdmin')?.addEventListener('click', () => selectAccountTab('admin'));
+
+    document.getElementById('profileForm')?.addEventListener('submit', handleProfileSubmit);
+    document.getElementById('feedbackForm')?.addEventListener('submit', handleFeedbackSubmit);
+    document.getElementById('securityPasswordForm')?.addEventListener('submit', handleSecurityPasswordSubmit);
+    document.getElementById('securitySignOutEverywhereBtn')?.addEventListener('click', handleSecuritySignOutEverywhere);
+    document.getElementById('adminInviteForm')?.addEventListener('submit', handleAdminInviteSubmit);
+    document.getElementById('adminUsersRefreshBtn')?.addEventListener('click', () => {
+        accountAdminLoadedOnce = true;
+        fetchAdminDirectory(true).catch((e) => console.error(e));
+    });
+    document.getElementById('adminLoadMoreBtn')?.addEventListener('click', () => {
+        fetchAdminDirectory(false).catch((e) => console.error(e));
+    });
+    document.getElementById('adminTicketSourcesBtn')?.addEventListener('click', () => {
+        void handleAdminLoadAutotaskTicketSources();
+    });
+
+    document.getElementById('adminUsersTableBody')?.addEventListener('click', (e) => {
+        const btn = e.target.closest?.('.admin-row-action');
+        if (!btn || btn.disabled) return;
+        const action = btn.dataset.action;
+        const userId = btn.dataset.userId;
+        if (!action || !userId) return;
+        handleAdminTableAction(action, userId, btn);
+    });
 }
 
 async function handleProfileSubmit(e) {
@@ -3101,20 +5568,21 @@ async function handleProfileSubmit(e) {
     const nameEl = document.getElementById('profileName');
     const emailEl = document.getElementById('profileEmail');
     const saveBtn = document.getElementById('profileSaveBtn');
-    const fullName = nameEl.value.trim();
-    const newEmail = emailEl.value.trim();
-    errEl.textContent = '';
+    const fullName = clampDisplayName(nameEl?.value || '');
+    const newEmail = emailEl?.value.trim() || '';
+    if (errEl) errEl.textContent = '';
+    if (nameEl) nameEl.value = fullName;
     if (!fullName) {
-        errEl.textContent = 'Please enter your name.';
+        if (errEl) errEl.textContent = 'Please enter your name.';
         return;
     }
     if (!newEmail) {
-        errEl.textContent = 'Please enter your email.';
+        if (errEl) errEl.textContent = 'Please enter your email.';
         return;
     }
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
-        errEl.textContent = 'Session expired. Please log in again.';
+        if (errEl) errEl.textContent = 'Session expired. Please log in again.';
         return;
     }
     const originalText = saveBtn?.textContent;
@@ -3127,29 +5595,200 @@ async function handleProfileSubmit(e) {
             .from('profiles')
             .upsert(
                 { id: session.user.id, full_name: fullName, updated_at: new Date().toISOString() },
-                { onConflict: 'id' }
+                { onConflict: 'id' },
             );
         if (profileError) {
-            errEl.textContent = profileError.message || 'Failed to update name.';
+            if (errEl) errEl.textContent = profileError.message || 'Failed to update name.';
             return;
         }
+        const { error: metaErr } = await supabase.auth.updateUser({ data: { full_name: fullName } });
+        if (metaErr) console.warn('updateUser full_name metadata:', metaErr);
         if (newEmail !== (session.user.email || '')) {
             const { error: authError } = await supabase.auth.updateUser({ email: newEmail });
             if (authError) {
-                errEl.textContent = authError.message || 'Failed to update email.';
+                if (errEl) errEl.textContent = authError.message || 'Failed to update email.';
                 return;
             }
+            await supabase.auth.refreshSession();
         }
         currentUserProfile = { id: session.user.id, full_name: fullName, is_admin: !!currentUserProfile?.is_admin };
         profileCache.set(session.user.id, fullName);
-        closeProfileModal();
-        showNotification('Account updated.');
+        updateAccountAdminTabVisibility();
+        await updateProfileEmailPendingHint();
+        showNotification('Profile updated.');
     } catch (err) {
-        errEl.textContent = err?.message || 'Update failed.';
+        if (errEl) errEl.textContent = err?.message || 'Update failed.';
     } finally {
         if (saveBtn) {
             saveBtn.disabled = false;
-            saveBtn.textContent = originalText || 'Save';
+            saveBtn.textContent = originalText || 'Save profile';
+        }
+    }
+}
+
+const FEEDBACK_ALLOWED_CATEGORIES = new Set(['feature', 'improvement', 'bug', 'other']);
+
+const getFeedbackAppVersionForPayload = () => {
+    const raw = String(document.getElementById('appVersion')?.textContent || '').trim();
+    const stripped = raw.replace(/^v/i, '').trim();
+    return stripped.length ? stripped : null;
+};
+
+async function handleFeedbackSubmit(e) {
+    e.preventDefault();
+    if (!useSupabase()) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const errEl = document.getElementById('feedbackError');
+    const categoryEl = document.getElementById('feedbackCategory');
+    const messageEl = document.getElementById('feedbackMessage');
+    const btn = document.getElementById('feedbackSubmitBtn');
+    if (errEl) errEl.textContent = '';
+    const rawCategory = (categoryEl?.value || '').trim();
+    const category = FEEDBACK_ALLOWED_CATEGORIES.has(rawCategory) ? rawCategory : 'other';
+    const message = (messageEl?.value || '').trim();
+    if (!message) {
+        if (errEl) errEl.textContent = 'Please add a short description.';
+        messageEl?.focus();
+        return;
+    }
+    if (message.length > 8000) {
+        if (errEl) errEl.textContent = 'Please keep your message under 8000 characters.';
+        messageEl?.focus();
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        if (errEl) errEl.textContent = 'Session expired. Please sign in again.';
+        return;
+    }
+    const originalText = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+    }
+    try {
+        const { error } = await supabase.from('app_feedback').insert({
+            user_id: session.user.id,
+            category,
+            message,
+            app_version: getFeedbackAppVersionForPayload(),
+        });
+        if (error) {
+            const msg = String(error.message || error.details || '');
+            const missingTable =
+                msg.includes('app_feedback') &&
+                (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('Could not find'));
+            if (errEl) {
+                errEl.textContent = missingTable
+                    ? 'Feedback storage is not set up on this project yet. Ask an administrator to apply migration 011_app_feedback.sql.'
+                    : msg || 'Could not send feedback.';
+            }
+            return;
+        }
+        if (messageEl) messageEl.value = '';
+        if (categoryEl) categoryEl.value = 'feature';
+        showNotification('Thanks — your feedback was sent.');
+    } catch (err) {
+        if (errEl) errEl.textContent = err?.message || 'Could not send feedback.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText || 'Send feedback';
+        }
+    }
+}
+
+async function handleSecurityPasswordSubmit(e) {
+    e.preventDefault();
+    if (!useSupabase()) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const errEl = document.getElementById('securityPasswordError');
+    const np = document.getElementById('securityNewPassword')?.value || '';
+    const cp = document.getElementById('securityConfirmPassword')?.value || '';
+    const btn = document.getElementById('securityPasswordSubmit');
+    errEl.textContent = '';
+    if (np.length < 8) {
+        errEl.textContent = 'Password must be at least 8 characters.';
+        return;
+    }
+    if (np !== cp) {
+        errEl.textContent = 'Passwords do not match.';
+        return;
+    }
+    const orig = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Updating…';
+    }
+    try {
+        const { error } = await supabase.auth.updateUser({ password: np });
+        if (error) {
+            errEl.textContent = error.message || 'Failed to update password.';
+            return;
+        }
+        document.getElementById('securityNewPassword').value = '';
+        document.getElementById('securityConfirmPassword').value = '';
+        showNotification('Password updated.');
+    } catch (err) {
+        errEl.textContent = err?.message || 'Update failed.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = orig || 'Update password';
+        }
+    }
+}
+
+async function handleSecuritySignOutEverywhere() {
+    const errEl = document.getElementById('securitySignOutEverywhereError');
+    if (errEl) errEl.textContent = '';
+    const ok = await openConfirm({
+        title: 'Sign out everywhere',
+        message: 'End all sessions for this account on every device?',
+        detail: 'You will need to sign in again on this device.',
+        okLabel: 'Sign out everywhere',
+    });
+    if (!ok) return;
+    try {
+        await runAuthSignOutAndTeardown({ scope: 'global' });
+    } catch (err) {
+        if (errEl) errEl.textContent = err?.message || 'Sign out failed.';
+    }
+}
+
+async function handleAdminInviteSubmit(e) {
+    e.preventDefault();
+    const errEl = document.getElementById('adminInviteError');
+    const emailEl = document.getElementById('adminInviteEmail');
+    const btn = document.getElementById('adminInviteSubmit');
+    const email = (emailEl?.value || '').trim().toLowerCase();
+    if (errEl) errEl.textContent = '';
+    if (!email) {
+        if (errEl) errEl.textContent = 'Enter an email address.';
+        return;
+    }
+    const orig = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+    }
+    try {
+        await invokeAccountAdmin({
+            action: 'invite',
+            email,
+        });
+        if (emailEl) emailEl.value = '';
+        showNotification('Invite sent.');
+        await fetchAdminDirectory(true);
+        accountAdminLoadedOnce = true;
+    } catch (err) {
+        if (errEl) errEl.textContent = err?.message || 'Invite failed.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = orig || 'Send invite';
         }
     }
 }
@@ -3172,49 +5811,6 @@ async function toggleSearch() {
 async function handleSearch(e) {
     currentFilter = e.target.value;
     await loadEntries();
-}
-
-// Show statistics
-async function showStats() {
-    const entries = await getEntries();
-    const statsContent = document.getElementById('statsContent');
-    
-    if (entries.length === 0) {
-        statsContent.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No data available</p>';
-    } else {
-        const orgs = new Set(entries.map(e => e.organization));
-        const today = new Date();
-        const last7Days = entries.filter(e => {
-            const entryDate = new Date(e.timestamp);
-            const diffDays = (today - entryDate) / (1000 * 60 * 60 * 24);
-            return diffDays <= 7;
-        });
-        const oldest = new Date(entries[entries.length - 1].timestamp);
-        const daysSpan = (today - oldest) / (1000 * 60 * 60 * 24);
-        const safeDays = Math.max(daysSpan, 1);
-        const avgPerDay = Math.round((entries.length / safeDays) * 10) / 10;
-        
-        statsContent.innerHTML = `
-            <div class="stat-card">
-                <div class="stat-value">${entries.length}</div>
-                <div class="stat-label">Total Calls</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">${orgs.size}</div>
-                <div class="stat-label">Organizations</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">${last7Days.length}</div>
-                <div class="stat-label">Last 7 Days</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">${avgPerDay}</div>
-                <div class="stat-label">Avg/Day</div>
-            </div>
-        `;
-    }
-    
-    document.getElementById('statsModal').classList.add('show');
 }
 
 // Update stats display
@@ -3263,19 +5859,50 @@ function clearForm() {
     document.getElementById('callForm').reset();
     setCurrentDateTime();
     document.getElementById('name').focus();
+    if (mainFormOrganizationCommitTimer) {
+        clearTimeout(mainFormOrganizationCommitTimer);
+        mainFormOrganizationCommitTimer = null;
+    }
+    commitMainOrganizationResolution();
 }
 
-// Show notification
-function showNotification(message) {
-    const notification = document.createElement('div');
-    notification.className = 'notification';
-    notification.textContent = message;
-    document.body.appendChild(notification);
+const activeNotifications = []
+const NOTIFICATION_BASE_TOP = 60
+const NOTIFICATION_GAP = 10
+
+const repositionNotifications = () => {
+    let offset = NOTIFICATION_BASE_TOP
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    for (const el of activeNotifications) {
+        el.style.top = `${offset}px`
+        if (!prefersReducedMotion) {
+            el.style.transition = 'top 180ms var(--ease-out-quart)'
+        }
+        offset += el.offsetHeight + NOTIFICATION_GAP
+    }
+}
+
+const removeNotification = (el) => {
+    const idx = activeNotifications.indexOf(el)
+    if (idx !== -1) activeNotifications.splice(idx, 1)
+    el.remove()
+    repositionNotifications()
+}
+
+const showNotification = (message) => {
+    const notification = document.createElement('div')
+    notification.className = 'notification'
+    notification.setAttribute('data-testid', 'app-notification')
+    notification.textContent = message
+    document.body.appendChild(notification)
+
+    activeNotifications.push(notification)
+    repositionNotifications()
 
     setTimeout(() => {
-        notification.classList.add('is-exiting');
-        setTimeout(() => notification.remove(), 160);
-    }, 3000);
+        notification.classList.add('is-exiting')
+        setTimeout(() => removeNotification(notification), 160)
+    }, 3000)
 }
 
 function cssEscapeValue(value) {

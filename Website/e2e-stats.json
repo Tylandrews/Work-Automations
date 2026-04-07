@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "label": "E2E",
+  "message": "39/40 passing",
+  "color": "red",
+  "total": 40,
+  "passed": 39,
+  "failed": 1,
+  "lastRunAt": "2026-04-03T04:02:29Z",
+  "commitSha": null,
+  "commitShaFull": null,
+  "runUrl": null,
+  "source": "ci"
+}

@@ -1,6 +1,6 @@
 # Autotask Search Companies Edge Function (v3)
 
-This Edge Function proxies Autotask company search requests for organization autocomplete in the desktop app.
+This Edge Function proxies **per-query** Autotask company search. The main Call Log UI now uses **`autotask-sync-all-companies`** plus `cached_autotask_companies` instead; you can keep v3 deployed for compatibility or tooling, but it is not required for autocomplete.
 
 ## Deploy
 

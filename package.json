@@ -1,6 +1,6 @@
 {
   "name": "call-log",
-  "version": "3.1.0",
+  "version": "3.4.18",
   "description": "Call Log - Desktop Application",
   "main": "main.js",
   "scripts": {
@@ -10,13 +10,24 @@
     "start:3": "electron . --user-data-dir=./.test-userdata/user3",
     "start:4": "electron . --user-data-dir=./.test-userdata/user4",
     "start:5": "electron . --user-data-dir=./.test-userdata/user5",
-    "prebuild": "node scripts/validate-config.js && node scripts/build-icon.js",
-    "build": "electron-builder",
-    "build-win": "node scripts/clean-dist.js && electron-builder --win",
+    "prebuild": "node scripts/validate-config.js && node scripts/build-icon.js && node scripts/generate-nsis-installer-assets.js",
+    "build:installer-assets": "node scripts/generate-nsis-installer-assets.js",
+    "prebuild-win": "npm run prebuild",
+    "prebuild-mac": "npm run prebuild",
+    "prebuild-linux": "npm run prebuild",
+    "build": "electron-builder --publish never",
+    "build-win": "node scripts/clean-dist.js && electron-builder --win --publish never",
     "build-win:fresh": "npm run build-win",
-    "build-mac": "electron-builder --mac",
-    "build-linux": "electron-builder --linux",
-    "clean": "node scripts/clean-dist.js"
+    "build-mac": "electron-builder --mac --publish never",
+    "build-linux": "electron-builder --linux --publish never",
+    "clean": "node scripts/clean-dist.js",
+    "test:e2e": "py -3.10 e2e/run_e2e_full.py",
+    "test:e2e:ci": "py -3.10 e2e/run_like_github_ci.py",
+    "test:e2e:ci:firefox": "py -3.10 e2e/run_like_github_ci.py --browser firefox",
+    "test:e2e:report": "py -3.10 e2e/run_playwright_report.py",
+    "test:unit": "node --test test",
+    "changelog:release": "node scripts/generate-release-changelog.js",
+    "admin:live-dashboard": "node scripts/admin-live-dashboard.mjs"
   },
   "keywords": [
     "electron",
@@ -30,19 +41,37 @@
     "node": ">=18"
   },
   "dependencies": {
-    "gsap": "^3.14.2"
+    "cli": "^1.0.1",
+    "electron-updater": "^6.3.9",
+    "gsap": "^3.14.2",
+    "supabase": "^2.84.7"
   },
   "devDependencies": {
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.11.0",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
-    "electron-icon-builder": "^2.0.1"
+    "electron-icon-builder": "^2.0.1",
+    "jimp": "^0.22.12",
+    "rcedit": "^4.0.1"
   },
   "build": {
     "appId": "com.calllog.app",
     "productName": "Call Log",
+    "executableName": "CallLog",
+    "copyright": "Copyright 2026 Call Log",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Tylandrews",
+        "repo": "Work-Automations",
+        "releaseType": "release"
+      }
+    ],
     "directories": {
       "output": "dist"
     },
+    "afterPack": "./scripts/win-after-pack-rcedit.js",
     "files": [
       "**/*",
       "node_modules/**",
@@ -81,10 +110,25 @@
       "category": "Utility"
     },
     "nsis": {
+      "artifactName": "CallLog-Setup-${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
+      "createStartMenuShortcut": true,
+      "installerSidebar": "nsis/branding/installer-sidebar.bmp",
+      "uninstallerSidebar": "nsis/branding/installer-sidebar.bmp",
+      "include": "nsis/installer.nsh"
+    },
+    "portable": {
+      "artifactName": "CallLog-Portable-${version}.${ext}"
+    },
+    "protocols": [
+      {
+        "name": "Call Log Auth",
+        "schemes": [
+          "calllog"
+        ]
+      }
+    ]
   }
 }

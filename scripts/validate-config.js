@@ -25,6 +25,13 @@ try {
         console.error('Please update supabaseConfig.js with your actual Supabase credentials.');
         process.exit(1);
     }
+
+    if (configContent.includes("CALLLOG_MASTER_KEY: 'PASTE_HERE'") ||
+        configContent.includes('CALLLOG_MASTER_KEY: "PASTE_HERE"')) {
+        console.error('ERROR: CALLLOG_MASTER_KEY is still the placeholder. Set a real key in supabaseConfig.js.');
+        console.error('Use a Base64-encoded 32-byte value or a strong passphrase (see supabaseConfig.example.js).');
+        process.exit(1);
+    }
     
     // Basic validation - check for URL and key
     if (!configContent.includes('SUPABASE_URL') || !configContent.includes('SUPABASE_ANON_KEY')) {

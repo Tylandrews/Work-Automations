@@ -6,3 +6,17 @@ Thumbs.db
 # Supabase config - keep local, but will be bundled in production builds
 supabaseConfig.js
 .test-userdata/
+
+# E2E: never commit secrets, machine-generated reports, or proxy creds
+e2e/.env
+e2e/playwright-e2e-report.html
+e2e/tmp/
+
+# TestSprite / tooling duplicates (not part of the suite)
+testsprite_tests/
+e2e/__pycache__/
+**/__pycache__/
+*.pyc
+
+# CI: generated GitHub Release body (CHANGELOG.md and changelog-bundled.json are committed separately)
+release-notes.md

@@ -53,37 +53,43 @@
 
                 <section class="auth-card" id="authFormCard" aria-label="Account access" aria-hidden="true">
                     <div class="auth-card-header">
-                        <h1 class="auth-title">Sign in</h1>
-                        <p class="auth-subtitle">Use your work email to continue.</p>
+                        <h1 class="auth-title" data-testid="auth-title">Sign in</h1>
+                        <p class="auth-subtitle">Sign in with the account an administrator invited. New users receive an email invite.</p>
                     </div>
 
                     <div id="authError" class="auth-error" role="alert" aria-live="polite"></div>
 
                     <form id="authForm" class="auth-form">
-                        <div class="form-group auth-signup-only" id="authNameGroup" style="display: none;">
-                            <label for="authName">Name</label>
-                            <input type="text" id="authName" name="name" autocomplete="name" placeholder="Your name">
+                        <div id="authMainFields">
+                            <div class="form-group">
+                                <label for="authEmail">Email</label>
+                                <input type="email" id="authEmail" name="email" autocomplete="email" required placeholder="you@example.com">
+                            </div>
+                            <div class="form-group" id="authPasswordGroup">
+                                <label for="authPassword">Password</label>
+                                <input type="password" id="authPassword" name="password" autocomplete="current-password" required placeholder="••••••••">
+                            </div>
+                            <p class="auth-forgot" id="authForgotWrap">
+                                <button type="button" class="auth-text-btn" id="authForgotBtn" aria-label="Forgot password">Forgot password?</button>
+                            </p>
+                            <div class="auth-actions" id="authPrimaryActions">
+                                <button type="submit" class="btn btn-primary" id="authSignInBtn">Log in</button>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="authEmail">Email</label>
-                            <input type="email" id="authEmail" name="email" autocomplete="email" required placeholder="you@example.com">
-                        </div>
-                        <div class="form-group">
-                            <label for="authPassword">Password</label>
-                            <input type="password" id="authPassword" name="password" autocomplete="current-password" required placeholder="••••••••">
-                        </div>
-                        <div class="auth-actions">
-                            <button type="submit" class="btn btn-primary" id="authSignInBtn">Log in</button>
-                            <button type="button" class="btn btn-secondary" id="authSignUpBtn">Sign up</button>
+                        <div id="authForgotPanel" class="auth-forgot-panel hidden" role="region" aria-label="Password reset" aria-hidden="true">
+                            <p class="auth-forgot-lead">We will email a link to the address above. Open it on this computer so Call Log can sign you in. Then set a new password under Settings, Security.</p>
+                            <div class="auth-actions auth-forgot-actions">
+                                <button type="button" class="btn btn-primary" id="authForgotSendBtn">Send reset link</button>
+                                <button type="button" class="btn btn-secondary" id="authForgotBackBtn">Back to log in</button>
+                            </div>
                         </div>
                     </form>
                 </section>
 
                 <div id="authNoConfig" class="auth-no-config hidden">
                     <div class="auth-no-config-card">
-                        <p class="auth-no-config-title">Supabase isn’t configured.</p>
-                        <p class="auth-no-config-body">You can keep using local storage on this device.</p>
-                        <button type="button" class="btn btn-primary" id="authUseLocalBtn">Continue with local storage</button>
+                        <p class="auth-no-config-title" data-testid="auth-no-config-title">Supabase configuration required</p>
+                        <p class="auth-no-config-body">Call Log requires Supabase. Add your project URL and anon key in supabaseConfig.js.</p>
                     </div>
                 </div>
             </div>
@@ -111,6 +117,7 @@
         <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
         <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
         <symbol id="i-device" viewBox="0 0 24 24"><path d="M4 6h16v12H4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 20h8M12 18v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
         <symbol id="i-fish" viewBox="0 0 24 24">
             <path d="M3 12c2.2-3.2 5.6-5.6 9.6-5.6 4.7 0 7.9 2.6 9.4 5.6-1.5 3-4.7 5.6-9.4 5.6C8.6 17.6 5.2 15.2 3 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
             <path d="M3 12l-2.2-2.2M3 12l-2.2 2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -135,12 +142,12 @@
                     <svg class="icon theme-icon theme-icon-moon" aria-hidden="true"><use href="#i-moon"></use></svg>
                     <svg class="icon theme-icon theme-icon-sun" aria-hidden="true"><use href="#i-sun"></use></svg>
                 </button>
-                <button class="tb-btn" id="profileBtn" type="button" title="Account" aria-label="Update account" style="display: none;">
-                    <svg class="icon" aria-hidden="true"><use href="#i-user"></use></svg>
-                    <span class="tb-label">Account</span>
+                <button class="tb-btn tb-btn--shell-nav" id="accountBackBtn" type="button" title="Back to Call Log" aria-label="Back to Call Log" style="display: none;">
+                    <span class="tb-label">Call Log</span>
                 </button>
-                <button class="tb-btn" id="logoutBtn" type="button" title="Log out" aria-label="Log out" style="display: none;">
-                    <span class="tb-label">Log out</span>
+                <button class="tb-btn tb-btn--shell-nav" id="profileBtn" type="button" title="Settings" aria-label="Open settings" style="display: none;">
+                    <svg class="icon" aria-hidden="true"><use href="#i-settings"></use></svg>
+                    <span class="tb-label">Settings</span>
                 </button>
                 <button class="win-btn" id="winMinBtn" type="button" title="Minimize" aria-label="Minimize">—</button>
                 <button class="win-btn" id="winMaxBtn" type="button" title="Maximize" aria-label="Maximize">▢</button>
@@ -150,6 +157,7 @@
         <div class="titlebar-divider"></div>
     </header>
 
+    <div id="mainWorkspace" class="app-workspace" aria-hidden="false">
     <div class="container">
         <main>
             <!-- Form Section -->
@@ -203,11 +211,11 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="notes">
+                        <label for="ticketNumber">
                             <svg class="icon" aria-hidden="true"><use href="#i-empty"></use></svg>
-                            Notes
+                            Ticket number
                         </label>
-                        <textarea id="notes" name="notes" rows="2" placeholder="Optional: follow-ups, corrections..."></textarea>
+                        <input type="text" id="ticketNumber" name="ticketNumber" autocomplete="off" placeholder="Optional: if this call relates to an existing ticket" aria-label="Ticket number (optional)">
                     </div>
 
                     <div class="form-group">
@@ -234,40 +242,473 @@
         </main>
 
         <aside class="app-panel" id="historyPanel" aria-hidden="false">
-            <div class="panel-header">
-                <h2>Call History</h2>
+            <div class="panel-header panel-header--tabs">
+                <div class="history-panel-tabs" role="tablist" aria-label="Side panel">
+                    <button type="button" class="history-panel-tab" role="tab" id="historyTabRecentTickets" aria-selected="false" aria-controls="historyPanelRecentTickets" tabindex="-1">Recent tickets</button>
+                    <button type="button" class="history-panel-tab" role="tab" id="historyTabCallHistory" aria-selected="true" aria-controls="historyPanelCallHistory" tabindex="0">Call history</button>
+                </div>
             </div>
-            <div class="entries-container">
-                <div class="header-actions-row">
-                    <div class="day-context" id="dayContext">
-                        <button class="day-btn" id="historyPrevDayBtn" type="button" title="Previous day" aria-label="Previous day">‹</button>
-                        <div class="day-label" id="historyDayLabel" title="Selected day">Today</div>
-                        <button class="day-btn" id="historyNextDayBtn" type="button" title="Next day" aria-label="Next day">›</button>
-                        <button class="day-btn day-today" id="historyTodayBtn" type="button" title="Jump to today">Today</button>
-                        <button class="day-btn day-calendar" id="historyCalendarBtn" type="button" title="Pick a day" aria-label="Open calendar">
-                            <svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>
+            <div class="entries-container entries-container--tabs">
+                <div id="historyPanelRecentTickets" class="history-tabpanel" role="tabpanel" aria-labelledby="historyTabRecentTickets" tabindex="0" hidden>
+                    <p id="recentTicketsHint" class="recent-tickets-hint">Select an organization from suggestions to load Autotask tickets.</p>
+                    <div id="recentTicketsLegend" class="recent-tickets-legend" role="group" aria-label="How tickets are color coded by Autotask source" hidden></div>
+                    <div id="recentTicketsStatus" class="recent-tickets-status" role="status" aria-live="polite"></div>
+                    <div id="recentTicketsError" class="recent-tickets-error auth-error" role="alert" aria-live="polite" hidden></div>
+                    <div id="recentTicketsList" class="entries-list recent-tickets-list" role="list" aria-label="Autotask tickets with activity in the last 14 days"></div>
+                </div>
+                <div id="historyPanelCallHistory" class="history-tabpanel" role="tabpanel" aria-labelledby="historyTabCallHistory" tabindex="0">
+                    <div class="header-actions-row">
+                        <div class="day-context" id="dayContext">
+                            <button class="day-btn" id="historyPrevDayBtn" type="button" title="Previous day" aria-label="Previous day">‹</button>
+                            <div class="day-label" id="historyDayLabel" title="Selected day">Today</div>
+                            <button class="day-btn" id="historyNextDayBtn" type="button" title="Next day" aria-label="Next day">›</button>
+                            <button class="day-btn day-today" id="historyTodayBtn" type="button" title="Jump to today">Today</button>
+                            <button class="day-btn day-calendar" id="historyCalendarBtn" type="button" title="Pick a day" aria-label="Open calendar">
+                                <svg class="icon" aria-hidden="true"><use href="#i-calendar"></use></svg>
+                            </button>
+                        </div>
+                        <div class="search-container" id="searchContainer" style="display: none;">
+                            <input type="text" id="searchInput" placeholder="Search calls..." class="search-input">
+                            <button class="btn-icon-only" id="closeSearch" title="Close search">✕</button>
+                        </div>
+                        <button class="btn-icon-only btn-search" id="searchBtn" title="Search (Ctrl+F)">
+                            <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
+                        </button>
+                        <button class="btn-icon-only btn-stats hidden" id="adminStatsBtn" title="Team statistics (admin)" aria-label="Open team statistics for administrators">
+                            <svg class="icon" aria-hidden="true"><use href="#i-chart"></use></svg>
+                        </button>
+                        <button class="btn-icon-only btn-stats" id="statsBtn" title="Open statistics" aria-label="Open statistics">
+                            <svg class="icon" aria-hidden="true"><use href="#i-stats"></use></svg>
+                        </button>
+                        <button class="btn-icon-only btn-reports" id="reportsBtn" title="Reports">
+                            <svg class="icon" aria-hidden="true"><use href="#i-chart"></use></svg>
                         </button>
                     </div>
-                    <div class="search-container" id="searchContainer" style="display: none;">
-                        <input type="text" id="searchInput" placeholder="Search calls..." class="search-input">
-                        <button class="btn-icon-only" id="closeSearch" title="Close search">✕</button>
+                    <div class="entries-stats" id="entriesStats"></div>
+                    <div id="entriesList" class="entries-list">
+                        <!-- Entries will be dynamically inserted here -->
                     </div>
-                    <button class="btn-icon-only btn-search" id="searchBtn" title="Search (Ctrl+F)">
-                        <svg class="icon" aria-hidden="true"><use href="#i-search"></use></svg>
-                    </button>
-                    <button class="btn-icon-only btn-stats" id="statsBtn" title="View Statistics">
-                        <svg class="icon" aria-hidden="true"><use href="#i-stats"></use></svg>
-                    </button>
-                    <button class="btn-icon-only btn-reports" id="reportsBtn" title="Reports">
-                        <svg class="icon" aria-hidden="true"><use href="#i-chart"></use></svg>
-                    </button>
-                </div>
-                <div class="entries-stats" id="entriesStats"></div>
-                <div id="entriesList" class="entries-list">
-                    <!-- Entries will be dynamically inserted here -->
                 </div>
             </div>
         </aside>
+    </div>
+    </div>
+
+    <div id="accountWorkspace" class="app-workspace app-workspace--account hidden" aria-hidden="true">
+        <div class="account-page">
+            <header class="account-page-header">
+                <div class="account-page-header-text">
+                    <h2 class="account-page-title" id="accountPageHeading">Settings</h2>
+                    <p class="account-page-lead">Profile, app updates, feedback, security, and user management.</p>
+                </div>
+                <div class="account-page-header-actions">
+                    <button type="button" class="btn btn-secondary account-settings-signout" id="logoutBtn" title="Log out of Call Log on this device" aria-label="Log out of Call Log on this device">
+                        Log out
+                    </button>
+                </div>
+            </header>
+
+            <div class="account-tabs" role="tablist" aria-label="Settings sections">
+                <button type="button" class="account-tab" role="tab" id="accountTabProfile" aria-selected="true" aria-controls="accountPanelProfile" tabindex="0">Profile</button>
+                <button type="button" class="account-tab" role="tab" id="accountTabUpdates" aria-selected="false" aria-controls="accountPanelUpdates" tabindex="-1">Updates</button>
+                <button type="button" class="account-tab" role="tab" id="accountTabSecurity" aria-selected="false" aria-controls="accountPanelSecurity" tabindex="-1">Security</button>
+                <button type="button" class="account-tab hidden" role="tab" id="accountTabAdmin" aria-selected="false" aria-controls="accountPanelAdmin" tabindex="-1">Administration</button>
+            </div>
+
+            <div id="accountPanelProfile" class="account-panel" role="tabpanel" aria-labelledby="accountTabProfile" tabindex="0">
+                <form id="profileForm" class="profile-form account-card">
+                    <h3 class="account-card-title">Profile</h3>
+                    <div id="profileError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="form-group">
+                        <label for="profileName">Name</label>
+                        <input type="text" id="profileName" name="name" autocomplete="name" maxlength="120" required placeholder="Your name">
+                    </div>
+                    <div class="form-group">
+                        <label for="profileEmail">Email</label>
+                        <input type="email" id="profileEmail" name="email" autocomplete="email" required placeholder="you@example.com">
+                    </div>
+                    <p id="profileEmailPendingHint" class="profile-hint hidden" role="status" aria-live="polite"></p>
+                    <p class="profile-hint">Passwords are managed by secure sign-in (not stored in your profile row). Changing email may require you to confirm the new address. Your display name is used in call notifications.</p>
+                    <div class="account-form-actions">
+                        <button type="submit" class="btn btn-primary" id="profileSaveBtn">Save profile</button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="accountPanelUpdates" class="account-panel hidden" role="tabpanel" aria-labelledby="accountTabUpdates" tabindex="0" hidden>
+                <div id="accountUpdateCard" class="account-card">
+                    <h3 class="account-card-title">App updates</h3>
+                    <p class="profile-hint" id="accountUpdateHint">Checking update settings…</p>
+                    <div id="accountUpdateStatus" class="account-update-status" role="status" aria-live="polite"></div>
+                    <div id="accountUpdateProgressWrap" class="account-update-progress-wrap hidden">
+                        <div class="account-update-progress-bar" role="progressbar" id="accountUpdateProgressBar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Download progress">
+                            <div id="accountUpdateProgressFill" class="account-update-progress-fill"></div>
+                        </div>
+                        <p id="accountUpdateProgressLabel" class="profile-hint account-update-progress-label"></p>
+                    </div>
+                    <div id="accountUpdateError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="account-form-actions account-update-actions">
+                        <button type="button" class="btn btn-secondary" id="accountUpdateCheckBtn">Check for updates</button>
+                        <button type="button" class="btn btn-primary" id="accountUpdateDownloadBtn" style="display: none;">Download update</button>
+                        <button type="button" class="btn btn-primary" id="accountUpdateInstallBtn" style="display: none;">Install and restart</button>
+                    </div>
+                </div>
+                <div id="accountFeedbackCard" class="account-card account-card--spaced">
+                    <h3 class="account-card-title">Feature requests and feedback</h3>
+                    <p class="profile-hint">Suggest an improvement, report a problem, or share what would help your workflow. Submissions are tied to your signed-in account.</p>
+                    <div id="feedbackError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <form id="feedbackForm">
+                        <div class="form-group">
+                            <label for="feedbackCategory">Type</label>
+                            <select id="feedbackCategory" name="category">
+                                <option value="feature">Feature request</option>
+                                <option value="improvement">Improvement idea</option>
+                                <option value="bug">Bug report</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="feedbackMessage">Details</label>
+                            <textarea id="feedbackMessage" name="message" rows="5" required maxlength="8000" placeholder="Describe what you would like or what went wrong…" autocomplete="off"></textarea>
+                        </div>
+                        <div class="account-form-actions">
+                            <button type="submit" class="btn btn-primary" id="feedbackSubmitBtn">Send feedback</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="accountChangelogCard" class="account-card account-card--spaced hidden" role="region" aria-label="Release notes">
+                    <h3 class="account-card-title">Release notes</h3>
+                    <p class="profile-hint account-changelog-hint" id="accountChangelogHint"></p>
+                    <div id="accountChangelogBody" class="account-changelog-body"></div>
+                </div>
+            </div>
+
+            <div id="accountPanelSecurity" class="account-panel hidden" role="tabpanel" aria-labelledby="accountTabSecurity" tabindex="0" hidden>
+                <div class="account-card">
+                    <h3 class="account-card-title">Password</h3>
+                    <div id="securityPasswordError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <form id="securityPasswordForm">
+                        <div class="form-group">
+                            <label for="securityNewPassword">New password</label>
+                            <input type="password" id="securityNewPassword" name="newPassword" autocomplete="new-password" minlength="8" placeholder="At least 8 characters">
+                        </div>
+                        <div class="form-group">
+                            <label for="securityConfirmPassword">Confirm new password</label>
+                            <input type="password" id="securityConfirmPassword" name="confirmPassword" autocomplete="new-password" minlength="8" placeholder="Repeat new password">
+                        </div>
+                        <div class="account-form-actions">
+                            <button type="submit" class="btn btn-primary" id="securityPasswordSubmit">Update password</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="account-card account-card--spaced">
+                    <h3 class="account-card-title">Sessions</h3>
+                    <p class="profile-hint">Sign out of Call Log on all devices where you are logged in.</p>
+                    <div id="securitySignOutEverywhereError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="account-form-actions">
+                        <button type="button" class="btn btn-secondary" id="securitySignOutEverywhereBtn">Sign out everywhere</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="accountPanelAdmin" class="account-panel hidden" role="tabpanel" aria-labelledby="accountTabAdmin" tabindex="0" hidden>
+                <div class="account-card">
+                    <h3 class="account-card-title">Invite user</h3>
+                    <div id="adminInviteError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <form id="adminInviteForm" class="admin-invite-form">
+                        <div class="form-group admin-invite-email">
+                            <label for="adminInviteEmail">Email</label>
+                            <input type="email" id="adminInviteEmail" name="email" autocomplete="off" placeholder="colleague@example.com">
+                        </div>
+                        <div class="admin-invite-submit-row">
+                            <button type="submit" class="btn btn-primary" id="adminInviteSubmit">Send invite</button>
+                        </div>
+                    </form>
+                </div>
+                <div class="account-card account-card--spaced">
+                    <h3 class="account-card-title">Autotask ticket sources</h3>
+                    <p class="profile-hint">Each recent ticket includes a numeric Autotask <strong>source</strong> id. Load the official picklist (id and label), then add rows to <code>RECENT_TICKET_SOURCE_STYLES</code> in <code>script.js</code> to assign colors.</p>
+                    <div id="adminTicketSourcesError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="account-form-actions">
+                        <button type="button" class="btn btn-secondary" id="adminTicketSourcesBtn">Load picklist from Autotask</button>
+                    </div>
+                    <div class="account-table-wrap admin-ticket-sources-wrap" id="adminTicketSourcesWrap" hidden>
+                        <table class="account-users-table" aria-label="Autotask ticket source picklist">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Source id</th>
+                                    <th scope="col">Label</th>
+                                    <th scope="col">Active</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminTicketSourcesTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="account-card account-card--spaced">
+                    <h3 class="account-card-title account-admin-users-title">Users</h3>
+                    <div class="account-admin-users-toolbar">
+                        <button type="button" class="btn btn-secondary btn-sm" id="adminUsersRefreshBtn">Refresh</button>
+                    </div>
+                    <div id="adminUsersError" class="auth-error" role="alert" aria-live="polite"></div>
+                    <div class="account-table-wrap">
+                        <table class="account-users-table" aria-label="User directory">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Email</th>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">Admin</th>
+                                    <th scope="col">Status</th>
+                                    <th scope="col">Last sign-in</th>
+                                    <th scope="col">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminUsersTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="account-form-actions">
+                        <button type="button" class="btn btn-secondary" id="adminLoadMoreBtn" style="display: none;">Load more</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="statsWorkspace" class="app-workspace app-workspace--stats hidden" aria-hidden="true">
+        <div class="stats-page">
+            <header class="account-page-header stats-page-header">
+                <div class="account-page-header-text">
+                    <h2 class="account-page-title" id="statsPageHeading">Statistics</h2>
+                    <p class="account-page-lead">Your logged calls. Date range uses your local timezone (midnight to midnight).</p>
+                </div>
+                <div class="stats-page-header-actions">
+                    <button type="button" class="btn btn-secondary" id="statsOpenReportsBtn">Scheduled reports</button>
+                    <button type="button" class="btn btn-secondary account-back-inline" id="statsBackInlineBtn" aria-label="Back to Call Log">Back to Call Log</button>
+                </div>
+            </header>
+
+            <div id="statsPageError" class="auth-error" role="alert" aria-live="polite"></div>
+
+            <section class="stats-filters account-card" aria-label="Statistics date range">
+                <div class="stats-filters-row">
+                    <div class="form-group stats-filter-field">
+                        <label for="statsRangePreset">Range</label>
+                        <select id="statsRangePreset" class="stats-select">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="all">All time</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div id="statsCustomRange" class="stats-custom-range hidden" role="group" aria-label="Custom date range">
+                        <div class="form-group stats-filter-field">
+                            <label for="statsRangeStart">From</label>
+                            <input type="date" id="statsRangeStart" autocomplete="off">
+                        </div>
+                        <div class="form-group stats-filter-field">
+                            <label for="statsRangeEnd">To</label>
+                            <input type="date" id="statsRangeEnd" autocomplete="off">
+                        </div>
+                        <button type="button" class="btn btn-primary" id="statsApplyCustomBtn">Apply range</button>
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="statsRefreshBtn">Refresh</button>
+                </div>
+            </section>
+
+            <div id="statsLoading" class="stats-loading hidden" aria-live="polite">Loading statistics…</div>
+
+            <div id="statsMainContent" class="stats-main hidden">
+                <div id="statsKpiRow" class="stats-kpi-grid" aria-label="Summary metrics"></div>
+                <div id="statsPace" class="stats-pace account-card hidden" aria-label="Recent pace"></div>
+                <div class="stats-chart-card account-card">
+                    <h3 class="account-card-title">Calls per day</h3>
+                    <div class="stats-chart-wrap" data-stats-chart>
+                        <canvas id="statsActivityCanvas" aria-label="Bar chart of calls per day"></canvas>
+                    </div>
+                </div>
+                <div class="stats-two-col">
+                    <div class="account-card stats-dow-card">
+                        <h3 class="account-card-title">By day of week</h3>
+                        <div id="statsDowBars" class="stats-dow-bars" role="img" aria-label="Call counts by weekday"></div>
+                    </div>
+                    <div class="account-card stats-org-card">
+                        <h3 class="account-card-title">Top organizations</h3>
+                        <div class="account-table-wrap">
+                            <table class="stats-org-table">
+                                <caption class="sr-only">Organizations ranked by number of calls in range</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">#</th>
+                                        <th scope="col">Organization</th>
+                                        <th scope="col">Calls</th>
+                                        <th scope="col">Share</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="statsOrgTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="statsEmptyState" class="stats-empty account-card hidden">
+                <p class="stats-empty-text">No calls in this range.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="adminStatsWorkspace" class="app-workspace app-workspace--stats admin-stats-workspace hidden" aria-hidden="true">
+        <div class="stats-page admin-stats-page">
+            <header class="account-page-header stats-page-header">
+                <div class="account-page-header-text">
+                    <h2 class="account-page-title" id="adminStatsPageHeading">Team statistics</h2>
+                    <p class="account-page-lead">All users, aggregated call metadata only (no caller name or phone). Date range uses your local timezone.</p>
+                </div>
+                <div class="stats-page-header-actions">
+                    <button type="button" class="btn btn-secondary account-back-inline" id="adminStatsBackInlineBtn" aria-label="Back to Call Log">Back to Call Log</button>
+                </div>
+            </header>
+
+            <div id="adminStatsPageError" class="auth-error" role="alert" aria-live="polite"></div>
+
+            <section class="stats-filters account-card" aria-label="Team statistics date range">
+                <div class="stats-filters-row">
+                    <div class="form-group stats-filter-field">
+                        <label for="adminStatsRangePreset">Range</label>
+                        <select id="adminStatsRangePreset" class="stats-select">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                            <option value="all">All time</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div id="adminStatsCustomRange" class="stats-custom-range hidden" role="group" aria-label="Custom date range">
+                        <div class="form-group stats-filter-field">
+                            <label for="adminStatsRangeStart">From</label>
+                            <input type="date" id="adminStatsRangeStart" autocomplete="off">
+                        </div>
+                        <div class="form-group stats-filter-field">
+                            <label for="adminStatsRangeEnd">To</label>
+                            <input type="date" id="adminStatsRangeEnd" autocomplete="off">
+                        </div>
+                        <button type="button" class="btn btn-primary" id="adminStatsApplyCustomBtn">Apply range</button>
+                    </div>
+                    <button type="button" class="btn btn-secondary" id="adminStatsRefreshBtn">Refresh</button>
+                </div>
+            </section>
+
+            <div class="account-tabs admin-stats-tabs" role="tablist" aria-label="Team statistics sections">
+                <button type="button" class="account-tab" role="tab" id="adminStatsTabOverview" aria-selected="true" aria-controls="adminStatsPanelOverview" tabindex="0">Overview</button>
+                <button type="button" class="account-tab" role="tab" id="adminStatsTabByUser" aria-selected="false" aria-controls="adminStatsPanelByUser" tabindex="-1">By user</button>
+                <button type="button" class="account-tab" role="tab" id="adminStatsTabRecent" aria-selected="false" aria-controls="adminStatsPanelRecent" tabindex="-1">Recent calls</button>
+                <button type="button" class="account-tab" role="tab" id="adminStatsTabLive" aria-selected="false" aria-controls="adminStatsPanelLive" tabindex="-1">Live</button>
+            </div>
+
+            <div id="adminStatsLoading" class="stats-loading hidden" aria-live="polite">Loading…</div>
+
+            <div id="adminStatsPanelOverview" class="account-panel admin-stats-panel" role="tabpanel" aria-labelledby="adminStatsTabOverview" tabindex="0">
+                <div id="adminStatsOverviewMain" class="hidden">
+                    <div id="adminStatsKpiRow" class="stats-kpi-grid" aria-label="Team summary metrics"></div>
+                    <div class="stats-chart-card account-card">
+                        <h3 class="account-card-title">Calls per day (total and top users)</h3>
+                        <div class="stats-chart-wrap" data-admin-stats-chart>
+                            <canvas id="adminStatsOverviewCanvas" aria-label="Line chart of calls per day"></canvas>
+                        </div>
+                    </div>
+                    <div class="account-card stats-org-card">
+                        <h3 class="account-card-title">Top organizations (all users)</h3>
+                        <div class="account-table-wrap">
+                            <table class="stats-org-table">
+                                <caption class="sr-only">Organizations ranked by team calls in range</caption>
+                                <thead>
+                                    <tr>
+                                        <th scope="col">#</th>
+                                        <th scope="col">Organization</th>
+                                        <th scope="col">Calls</th>
+                                        <th scope="col">Share</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="adminStatsOrgTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div id="adminStatsOverviewEmpty" class="stats-empty account-card hidden">
+                    <p class="stats-empty-text">No calls in this range.</p>
+                </div>
+            </div>
+
+            <div id="adminStatsPanelByUser" class="account-panel admin-stats-panel hidden" role="tabpanel" aria-labelledby="adminStatsTabByUser" tabindex="0" hidden>
+                <div id="adminStatsByUserMain" class="account-card hidden">
+                    <h3 class="account-card-title">Calls by user</h3>
+                    <div class="account-table-wrap">
+                        <table class="stats-org-table">
+                            <caption class="sr-only">Users ranked by call count</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">User</th>
+                                    <th scope="col">Calls</th>
+                                    <th scope="col">Last call</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminStatsByUserTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="adminStatsByUserEmpty" class="stats-empty account-card hidden">
+                    <p class="stats-empty-text">No calls in this range.</p>
+                </div>
+            </div>
+
+            <div id="adminStatsPanelRecent" class="account-panel admin-stats-panel hidden" role="tabpanel" aria-labelledby="adminStatsTabRecent" tabindex="0" hidden>
+                <div class="account-card">
+                    <h3 class="account-card-title">Recent calls (all users)</h3>
+                    <div class="account-table-wrap admin-recent-table-wrap">
+                        <table class="stats-org-table admin-recent-table">
+                            <caption class="sr-only">Most recent calls across the team</caption>
+                            <thead>
+                                <tr>
+                                    <th scope="col">Time</th>
+                                    <th scope="col">User</th>
+                                    <th scope="col">Organization</th>
+                                    <th scope="col">Device</th>
+                                    <th scope="col">Support request</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminStatsRecentTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div class="admin-recent-pagination">
+                        <button type="button" class="btn btn-secondary btn-sm" id="adminStatsRecentPrevBtn" aria-label="Previous page">Previous</button>
+                        <span id="adminStatsRecentPageLabel" class="admin-recent-page-label" aria-live="polite"></span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="adminStatsRecentNextBtn" aria-label="Next page">Next</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="adminStatsPanelLive" class="account-panel admin-stats-panel hidden" role="tabpanel" aria-labelledby="adminStatsTabLive" tabindex="0" hidden>
+                <div class="account-card">
+                    <h3 class="account-card-title">Live window (last hour)</h3>
+                    <p class="profile-hint">In-app readout refreshes on demand or every 30 seconds while this tab is open. For a terminal line chart, run the CLI dashboard (blessed-contrib) from the project root.</p>
+                    <div id="adminLiveMetrics" class="admin-live-metrics" role="status" aria-live="polite"></div>
+                    <div class="admin-live-actions">
+                        <button type="button" class="btn btn-secondary" id="adminLiveRefreshBtn">Refresh now</button>
+                    </div>
+                </div>
+                <div class="account-card">
+                    <h3 class="account-card-title">Terminal dashboard (CLI)</h3>
+                    <p class="profile-hint">Requires Node.js. Set <code class="admin-code">CALL_LOG_ACCESS_TOKEN</code> to your current session access token (treat like a password; expires when the session ends).</p>
+                    <pre class="admin-cli-block" id="adminCliCommandBlock" tabindex="0" aria-label="Commands to run the live dashboard"></pre>
+                    <div class="admin-live-actions">
+                        <button type="button" class="btn btn-secondary" id="adminCopyTokenBtn" aria-describedby="adminCopyTokenHint">Copy access token</button>
+                        <span id="adminCopyTokenHint" class="sr-only">Copies your Supabase access token to the clipboard for use in environment variables</span>
+                        <span id="adminCopyTokenFeedback" class="copy-feedback" aria-live="polite"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Calendar Modal -->
@@ -365,11 +806,11 @@
                     <textarea id="editSupportRequest" rows="4" required></textarea>
                 </div>
                 <div class="form-group">
-                    <label for="editNotes">
+                    <label for="editTicketNumber">
                         <svg class="icon" aria-hidden="true"><use href="#i-empty"></use></svg>
-                        Notes
+                        Ticket number
                     </label>
-                    <textarea id="editNotes" rows="2" placeholder="Follow-ups, corrections..."></textarea>
+                    <input type="text" id="editTicketNumber" autocomplete="off" placeholder="Optional: if this call relates to an existing ticket" aria-label="Ticket number (optional)">
                 </div>
                 <div class="form-group">
                     <label for="editDate">
@@ -380,7 +821,7 @@
                 </div>
                 <div class="modal-actions modal-actions-edit" id="editModalActions">
                     <div class="modal-actions-left">
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary" data-testid="edit-save-changes-btn">
                             <svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>
                             <span>Save Changes</span>
                         </button>
@@ -405,17 +846,6 @@
         </div>
     </div>
 
-    <!-- Stats Modal -->
-    <div class="modal" id="statsModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
-        <div class="modal-content modal-small" role="document">
-            <div class="modal-header">
-                <h3 id="statsTitle">Statistics</h3>
-                <button class="modal-close" id="closeStatsModal" type="button" aria-label="Close statistics dialog">&times;</button>
-            </div>
-            <div class="stats-content" id="statsContent"></div>
-        </div>
-    </div>
-
     <!-- Reports Overlay (fills window) -->
     <div class="modal reports-modal" id="reportsModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="reportsTitle">
         <div class="modal-content reports-content" role="document">
@@ -436,32 +866,6 @@
                     <button type="button" class="btn btn-primary" id="runReportsNowBtn" style="display:none;">Run reports now</button>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Profile / Account Modal -->
-    <div class="modal" id="profileModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="profileTitle">
-        <div class="modal-content modal-small" role="document">
-            <div class="modal-header">
-                <h3 id="profileTitle">Account</h3>
-                <button class="modal-close" id="closeProfileModal" type="button" aria-label="Close account dialog">&times;</button>
-            </div>
-            <form id="profileForm" class="profile-form">
-                <div id="profileError" class="auth-error" role="alert" aria-live="polite"></div>
-                <div class="form-group">
-                    <label for="profileName">Name</label>
-                    <input type="text" id="profileName" name="name" autocomplete="name" required placeholder="Your name">
-                </div>
-                <div class="form-group">
-                    <label for="profileEmail">Email</label>
-                    <input type="email" id="profileEmail" name="email" autocomplete="email" required placeholder="you@example.com">
-                </div>
-                <p class="profile-hint">Changing email may require you to confirm the new address. Your display name is used in call notifications.</p>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" id="profileCancelBtn">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="profileSaveBtn">Save</button>
-                </div>
-            </form>
         </div>
     </div>
 
