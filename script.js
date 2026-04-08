@@ -336,50 +336,57 @@ async function loadAllCachedAutotaskCompaniesFromSupabaseIntoLocal(supabase) {
  * @returns {Promise<boolean>} false if request failed hard; true otherwise (including skipped).
  */
 async function invokeAutotaskFullCompanySyncEdgeFunction(supabase, force = false) {
-    let { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-        console.warn('No session; skipping Autotask full org sync.');
+    // Same pattern as loadRecentTicketsForOrganization: getSession() alone can return a stale JWT;
+    // Edge gateway verify_jwt then returns 401. getUser() validates with the server first.
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+        console.warn('Not signed in; skipping Autotask full org sync.');
         return false;
     }
-    const expiresAtMs = typeof session.expires_at === 'number' ? session.expires_at * 1000 : null;
-    const isExpiringSoon = typeof expiresAtMs === 'number' ? expiresAtMs < (Date.now() + 30 * 1000) : false;
-    if (isExpiringSoon) {
-        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-        if (refreshErr || !refreshed?.session?.access_token) {
-            console.warn('Session refresh failed; skipping Autotask full org sync.');
-            return false;
-        }
-        session = refreshed.session;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+        console.warn('No session after getUser; skipping Autotask full org sync.');
+        return false;
     }
-    if (!session?.access_token) return false;
 
-    const invokeSync = async () => {
-        return supabase.functions.invoke('autotask-sync-all-companies', {
+    const config = window.supabaseConfig || {};
+    const supabaseUrl = (config.SUPABASE_URL || '').trim();
+    const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
+    if (!supabaseUrl || !anonKey) return false;
+
+    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
+    const suffix = force ? '?force=1' : '';
+    const url = `${baseFunctionsUrl}/autotask-sync-all-companies${suffix}`;
+
+    const requestSync = (accessToken) =>
+        fetch(url, {
             method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            query: force ? { force: '1' } : {}
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                apikey: anonKey,
+                'Content-Type': 'application/json',
+            },
         });
-    };
 
-    let { error } = await invokeSync();
-    if (error?.context?.status === 401) {
+    let response = await requestSync(session.access_token);
+    if (response.status === 401) {
         const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
         if (!refreshErr && refreshed?.session?.access_token) {
-            session = refreshed.session;
-            ({ error } = await invokeSync());
+            response = await requestSync(refreshed.session.access_token);
         }
     }
 
-    if (error?.context?.status === 503) {
+    if (response.status === 503) {
         console.warn('Autotask API not configured on server; org list not synced from PSA.');
         return true;
     }
-    if (error?.context?.status === 401) {
-        console.warn('Org sync authorization failed; will retry after next auth refresh.');
+    if (response.status === 401) {
+        console.warn('Session expired during org sync.');
         return false;
     }
-    if (error) {
-        console.warn('[autotask-sync-all-companies] failed:', error);
+    if (!response.ok) {
+        const txt = await response.text().catch(() => '');
+        console.warn('[autotask-sync-all-companies] failed:', response.status, txt);
         return false;
     }
     return true;
