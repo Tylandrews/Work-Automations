@@ -360,14 +360,27 @@ async function invokeAutotaskFullCompanySyncEdgeFunction(supabase, force = false
 
     const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
     const suffix = force ? '?force=1' : '';
-    const response = await fetch(`${baseFunctionsUrl}/autotask-sync-all-companies${suffix}`, {
-        method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': anonKey,
-            'Content-Type': 'application/json'
+    const requestSync = async (accessToken) => {
+        return fetch(`${baseFunctionsUrl}/autotask-sync-all-companies${suffix}`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'apikey': anonKey,
+                'Content-Type': 'application/json'
+            }
+        });
+    };
+
+    let response = await requestSync(session.access_token);
+
+    // Token can expire between getSession() and the Edge call; retry once after refresh.
+    if (response.status === 401) {
+        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+        if (!refreshErr && refreshed?.session?.access_token) {
+            session = refreshed.session;
+            response = await requestSync(session.access_token);
         }
-    });
+    }
 
     if (response.status === 503) {
         console.warn('Autotask API not configured on server; org list not synced from PSA.');
