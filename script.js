@@ -353,46 +353,33 @@ async function invokeAutotaskFullCompanySyncEdgeFunction(supabase, force = false
     }
     if (!session?.access_token) return false;
 
-    const config = window.supabaseConfig || {};
-    const supabaseUrl = (config.SUPABASE_URL || '').trim();
-    const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
-    if (!supabaseUrl || !anonKey) return false;
-
-    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
-    const suffix = force ? '?force=1' : '';
-    const requestSync = async (accessToken) => {
-        return fetch(`${baseFunctionsUrl}/autotask-sync-all-companies${suffix}`, {
+    const invokeSync = async () => {
+        return supabase.functions.invoke('autotask-sync-all-companies', {
             method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'apikey': anonKey,
-                'Content-Type': 'application/json'
-            }
+            headers: { 'Content-Type': 'application/json' },
+            query: force ? { force: '1' } : {}
         });
     };
 
-    let response = await requestSync(session.access_token);
-
-    // Token can expire between getSession() and the Edge call; retry once after refresh.
-    if (response.status === 401) {
+    let { error } = await invokeSync();
+    if (error?.context?.status === 401) {
         const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
         if (!refreshErr && refreshed?.session?.access_token) {
             session = refreshed.session;
-            response = await requestSync(session.access_token);
+            ({ error } = await invokeSync());
         }
     }
 
-    if (response.status === 503) {
+    if (error?.context?.status === 503) {
         console.warn('Autotask API not configured on server; org list not synced from PSA.');
         return true;
     }
-    if (response.status === 401) {
-        console.warn('Session expired during org sync.');
+    if (error?.context?.status === 401) {
+        console.warn('Org sync authorization failed; will retry after next auth refresh.');
         return false;
     }
-    if (!response.ok) {
-        const txt = await response.text().catch(() => '');
-        console.warn('[autotask-sync-all-companies] failed:', response.status, txt);
+    if (error) {
+        console.warn('[autotask-sync-all-companies] failed:', error);
         return false;
     }
     return true;
