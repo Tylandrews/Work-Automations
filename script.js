@@ -336,22 +336,18 @@ async function loadAllCachedAutotaskCompaniesFromSupabaseIntoLocal(supabase) {
  * @returns {Promise<boolean>} false if request failed hard; true otherwise (including skipped).
  */
 async function invokeAutotaskFullCompanySyncEdgeFunction(supabase, force = false) {
-    let { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-        console.warn('No session; skipping Autotask full org sync.');
+    // Same pattern as loadRecentTicketsForOrganization: getSession() alone can return a stale JWT;
+    // Edge gateway verify_jwt then returns 401. getUser() validates with the server first.
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+        console.warn('Not signed in; skipping Autotask full org sync.');
         return false;
     }
-    const expiresAtMs = typeof session.expires_at === 'number' ? session.expires_at * 1000 : null;
-    const isExpiringSoon = typeof expiresAtMs === 'number' ? expiresAtMs < (Date.now() + 30 * 1000) : false;
-    if (isExpiringSoon) {
-        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-        if (refreshErr || !refreshed?.session?.access_token) {
-            console.warn('Session refresh failed; skipping Autotask full org sync.');
-            return false;
-        }
-        session = refreshed.session;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+        console.warn('No session after getUser; skipping Autotask full org sync.');
+        return false;
     }
-    if (!session?.access_token) return false;
 
     const config = window.supabaseConfig || {};
     const supabaseUrl = (config.SUPABASE_URL || '').trim();
@@ -360,14 +356,25 @@ async function invokeAutotaskFullCompanySyncEdgeFunction(supabase, force = false
 
     const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
     const suffix = force ? '?force=1' : '';
-    const response = await fetch(`${baseFunctionsUrl}/autotask-sync-all-companies${suffix}`, {
-        method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': anonKey,
-            'Content-Type': 'application/json'
+    const url = `${baseFunctionsUrl}/autotask-sync-all-companies${suffix}`;
+
+    const requestSync = (accessToken) =>
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                apikey: anonKey,
+                'Content-Type': 'application/json',
+            },
+        });
+
+    let response = await requestSync(session.access_token);
+    if (response.status === 401) {
+        const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+        if (!refreshErr && refreshed?.session?.access_token) {
+            response = await requestSync(refreshed.session.access_token);
         }
-    });
+    }
 
     if (response.status === 503) {
         console.warn('Autotask API not configured on server; org list not synced from PSA.');
@@ -2775,7 +2782,21 @@ async function handleFormSubmit(e) {
     try {
         const saved = await saveEntry(formData);
         if (saved == null) {
-            showNotification('Failed to save call. Check console for errors.');
+            const supabase = getSupabase();
+            if (!supabase) {
+                showNotification('Failed to save call. Check console for errors.');
+                return;
+            }
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                showNotification('Please log in to save calls.');
+            } else if (!isPiiWriteAllowed()) {
+                showNotification(
+                    'Cannot save: encryption is not set up. Add CALLLOG_MASTER_KEY to supabaseConfig.js (see supabaseConfig.example.js), use the same key as your other machines, then restart the app.'
+                );
+            } else {
+                showNotification('Failed to save call. Check console for errors.');
+            }
             return;
         }
         showNotification('Call logged successfully!');
