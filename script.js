@@ -2406,6 +2406,8 @@ function resetAuthForgotToLogin() {
 }
 
 function setupAuthListeners() {
+    // Temporary UX gate: keep the brand card visible until the user explicitly clicks it.
+    const requireBrandCardClickToOpenForm = true;
     const form = document.getElementById('authForm');
     const signInBtn = document.getElementById('authSignInBtn');
     const authError = document.getElementById('authError');
@@ -2464,12 +2466,14 @@ function setupAuthListeners() {
     showAuthBrand();
 
     brandCard?.addEventListener('click', showAuthForm);
-    brandCard?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            showAuthForm();
-        }
-    });
+    if (!requireBrandCardClickToOpenForm) {
+        brandCard?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                showAuthForm();
+            }
+        });
+    }
 
     function enterAuthForgotMode() {
         authError.textContent = '';
