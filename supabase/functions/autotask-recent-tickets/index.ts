@@ -193,6 +193,61 @@ function formatPrimaryResourceRole(
   return null
 }
 
+function buildAutotaskTicketUrl(zoneUrl: string, ticketId: number): string | null {
+  const safeTicketId = Number(ticketId)
+  if (!Number.isFinite(safeTicketId) || safeTicketId <= 0) return null
+  const base = normalizeAutotaskPortalBaseUrl(zoneUrl)
+  if (!base) return null
+  return `${base}/Autotask/AutotaskExtend/ExecuteCommand.aspx?Code=OpenTicketDetail&TicketID=${encodeURIComponent(String(Math.trunc(safeTicketId)))}`
+}
+
+function normalizeAutotaskPortalBaseUrl(zoneUrl: string): string | null {
+  const raw = String(zoneUrl || "").trim()
+  if (!raw) return null
+  try {
+    const parsed = new URL(raw)
+    const host = parsed.hostname
+    const protocol = parsed.protocol || "https:"
+    const candidates = buildAutotaskPortalHostCandidates(host)
+    for (const h of candidates) {
+      const base = `${protocol}//${h}`.replace(/\/+$/, "")
+      if (base) return base
+    }
+    return null
+  } catch (_e) {
+    return null
+  }
+}
+
+function buildAutotaskPortalHostCandidates(host: string): string[] {
+  const out: string[] = []
+  const h = String(host || "").trim().toLowerCase()
+  if (!h) return out
+
+  // Preferred: canonical portal host.
+  if (/^ww\d*\.autotask\.net$/i.test(h)) out.push(h)
+
+  // Common API host -> portal host mapping (webservicesX -> wwX).
+  const ws = h.match(/^webservices(\d*)\.autotask\.net$/i)
+  if (ws) out.push(`ww${ws[1] || ""}.autotask.net`)
+
+  // Generic fallback for custom subdomains on autotask.net.
+  if (h.endsWith(".autotask.net") && !out.includes(h)) out.push(h)
+
+  // Last resort: explicit primary portal host.
+  if (!out.includes("ww.autotask.net")) out.push("ww.autotask.net")
+
+  return [...new Set(out)]
+}
+
+function buildAutotaskTicketUrlByNumber(zoneUrl: string, ticketNumber: string): string | null {
+  const safeTicketNumber = String(ticketNumber || "").trim()
+  if (!safeTicketNumber) return null
+  const base = normalizeAutotaskPortalBaseUrl(zoneUrl)
+  if (!base) return null
+  return `${base}/Autotask/AutotaskExtend/ExecuteCommand.aspx?Code=OpenTicketDetail&TicketNumber=${encodeURIComponent(safeTicketNumber)}`
+}
+
 async function queryTicketsForCompany(
   zoneUrl: string,
   integrationCode: string,
@@ -263,6 +318,8 @@ async function enrichAndNormalizeTickets(
     source: number | null
     primaryResourceRole: string | null
     lastActivityDate: string | null
+    ticketUrl: string | null
+    ticketUrlByNumber: string | null
   }>
 > {
   let statusLabels = new Map<number, string>()
@@ -324,6 +381,11 @@ async function enrichAndNormalizeTickets(
         source: typeof t.source === "number" ? t.source : null,
         primaryResourceRole: formatPrimaryResourceRole(resId, roleId, resourceNames, roleNames),
         lastActivityDate: typeof t.lastActivityDate === "string" ? t.lastActivityDate : null,
+        ticketUrl: buildAutotaskTicketUrl(zoneUrl, t.id as number),
+        ticketUrlByNumber: buildAutotaskTicketUrlByNumber(
+          zoneUrl,
+          typeof t.ticketNumber === "string" ? t.ticketNumber : String(t.ticketNumber ?? ""),
+        ),
       }
     })
 }

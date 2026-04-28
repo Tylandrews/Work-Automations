@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const vm = require('vm');
@@ -440,6 +440,24 @@ ipcMain.handle('focus-app', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.show();
         mainWindow.focus();
+    }
+});
+
+ipcMain.handle('open-external-url', async (_event, rawUrl) => {
+    const value = String(rawUrl || '').trim();
+    if (!value) return false;
+    let parsed = null;
+    try {
+        parsed = new URL(value);
+    } catch (_) {
+        return false;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    try {
+        await shell.openExternal(parsed.toString());
+        return true;
+    } catch (_) {
+        return false;
     }
 });
 

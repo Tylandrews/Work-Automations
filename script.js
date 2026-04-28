@@ -464,6 +464,7 @@ let resolvedMainFormOrganization = { autotaskId: '', name: '' };
 let mainFormOrganizationCommitTimer = null;
 let recentTicketsDebounceTimer = null;
 let recentTicketsAbortController = null;
+let lastRecentTicketClickKey = '';
 
 function normalizeHexColor(raw) {
     let s = String(raw || '').trim();
@@ -711,9 +712,21 @@ function formatRecentTicketWhen(iso) {
     }
 }
 
+function isValidExternalHttpUrl(rawUrl) {
+    const s = String(rawUrl || '').trim();
+    if (!s) return false;
+    try {
+        const u = new URL(s);
+        return u.protocol === 'http:' || u.protocol === 'https:';
+    } catch (_) {
+        return false;
+    }
+}
+
 function renderRecentTicketsList(tickets) {
     const list = document.getElementById('recentTicketsList');
     if (!list) return;
+    lastRecentTicketClickKey = '';
     const rows = Array.isArray(tickets) ? tickets : [];
     if (rows.length === 0) {
         list.innerHTML = '<p class="recent-tickets-hint">No tickets with activity in the last 14 days.</p>';
@@ -738,12 +751,16 @@ function renderRecentTicketsList(tickets) {
             const meta = metaParts.join(' · ');
             const rawNum = String(t.ticketNumber || '').trim() || String(t.id || '');
             const ticketValue = escapeHtmlAttr(rawNum);
+            const ticketId = String(t.id || '').trim();
+            const ticketKey = escapeHtmlAttr(ticketId || rawNum);
+            const ticketUrl = String(t.ticketUrl || t.ticketUrlByNumber || '').trim();
+            const ticketUrlAttr = escapeHtmlAttr(ticketUrl);
             const ariaExtra = match
                 ? ` Ticket source: ${match.label}.`
                 : ' No mapped ticket source color.';
             const ariaUse = escapeHtmlAttr(`Use ticket ${rawNum} in ticket number field.${ariaExtra}`);
             const metaBlock = meta ? `<span class="recent-ticket-row__meta">${escapeHtml(meta)}</span>` : '';
-            return `<div class="recent-ticket-row-wrap" role="listitem"><button type="button" class="${rowCls}" data-ticket-number="${ticketValue}" aria-label="${ariaUse}"${accentStyle}><span class="recent-ticket-row__num">${num}</span><span class="recent-ticket-row__title">${title}</span>${metaBlock}</button></div>`;
+            return `<div class="recent-ticket-row-wrap" role="listitem"><button type="button" class="${rowCls}" data-ticket-number="${ticketValue}" data-ticket-key="${ticketKey}" data-ticket-url="${ticketUrlAttr}" aria-label="${ariaUse}"${accentStyle}><span class="recent-ticket-row__num">${num}</span><span class="recent-ticket-row__title">${title}</span>${metaBlock}</button></div>`;
         })
         .join('');
 }
@@ -752,10 +769,13 @@ function bindRecentTicketsListClicks() {
     const list = document.getElementById('recentTicketsList');
     if (!list || list.dataset.boundRecentClicks === '1') return;
     list.dataset.boundRecentClicks = '1';
-    list.addEventListener('click', (e) => {
+    list.addEventListener('click', async (e) => {
         const btn = e.target.closest('.recent-ticket-row');
         if (!btn) return;
         const raw = btn.getAttribute('data-ticket-number') || '';
+        const ticketKey = String(btn.getAttribute('data-ticket-key') || raw).trim();
+        const ticketUrl = String(btn.getAttribute('data-ticket-url') || '').trim();
+        const ticketUrlIsValid = isValidExternalHttpUrl(ticketUrl);
         const ticketNumberEl = document.getElementById('ticketNumber');
         if (ticketNumberEl) {
             ticketNumberEl.value = raw;
@@ -766,6 +786,34 @@ function bindRecentTicketsListClicks() {
             status.textContent = `Ticket number filled: ${raw}`;
         }
         ticketNumberEl?.focus();
+
+        const sameAsPrevious = ticketKey && ticketKey === lastRecentTicketClickKey;
+        lastRecentTicketClickKey = ticketKey;
+        if (!sameAsPrevious) return;
+
+        if (!ticketUrlIsValid) {
+            if (status) status.textContent = `Ticket ${raw} has no browser link available.`;
+            lastRecentTicketClickKey = '';
+            return;
+        }
+
+        try {
+            if (typeof window.electronAPI?.openExternalUrl !== 'function') {
+                if (status) status.textContent = 'External link opening is unavailable in this build.';
+                lastRecentTicketClickKey = '';
+                return;
+            }
+            const ok = await window.electronAPI.openExternalUrl(ticketUrl);
+            if (status) {
+                status.textContent = ok
+                    ? `Opened ticket ${raw} in your browser.`
+                    : `Could not open ticket ${raw} in your browser.`;
+            }
+        } catch (_) {
+            if (status) status.textContent = `Could not open ticket ${raw} in your browser.`;
+        } finally {
+            lastRecentTicketClickKey = '';
+        }
     });
 }
 

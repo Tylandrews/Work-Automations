@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     focusApp: () => {
         return ipcRenderer.invoke('focus-app');
     },
+    openExternalUrl: (url) => {
+        return ipcRenderer.invoke('open-external-url', url);
+    },
     showTrayNotification: (title, body) => {
         return ipcRenderer.invoke('show-tray-notification', { title, body });
     },
