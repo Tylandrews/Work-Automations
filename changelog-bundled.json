@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "3.4.21",
+      "date": "2026-04-28",
+      "sections": {
+        "Added": [],
+        "Fixed": [],
+        "Changed": [],
+        "Maintenance": [
+          "update changelog for v3.4.20"
+        ],
+        "Other": []
+      }
+    },
+    {
       "version": "3.4.20",
       "date": "2026-04-09",
       "sections": {

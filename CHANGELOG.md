@@ -2,6 +2,12 @@
 
 All notable changes to **Call Log** are recorded here. Each GitHub release updates this file from commits since the previous version tag.
 
+## [3.4.21] - 2026-04-28
+
+### Maintenance
+
+- update changelog for v3.4.20
+
 ## [3.4.20] - 2026-04-09
 
 ### Maintenance
@@ -59,6 +65,7 @@ All notable changes to **Call Log** are recorded here. Each GitHub release updat
 ### Summary
 
 - See commit history for this release.
+
 
 
 
