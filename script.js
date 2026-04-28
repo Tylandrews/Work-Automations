@@ -5,6 +5,9 @@ let selectedDay = null; // local day key: YYYY-MM-DD
 let calendarMonth = null; // Date representing first day of visible month
 /** Serializes prev/next month clicks so rapid navigation still advances one month per click */
 let calendarMonthNavChain = Promise.resolve()
+let isCallDateAutoMode = true
+let callDateAutoSyncIntervalId = null
+let callDateAutoSyncTimeoutId = null
 let confirmResolver = null;
 let supabaseClient = null;
 let supabaseRealtimeChannel = null;
@@ -12,6 +15,10 @@ let currentUserProfile = null; // { id, full_name, is_admin, profile_load_error?
 const profileCache = new Map(); // user_id -> full_name
 const PROFILE_DISPLAY_NAME_MAX_LEN = 120;
 let authDeepLinkListenerBound = false;
+
+// #region agent log
+fetch('http://127.0.0.1:7442/ingest/de52a58c-6176-4a1a-a3fe-7fb8f60f932e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76bee9'},body:JSON.stringify({sessionId:'76bee9',runId:'baseline',hypothesisId:'H6',location:'script.js:19',message:'scriptLoadedInstrumentationActive',data:{href:String(window.location?.href||''),readyState:String(document.readyState||'')},timestamp:Date.now()})}).catch(()=>{})
+// #endregion
 
 function clampDisplayName(raw) {
     const t = String(raw ?? '').trim();
@@ -471,7 +478,16 @@ let resolvedMainFormOrganization = { autotaskId: '', name: '' };
 let mainFormOrganizationCommitTimer = null;
 let recentTicketsDebounceTimer = null;
 let recentTicketsAbortController = null;
+let recentTicketsSpinnerTimer = null;
+let recentTicketsSpinnerIndex = 0;
 let lastRecentTicketClickKey = '';
+let authorisedRepsDebounceTimer = null;
+let authorisedRepsAbortController = null;
+let authorisedRepsHideTimer = null;
+let recentTicketsHideTimer = null;
+let pendingAuthorisedRepsCompanyId = '';
+const AUTHORISED_REPS_EXIT_MS = 260;
+const RECENT_TICKETS_EXIT_MS = 240;
 
 function normalizeHexColor(raw) {
     let s = String(raw || '').trim();
@@ -554,73 +570,122 @@ function resolveAutotaskCompanyIdFromCache(organizationName) {
     return '';
 }
 
+function historyTabElementToWhich(el) {
+    if (!el) return 'history';
+    if (el.id === 'historyTabRecentTickets') return 'recent';
+    if (el.id === 'historyTabCallHistory') return 'history';
+    if (el.id === 'historyTabAuthorisedReps') return 'authorisedReps';
+    return 'history';
+}
+
+function getHistoryPanelVisibleTabElements() {
+    const tabRecent = document.getElementById('historyTabRecentTickets');
+    const tabHistory = document.getElementById('historyTabCallHistory');
+    const tabAuth = document.getElementById('historyTabAuthorisedReps');
+    const out = [];
+    if (tabHistory) out.push(tabHistory);
+    if (tabRecent && !tabRecent.hasAttribute('hidden')) out.push(tabRecent);
+    if (tabAuth && !tabAuth.hasAttribute('hidden')) out.push(tabAuth);
+    return out;
+}
+
 function selectHistoryPanelTab(which) {
     const tabRecent = document.getElementById('historyTabRecentTickets');
     const tabHistory = document.getElementById('historyTabCallHistory');
+    const tabAuth = document.getElementById('historyTabAuthorisedReps');
     const panelRecent = document.getElementById('historyPanelRecentTickets');
     const panelHistory = document.getElementById('historyPanelCallHistory');
+    const panelAuth = document.getElementById('historyPanelAuthorisedReps');
     if (!tabRecent || !tabHistory || !panelRecent || !panelHistory) return;
 
-    const isRecent = which === 'recent';
-    tabRecent.setAttribute('aria-selected', isRecent ? 'true' : 'false');
-    tabRecent.tabIndex = isRecent ? 0 : -1;
-    tabHistory.setAttribute('aria-selected', isRecent ? 'false' : 'true');
-    tabHistory.tabIndex = isRecent ? -1 : 0;
+    const authVisible = !!(tabAuth && panelAuth && !tabAuth.hasAttribute('hidden'));
+    let sel = which;
+    if (sel === 'authorisedReps' && !authVisible) sel = 'history';
 
-    if (isRecent) {
+    panelRecent.setAttribute('hidden', '');
+    panelHistory.setAttribute('hidden', '');
+    if (panelAuth) panelAuth.setAttribute('hidden', '');
+
+    tabRecent.setAttribute('aria-selected', 'false');
+    tabHistory.setAttribute('aria-selected', 'false');
+    tabRecent.tabIndex = -1;
+    tabHistory.tabIndex = -1;
+    if (tabAuth) {
+        tabAuth.setAttribute('aria-selected', 'false');
+        tabAuth.tabIndex = -1;
+    }
+
+    if (sel === 'recent') {
+        tabRecent.setAttribute('aria-selected', 'true');
+        tabRecent.tabIndex = 0;
         panelRecent.removeAttribute('hidden');
-        panelHistory.setAttribute('hidden', '');
         updateRecentTicketsLegend();
-    } else {
-        panelRecent.setAttribute('hidden', '');
+    } else if (sel === 'history') {
+        tabHistory.setAttribute('aria-selected', 'true');
+        tabHistory.tabIndex = 0;
         panelHistory.removeAttribute('hidden');
+    } else if (sel === 'authorisedReps' && panelAuth && authVisible) {
+        tabAuth.setAttribute('aria-selected', 'true');
+        tabAuth.tabIndex = 0;
+        panelAuth.removeAttribute('hidden');
     }
 }
 
 function setupHistoryPanelTabs() {
     const tabRecent = document.getElementById('historyTabRecentTickets');
     const tabHistory = document.getElementById('historyTabCallHistory');
+    const tabAuth = document.getElementById('historyTabAuthorisedReps');
     const tablist = tabRecent?.closest('[role="tablist"]');
     tabRecent?.addEventListener('click', () => selectHistoryPanelTab('recent'));
     tabHistory?.addEventListener('click', () => selectHistoryPanelTab('history'));
+    tabAuth?.addEventListener('click', () => selectHistoryPanelTab('authorisedReps'));
 
     tablist?.addEventListener('keydown', (e) => {
         if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'Home' && e.key !== 'End') return;
         e.preventDefault();
-        const onRecent = tabRecent?.getAttribute('aria-selected') === 'true';
+        const tabs = getHistoryPanelVisibleTabElements();
+        if (tabs.length === 0) return;
+        const currentWhich = ['recent', 'history', 'authorisedReps'].find((w) => {
+            const id =
+                w === 'recent'
+                    ? 'historyTabRecentTickets'
+                    : w === 'history'
+                      ? 'historyTabCallHistory'
+                      : 'historyTabAuthorisedReps';
+            const t = document.getElementById(id);
+            return t?.getAttribute('aria-selected') === 'true';
+        });
+        let idx = tabs.findIndex((t) => historyTabElementToWhich(t) === currentWhich);
+        if (idx < 0) idx = 0;
+
         if (e.key === 'Home') {
-            selectHistoryPanelTab('recent');
-            tabRecent?.focus();
+            const first = tabs[0];
+            selectHistoryPanelTab(historyTabElementToWhich(first));
+            first?.focus();
             return;
         }
         if (e.key === 'End') {
-            selectHistoryPanelTab('history');
-            tabHistory?.focus();
+            const last = tabs[tabs.length - 1];
+            selectHistoryPanelTab(historyTabElementToWhich(last));
+            last?.focus();
             return;
         }
         if (e.key === 'ArrowRight') {
-            if (onRecent) {
-                selectHistoryPanelTab('history');
-                tabHistory?.focus();
-            } else {
-                selectHistoryPanelTab('recent');
-                tabRecent?.focus();
-            }
+            const next = tabs[(idx + 1) % tabs.length];
+            selectHistoryPanelTab(historyTabElementToWhich(next));
+            next?.focus();
             return;
         }
         if (e.key === 'ArrowLeft') {
-            if (onRecent) {
-                selectHistoryPanelTab('history');
-                tabHistory?.focus();
-            } else {
-                selectHistoryPanelTab('recent');
-                tabRecent?.focus();
-            }
+            const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+            selectHistoryPanelTab(historyTabElementToWhich(prev));
+            prev?.focus();
         }
     });
 
-    const showRecentOnLoad = tabRecent?.getAttribute('aria-selected') === 'true';
-    selectHistoryPanelTab(showRecentOnLoad ? 'recent' : 'history');
+    setRecentTicketsTabVisible(false, { immediate: true });
+    setAuthorisedRepsTabVisible(false, { immediate: true });
+    selectHistoryPanelTab('history');
 }
 
 function updateRecentTicketsHintVisibility() {
@@ -634,6 +699,7 @@ function updateRecentTicketsHintVisibility() {
 }
 
 function clearRecentTicketsListUi() {
+    stopRecentTicketsLoadingIndicator();
     const list = document.getElementById('recentTicketsList');
     if (list) list.innerHTML = '';
     const status = document.getElementById('recentTicketsStatus');
@@ -643,6 +709,184 @@ function clearRecentTicketsListUi() {
         errEl.textContent = '';
         errEl.setAttribute('hidden', '');
     }
+}
+
+function clearAuthorisedRepsUi() {
+    const status = document.getElementById('authorisedRepsStatus');
+    const errEl = document.getElementById('authorisedRepsError');
+    const content = document.getElementById('authorisedRepsContent');
+    if (status) status.textContent = '';
+    if (errEl) {
+        errEl.textContent = '';
+        errEl.setAttribute('hidden', '');
+    }
+    if (content) content.textContent = '';
+}
+
+function prefersReducedMotion() {
+    return !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function stopRecentTicketsLoadingIndicator() {
+    if (recentTicketsSpinnerTimer) {
+        clearInterval(recentTicketsSpinnerTimer);
+        recentTicketsSpinnerTimer = null;
+    }
+    recentTicketsSpinnerIndex = 0;
+    const status = document.getElementById('recentTicketsStatus');
+    if (!status) return;
+    status.classList.remove('recent-tickets-status--loading');
+    status.textContent = '';
+}
+
+function startRecentTicketsLoadingIndicator() {
+    stopRecentTicketsLoadingIndicator();
+    const status = document.getElementById('recentTicketsStatus');
+    if (!status) return;
+    status.classList.add('recent-tickets-status--loading');
+    if (prefersReducedMotion()) {
+        status.textContent = 'Loading tickets...';
+        return;
+    }
+    const frames = ['/', '|', '\\'];
+    const render = () => {
+        const glyph = frames[recentTicketsSpinnerIndex % frames.length];
+        recentTicketsSpinnerIndex += 1;
+        status.textContent = `Loading tickets ${glyph}`;
+    };
+    render();
+    recentTicketsSpinnerTimer = setInterval(render, 140);
+}
+
+function revealAuthorisedRepsAfterRecentTickets(companyId) {
+    const cid = String(companyId || '').trim();
+    if (!cid) return;
+    if (String(resolvedMainFormOrganization.autotaskId || '').trim() !== cid) return;
+    if (pendingAuthorisedRepsCompanyId !== cid) return;
+    pendingAuthorisedRepsCompanyId = '';
+    setAuthorisedRepsTabVisible(true);
+    scheduleAuthorisedRepsFetch(cid);
+}
+
+function updateHistoryTabsLayoutState() {
+    const tablist = document.querySelector('.history-panel-tabs');
+    const tabRecent = document.getElementById('historyTabRecentTickets');
+    const tabAuth = document.getElementById('historyTabAuthorisedReps');
+    if (!tablist) return;
+    const hasRecent = !!(tabRecent && !tabRecent.hasAttribute('hidden'));
+    const hasAuth = !!(tabAuth && !tabAuth.hasAttribute('hidden'));
+    tablist.classList.toggle('history-panel-tabs--history-only', !hasRecent && !hasAuth);
+    tablist.classList.toggle('history-panel-tabs--history-recent', hasRecent && !hasAuth);
+    tablist.classList.toggle('history-panel-tabs--full', hasRecent && hasAuth);
+}
+
+function setRecentTicketsTabVisible(show, options = {}) {
+    const immediate = !!options.immediate;
+    const tab = document.getElementById('historyTabRecentTickets');
+    const panel = document.getElementById('historyPanelRecentTickets');
+    if (!tab || !panel) return;
+    if (recentTicketsHideTimer) {
+        clearTimeout(recentTicketsHideTimer);
+        recentTicketsHideTimer = null;
+    }
+    if (show) {
+        tab.removeAttribute('hidden');
+        tab.classList.remove('hidden');
+        tab.classList.remove('recent-tickets-tab--exit');
+        if (!prefersReducedMotion() && !immediate) {
+            tab.classList.remove('recent-tickets-tab--enter');
+            void tab.offsetWidth;
+            tab.classList.add('recent-tickets-tab--enter');
+        }
+        updateHistoryTabsLayoutState();
+        return;
+    }
+    if (tab.getAttribute('aria-selected') === 'true') {
+        selectHistoryPanelTab('history');
+    }
+    const hideNow = immediate || prefersReducedMotion();
+    if (hideNow) {
+        tab.classList.remove('recent-tickets-tab--enter', 'recent-tickets-tab--exit');
+        tab.setAttribute('hidden', '');
+        tab.classList.add('hidden');
+        panel.setAttribute('hidden', '');
+        clearRecentTicketsListUi();
+        updateHistoryTabsLayoutState();
+        return;
+    }
+    tab.classList.remove('recent-tickets-tab--enter');
+    tab.classList.add('recent-tickets-tab--exit');
+    recentTicketsHideTimer = setTimeout(() => {
+        tab.classList.remove('recent-tickets-tab--exit');
+        tab.setAttribute('hidden', '');
+        tab.classList.add('hidden');
+        panel.setAttribute('hidden', '');
+        clearRecentTicketsListUi();
+        updateHistoryTabsLayoutState();
+        recentTicketsHideTimer = null;
+    }, RECENT_TICKETS_EXIT_MS);
+}
+
+function setAuthorisedRepsTabVisible(show, options = {}) {
+    const immediate = !!options.immediate;
+    const tab = document.getElementById('historyTabAuthorisedReps');
+    const panel = document.getElementById('historyPanelAuthorisedReps');
+    if (!tab || !panel) return;
+    if (authorisedRepsHideTimer) {
+        clearTimeout(authorisedRepsHideTimer);
+        authorisedRepsHideTimer = null;
+    }
+    if (show) {
+        tab.removeAttribute('hidden');
+        tab.classList.remove('hidden');
+        tab.classList.remove('authorised-reps-tab--exit');
+        panel.classList.remove('authorised-reps-panel--exit');
+        if (!prefersReducedMotion()) {
+            tab.classList.remove('authorised-reps-tab--enter');
+            panel.classList.remove('authorised-reps-panel--enter');
+            void tab.offsetWidth;
+            tab.classList.add('authorised-reps-tab--enter');
+            panel.classList.add('authorised-reps-panel--enter');
+        }
+        updateHistoryTabsLayoutState();
+        return;
+    }
+    const wasSelected = tab.getAttribute('aria-selected') === 'true';
+    if (wasSelected) {
+        selectHistoryPanelTab('history');
+    }
+    if (authorisedRepsDebounceTimer) {
+        clearTimeout(authorisedRepsDebounceTimer);
+        authorisedRepsDebounceTimer = null;
+    }
+    if (authorisedRepsAbortController) {
+        authorisedRepsAbortController.abort();
+        authorisedRepsAbortController = null;
+    }
+    clearAuthorisedRepsUi();
+    const hideNow = immediate || prefersReducedMotion();
+    if (hideNow) {
+        tab.classList.remove('authorised-reps-tab--enter', 'authorised-reps-tab--exit');
+        panel.classList.remove('authorised-reps-panel--enter', 'authorised-reps-panel--exit');
+        tab.setAttribute('hidden', '');
+        tab.classList.add('hidden');
+        panel.setAttribute('hidden', '');
+        updateHistoryTabsLayoutState();
+        return;
+    }
+    tab.classList.remove('authorised-reps-tab--enter');
+    panel.classList.remove('authorised-reps-panel--enter');
+    tab.classList.add('authorised-reps-tab--exit');
+    panel.classList.add('authorised-reps-panel--exit');
+    authorisedRepsHideTimer = setTimeout(() => {
+        tab.classList.remove('authorised-reps-tab--exit');
+        panel.classList.remove('authorised-reps-panel--exit');
+        tab.setAttribute('hidden', '');
+        tab.classList.add('hidden');
+        panel.setAttribute('hidden', '');
+        authorisedRepsHideTimer = null;
+        updateHistoryTabsLayoutState();
+    }, AUTHORISED_REPS_EXIT_MS);
 }
 
 function scheduleMainOrganizationResolution() {
@@ -659,6 +903,8 @@ function commitMainOrganizationResolution(explicitOrg) {
     const orgInput = document.getElementById('organization');
     if (!orgInput) return;
 
+    const previousResolvedName = String(resolvedMainFormOrganization.name || '').trim();
+    const previousResolvedAutotaskId = String(resolvedMainFormOrganization.autotaskId || '').trim();
     let name = String(orgInput.value || '').trim();
     let autotaskId = '';
 
@@ -676,25 +922,41 @@ function commitMainOrganizationResolution(explicitOrg) {
         autotaskId = resolveAutotaskCompanyIdFromCache(name);
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7442/ingest/de52a58c-6176-4a1a-a3fe-7fb8f60f932e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76bee9'},body:JSON.stringify({sessionId:'76bee9',runId:'baseline',hypothesisId:'H1',location:'script.js:771',message:'commitMainOrganizationResolution',data:{name,autotaskId,explicitOrgName:String(explicitOrg?.name||''),explicitOrgId:String(explicitOrg?.id||'')},timestamp:Date.now()})}).catch(()=>{})
+    // #endregion
+
+    const hasResolvedChanged =
+        previousResolvedName !== name ||
+        previousResolvedAutotaskId !== autotaskId;
+
     resolvedMainFormOrganization = { autotaskId, name };
 
     if (!name) {
         resolvedMainFormOrganization = { autotaskId: '', name: '' };
+        pendingAuthorisedRepsCompanyId = '';
+        setRecentTicketsTabVisible(false, { immediate: true });
+        setAuthorisedRepsTabVisible(false);
         selectHistoryPanelTab('history');
-        clearRecentTicketsListUi();
         updateRecentTicketsHintVisibility();
         return;
     }
 
     if (!autotaskId) {
+        pendingAuthorisedRepsCompanyId = '';
+        setRecentTicketsTabVisible(false, { immediate: true });
+        setAuthorisedRepsTabVisible(false);
         selectHistoryPanelTab('history');
-        clearRecentTicketsListUi();
         updateRecentTicketsHintVisibility();
         return;
     }
 
     updateRecentTicketsHintVisibility();
+    setRecentTicketsTabVisible(true);
+    if (!hasResolvedChanged) return;
     selectHistoryPanelTab('recent');
+    pendingAuthorisedRepsCompanyId = autotaskId;
+    setAuthorisedRepsTabVisible(false, { immediate: true });
     scheduleRecentTicketsFetch(autotaskId);
 }
 
@@ -702,9 +964,22 @@ function scheduleRecentTicketsFetch(companyId) {
     if (recentTicketsDebounceTimer) {
         clearTimeout(recentTicketsDebounceTimer);
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7442/ingest/de52a58c-6176-4a1a-a3fe-7fb8f60f932e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76bee9'},body:JSON.stringify({sessionId:'76bee9',runId:'baseline',hypothesisId:'H2',location:'script.js:801',message:'scheduleRecentTicketsFetch',data:{companyId:String(companyId||'')},timestamp:Date.now()})}).catch(()=>{})
+    // #endregion
     recentTicketsDebounceTimer = setTimeout(() => {
         recentTicketsDebounceTimer = null;
         void loadRecentTicketsForCompanyId(companyId);
+    }, 300);
+}
+
+function scheduleAuthorisedRepsFetch(companyId) {
+    if (authorisedRepsDebounceTimer) {
+        clearTimeout(authorisedRepsDebounceTimer);
+    }
+    authorisedRepsDebounceTimer = setTimeout(() => {
+        authorisedRepsDebounceTimer = null;
+        void loadAuthorisedRepsForCompanyId(companyId);
     }, 300);
 }
 
@@ -740,7 +1015,7 @@ function renderRecentTicketsList(tickets) {
         return;
     }
     list.innerHTML = rows
-        .map((t) => {
+        .map((t, index) => {
             const num = escapeHtml(String(t.ticketNumber || '').trim() || String(t.id || ''));
             const rawTitle = String(t.title || '').trim();
             const title = escapeHtml(rawTitle || '(No title)');
@@ -767,7 +1042,8 @@ function renderRecentTicketsList(tickets) {
                 : ' No mapped ticket source color.';
             const ariaUse = escapeHtmlAttr(`Use ticket ${rawNum} in ticket number field.${ariaExtra}`);
             const metaBlock = meta ? `<span class="recent-ticket-row__meta">${escapeHtml(meta)}</span>` : '';
-            return `<div class="recent-ticket-row-wrap" role="listitem"><button type="button" class="${rowCls}" data-ticket-number="${ticketValue}" data-ticket-key="${ticketKey}" data-ticket-url="${ticketUrlAttr}" aria-label="${ariaUse}"${accentStyle}><span class="recent-ticket-row__num">${num}</span><span class="recent-ticket-row__title">${title}</span>${metaBlock}</button></div>`;
+            const cascadeDelay = `${Math.min(index, 20) * 70}ms`;
+            return `<div class="recent-ticket-row-wrap recent-ticket-row-wrap--enter" role="listitem" style="--ticket-cascade-delay:${cascadeDelay}"><button type="button" class="${rowCls}" data-ticket-number="${ticketValue}" data-ticket-key="${ticketKey}" data-ticket-url="${ticketUrlAttr}" aria-label="${ariaUse}"${accentStyle}><span class="recent-ticket-row__num">${num}</span><span class="recent-ticket-row__title">${title}</span>${metaBlock}</button></div>`;
         })
         .join('');
 }
@@ -788,10 +1064,11 @@ function bindRecentTicketsListClicks() {
             ticketNumberEl.value = raw;
             ticketNumberEl.dispatchEvent(new Event('input', { bubbles: true }));
         }
+        // #region agent log
+        fetch('http://127.0.0.1:7442/ingest/de52a58c-6176-4a1a-a3fe-7fb8f60f932e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76bee9'},body:JSON.stringify({sessionId:'76bee9',runId:'baseline',hypothesisId:'H3',location:'script.js:898',message:'recentTicketClicked',data:{ticketKey,ticketNumber:raw,organizationValue:String(document.getElementById('organization')?.value||''),resolvedOrgId:String(resolvedMainFormOrganization?.autotaskId||'')},timestamp:Date.now()})}).catch(()=>{})
+        // #endregion
         const status = document.getElementById('recentTicketsStatus');
-        if (status && raw) {
-            status.textContent = `Ticket number filled: ${raw}`;
-        }
+        if (status) status.textContent = '';
         ticketNumberEl?.focus();
 
         const sameAsPrevious = ticketKey && ticketKey === lastRecentTicketClickKey;
@@ -799,25 +1076,18 @@ function bindRecentTicketsListClicks() {
         if (!sameAsPrevious) return;
 
         if (!ticketUrlIsValid) {
-            if (status) status.textContent = `Ticket ${raw} has no browser link available.`;
             lastRecentTicketClickKey = '';
             return;
         }
 
         try {
             if (typeof window.electronAPI?.openExternalUrl !== 'function') {
-                if (status) status.textContent = 'External link opening is unavailable in this build.';
                 lastRecentTicketClickKey = '';
                 return;
             }
-            const ok = await window.electronAPI.openExternalUrl(ticketUrl);
-            if (status) {
-                status.textContent = ok
-                    ? `Opened ticket ${raw} in your browser.`
-                    : `Could not open ticket ${raw} in your browser.`;
-            }
+            await window.electronAPI.openExternalUrl(ticketUrl);
         } catch (_) {
-            if (status) status.textContent = `Could not open ticket ${raw} in your browser.`;
+            /* silent: no status text on ticket click */
         } finally {
             lastRecentTicketClickKey = '';
         }
@@ -831,6 +1101,11 @@ async function loadRecentTicketsForCompanyId(companyId) {
     const orgInput = document.getElementById('organization');
     const currentResolved = String(resolvedMainFormOrganization.autotaskId || '').trim();
     if (currentResolved !== cid) return;
+    const finalizeRecentTicketsLoad = () => revealAuthorisedRepsAfterRecentTickets(cid);
+
+    // #region agent log
+    fetch('http://127.0.0.1:7442/ingest/de52a58c-6176-4a1a-a3fe-7fb8f60f932e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76bee9'},body:JSON.stringify({sessionId:'76bee9',runId:'baseline',hypothesisId:'H4',location:'script.js:931',message:'loadRecentTicketsForCompanyId:start',data:{cid,currentResolved,orgInputValue:String(orgInput?.value||'')},timestamp:Date.now()})}).catch(()=>{})
+    // #endregion
 
     if (recentTicketsAbortController) {
         recentTicketsAbortController.abort();
@@ -838,22 +1113,178 @@ async function loadRecentTicketsForCompanyId(companyId) {
     recentTicketsAbortController = new AbortController();
     const { signal } = recentTicketsAbortController;
 
-    const status = document.getElementById('recentTicketsStatus');
     const errEl = document.getElementById('recentTicketsError');
     if (errEl) {
         errEl.textContent = '';
         errEl.setAttribute('hidden', '');
     }
-    if (status) status.textContent = 'Loading tickets…';
+    startRecentTicketsLoadingIndicator();
     const list = document.getElementById('recentTicketsList');
     if (list) list.innerHTML = '';
+    // #region agent log
+    fetch('http://127.0.0.1:7442/ingest/de52a58c-6176-4a1a-a3fe-7fb8f60f932e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76bee9'},body:JSON.stringify({sessionId:'76bee9',runId:'baseline',hypothesisId:'H5',location:'script.js:947',message:'recentTicketsUiClearedForReload',data:{cid,hadList:!!list},timestamp:Date.now()})}).catch(()=>{})
+    // #endregion
 
     if (!useSupabase()) {
-        if (status) status.textContent = '';
+        stopRecentTicketsLoadingIndicator();
         if (errEl) {
             errEl.textContent = 'Sign-in is required to load Autotask tickets.';
             errEl.removeAttribute('hidden');
         }
+        finalizeRecentTicketsLoad();
+        return;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+        stopRecentTicketsLoadingIndicator();
+        finalizeRecentTicketsLoad();
+        return;
+    }
+
+    // getSession() alone can return a stale JWT; Edge verify_jwt then returns 401. getUser() validates/refreshes with the server first.
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+        stopRecentTicketsLoadingIndicator();
+        if (errEl) {
+            errEl.textContent = 'Sign in to load Autotask tickets.';
+            errEl.removeAttribute('hidden');
+        }
+        finalizeRecentTicketsLoad();
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+        stopRecentTicketsLoadingIndicator();
+        if (errEl) {
+            errEl.textContent = 'Session expired. Sign in again to load tickets.';
+            errEl.removeAttribute('hidden');
+        }
+        finalizeRecentTicketsLoad();
+        return;
+    }
+
+    const config = window.supabaseConfig || {};
+    const supabaseUrl = (config.SUPABASE_URL || '').trim();
+    const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
+    if (!supabaseUrl || !anonKey) {
+        stopRecentTicketsLoadingIndicator();
+        finalizeRecentTicketsLoad();
+        return;
+    }
+
+    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
+    const url = `${baseFunctionsUrl}/autotask-recent-tickets?companyId=${encodeURIComponent(cid)}`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${session.access_token}`,
+                apikey: anonKey,
+                'Content-Type': 'application/json',
+            },
+            signal,
+        });
+
+        if (signal.aborted) {
+            stopRecentTicketsLoadingIndicator();
+            return;
+        }
+
+        if (String(resolvedMainFormOrganization.autotaskId || '').trim() !== cid) return;
+        if (String(orgInput?.value || '').trim() !== resolvedMainFormOrganization.name) return;
+
+        if (response.status === 503) {
+            stopRecentTicketsLoadingIndicator();
+            if (errEl) {
+                errEl.textContent = 'Autotask is not configured on the server.';
+                errEl.removeAttribute('hidden');
+            }
+            finalizeRecentTicketsLoad();
+            return;
+        }
+        if (response.status === 401) {
+            stopRecentTicketsLoadingIndicator();
+            if (errEl) {
+                errEl.textContent = 'Session expired. Sign in again to load tickets.';
+                errEl.removeAttribute('hidden');
+            }
+            finalizeRecentTicketsLoad();
+            return;
+        }
+        if (response.status === 400) {
+            stopRecentTicketsLoadingIndicator();
+            if (errEl) {
+                errEl.textContent = 'Could not load tickets for this organization.';
+                errEl.removeAttribute('hidden');
+            }
+            finalizeRecentTicketsLoad();
+            return;
+        }
+        if (!response.ok) {
+            const txt = await response.text().catch(() => '');
+            stopRecentTicketsLoadingIndicator();
+            if (errEl) {
+                errEl.textContent = 'Failed to load tickets. Please try again.';
+                errEl.removeAttribute('hidden');
+            }
+            console.warn('[autotask-recent-tickets]', response.status, txt);
+            finalizeRecentTicketsLoad();
+            return;
+        }
+
+        const data = await response.json().catch(() => ({}));
+        const tickets = Array.isArray(data?.tickets) ? data.tickets : [];
+        stopRecentTicketsLoadingIndicator();
+        updateRecentTicketsLegend();
+        renderRecentTicketsList(tickets);
+        finalizeRecentTicketsLoad();
+    } catch (err) {
+        if (signal.aborted) {
+            stopRecentTicketsLoadingIndicator();
+            return;
+        }
+        stopRecentTicketsLoadingIndicator();
+        if (errEl && err?.name !== 'AbortError') {
+            errEl.textContent = 'Failed to load tickets. Please try again.';
+            errEl.removeAttribute('hidden');
+        }
+        finalizeRecentTicketsLoad();
+    }
+}
+
+async function loadAuthorisedRepsForCompanyId(companyId) {
+    const cid = String(companyId || '').trim();
+    if (!cid) return;
+
+    const orgInput = document.getElementById('organization');
+    const currentResolved = String(resolvedMainFormOrganization.autotaskId || '').trim();
+    if (currentResolved !== cid) return;
+
+    if (authorisedRepsAbortController) {
+        authorisedRepsAbortController.abort();
+    }
+    authorisedRepsAbortController = new AbortController();
+    const { signal } = authorisedRepsAbortController;
+
+    const status = document.getElementById('authorisedRepsStatus');
+    const errEl = document.getElementById('authorisedRepsError');
+    const content = document.getElementById('authorisedRepsContent');
+    if (errEl) {
+        errEl.textContent = '';
+        errEl.setAttribute('hidden', '');
+    }
+    if (content) content.textContent = '';
+    if (status) status.textContent = 'Loading authorised reps…';
+
+    if (!useSupabase()) {
+        if (status) status.textContent = '';
+        if (errEl) {
+            errEl.textContent = 'Sign-in is required to load Autotask company data.';
+            errEl.removeAttribute('hidden');
+        }
+        if (content) content.textContent = '';
         return;
     }
 
@@ -863,12 +1294,11 @@ async function loadRecentTicketsForCompanyId(companyId) {
         return;
     }
 
-    // getSession() alone can return a stale JWT; Edge verify_jwt then returns 401. getUser() validates/refreshes with the server first.
     const { data: userData, error: userError } = await supabase.auth.getUser();
     if (userError || !userData?.user) {
         if (status) status.textContent = '';
         if (errEl) {
-            errEl.textContent = 'Sign in to load Autotask tickets.';
+            errEl.textContent = 'Sign in to load authorised reps.';
             errEl.removeAttribute('hidden');
         }
         return;
@@ -877,7 +1307,7 @@ async function loadRecentTicketsForCompanyId(companyId) {
     if (!session?.access_token) {
         if (status) status.textContent = '';
         if (errEl) {
-            errEl.textContent = 'Session expired. Sign in again to load tickets.';
+            errEl.textContent = 'Session expired. Sign in again to load authorised reps.';
             errEl.removeAttribute('hidden');
         }
         return;
@@ -892,7 +1322,7 @@ async function loadRecentTicketsForCompanyId(companyId) {
     }
 
     const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
-    const url = `${baseFunctionsUrl}/autotask-recent-tickets?companyId=${encodeURIComponent(cid)}`;
+    const url = `${baseFunctionsUrl}/autotask-company-authorised-reps?companyId=${encodeURIComponent(cid)}`;
 
     try {
         const response = await fetch(url, {
@@ -921,7 +1351,7 @@ async function loadRecentTicketsForCompanyId(companyId) {
         if (response.status === 401) {
             if (status) status.textContent = '';
             if (errEl) {
-                errEl.textContent = 'Session expired. Sign in again to load tickets.';
+                errEl.textContent = 'Session expired. Sign in again to load authorised reps.';
                 errEl.removeAttribute('hidden');
             }
             return;
@@ -929,7 +1359,7 @@ async function loadRecentTicketsForCompanyId(companyId) {
         if (response.status === 400) {
             if (status) status.textContent = '';
             if (errEl) {
-                errEl.textContent = 'Could not load tickets for this organization.';
+                errEl.textContent = 'Could not load authorised reps for this organization.';
                 errEl.removeAttribute('hidden');
             }
             return;
@@ -938,23 +1368,25 @@ async function loadRecentTicketsForCompanyId(companyId) {
             const txt = await response.text().catch(() => '');
             if (status) status.textContent = '';
             if (errEl) {
-                errEl.textContent = 'Failed to load tickets. Please try again.';
+                errEl.textContent = 'Failed to load authorised reps. Please try again.';
                 errEl.removeAttribute('hidden');
             }
-            console.warn('[autotask-recent-tickets]', response.status, txt);
+            console.warn('[autotask-company-authorised-reps]', response.status, txt);
             return;
         }
 
         const data = await response.json().catch(() => ({}));
-        const tickets = Array.isArray(data?.tickets) ? data.tickets : [];
         if (status) status.textContent = '';
-        updateRecentTicketsLegend();
-        renderRecentTicketsList(tickets);
+        const rawVal = data?.value;
+        const text = rawVal != null && String(rawVal).trim() ? String(rawVal).trim() : '';
+        if (content) {
+            content.textContent = text || 'No authorised reps on file.';
+        }
     } catch (err) {
         if (signal.aborted) return;
         if (status) status.textContent = '';
         if (errEl && err?.name !== 'AbortError') {
-            errEl.textContent = 'Failed to load tickets. Please try again.';
+            errEl.textContent = 'Failed to load authorised reps. Please try again.';
             errEl.removeAttribute('hidden');
         }
     }
@@ -1451,6 +1883,9 @@ function setupOrganizationAutocomplete(inputId, dropdownId) {
             scheduleMainOrganizationResolution();
         });
         input.addEventListener('blur', () => {
+            // #region agent log
+            fetch('http://127.0.0.1:7442/ingest/de52a58c-6176-4a1a-a3fe-7fb8f60f932e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76bee9'},body:JSON.stringify({sessionId:'76bee9',runId:'baseline',hypothesisId:'H1',location:'script.js:1689',message:'organizationBlurScheduledCommit',data:{organizationValue:String(input.value||''),resolvedOrgId:String(resolvedMainFormOrganization?.autotaskId||'')},timestamp:Date.now()})}).catch(()=>{})
+            // #endregion
             setTimeout(() => scheduleMainOrganizationResolution(), 280);
         });
     }
@@ -2257,8 +2692,8 @@ async function initApp() {
             console.error('Backfill failed:', err);
         });
     }
-    setCurrentDateTime();
     setupEventListeners();
+    startCallDateAutoSync();
     setupStatisticsPageListeners();
     setupAdminStatisticsPageListeners();
     setupKeyboardShortcuts();
@@ -2379,6 +2814,7 @@ function setupEventListeners() {
 
     // Clear form button
     document.getElementById('clearBtn').addEventListener('click', clearForm);
+    setupCallDateAutoModeListeners();
     
     // Search functionality (inside History panel)
     document.getElementById('searchBtn').addEventListener('click', toggleSearch);
@@ -2746,17 +3182,61 @@ function setMaximizeButtonState(isMaximized) {
     });
 }
 
-// Set current date and time in the datetime-local input
-function setCurrentDateTime() {
-    const now = new Date();
+function toDateTimeLocalValue(now = new Date()) {
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     const hours = String(now.getHours()).padStart(2, '0');
     const minutes = String(now.getMinutes()).padStart(2, '0');
-    
-    const dateTimeString = `${year}-${month}-${day}T${hours}:${minutes}`;
-    document.getElementById('callDate').value = dateTimeString;
+
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+// Set current date and time in the datetime-local input
+function setCurrentDateTime(options = {}) {
+    const { force = false } = options;
+    if (!force && !isCallDateAutoMode) return;
+    const input = document.getElementById('callDate');
+    if (!input) return;
+    input.value = toDateTimeLocalValue(new Date());
+}
+
+function stopCallDateAutoSync() {
+    if (callDateAutoSyncTimeoutId) {
+        clearTimeout(callDateAutoSyncTimeoutId);
+        callDateAutoSyncTimeoutId = null;
+    }
+    if (callDateAutoSyncIntervalId) {
+        clearInterval(callDateAutoSyncIntervalId);
+        callDateAutoSyncIntervalId = null;
+    }
+}
+
+function startCallDateAutoSync() {
+    stopCallDateAutoSync();
+    isCallDateAutoMode = true;
+    setCurrentDateTime({ force: true });
+
+    const now = new Date();
+    const delayToNextMinute = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+    callDateAutoSyncTimeoutId = setTimeout(() => {
+        callDateAutoSyncTimeoutId = null;
+        setCurrentDateTime();
+        callDateAutoSyncIntervalId = setInterval(() => {
+            setCurrentDateTime();
+        }, 60000);
+    }, Math.max(0, delayToNextMinute));
+}
+
+function setupCallDateAutoModeListeners() {
+    const callDateInput = document.getElementById('callDate');
+    if (!callDateInput) return;
+    const setManualMode = () => {
+        isCallDateAutoMode = false;
+    };
+    callDateInput.addEventListener('input', setManualMode);
+    callDateInput.addEventListener('change', setManualMode);
+    window.addEventListener('beforeunload', stopCallDateAutoSync);
 }
 
 // Handle form submission
@@ -3177,7 +3657,7 @@ async function loadEntries() {
         return;
     }
     
-    const html = filteredEntries.map(entry => createEntryCard(entry)).join('');
+    const html = filteredEntries.map((entry, index) => createEntryCard(entry, index)).join('');
 
     await updateStats();
     entriesList.innerHTML = html;
@@ -3244,7 +3724,7 @@ function normalizePhoneForTel(phone) {
 }
 
 // Create HTML for an entry card
-function createEntryCard(entry) {
+function createEntryCard(entry, index = 0) {
     const date = new Date(entry.timestamp);
     const formattedDate = date.toLocaleString('en-US', {
         month: 'short',
@@ -3263,7 +3743,7 @@ function createEntryCard(entry) {
         : escapeHtml(rawPhone);
     
     return `
-        <div class="entry-card" data-testid="entry-card" data-id="${escapeHtmlAttr(String(entry.id))}" role="button" tabindex="0" title="Click to edit">
+        <div class="entry-card entry-card--enter" data-testid="entry-card" data-id="${escapeHtmlAttr(String(entry.id))}" role="button" tabindex="0" title="Click to edit" style="--entry-cascade-delay:${Math.min(index, 24) * 55}ms">
             <div class="entry-header">
                 <div class="entry-name">${escapeHtml(entry.name)}</div>
                 <span class="entry-date">${formattedDate}</span>
@@ -5912,7 +6392,7 @@ function escapeHtmlAttr(text) {
 // Clear form
 function clearForm() {
     document.getElementById('callForm').reset();
-    setCurrentDateTime();
+    startCallDateAutoSync();
     document.getElementById('name').focus();
     if (mainFormOrganizationCommitTimer) {
         clearTimeout(mainFormOrganizationCommitTimer);
