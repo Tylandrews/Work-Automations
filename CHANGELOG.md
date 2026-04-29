@@ -2,6 +2,12 @@
 
 All notable changes to **Call Log** are recorded here. Each GitHub release updates this file from commits since the previous version tag.
 
+## [Unreleased]
+
+### Changed
+
+- move the Organisation field above Name in call create/edit forms and standardize UI spelling to "Organisation"
+
 ## [3.4.23] - 2026-04-29
 
 ### Maintenance
