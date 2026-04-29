@@ -478,23 +478,19 @@ let resolvedMainFormOrganization = { autotaskId: '', name: '' };
 let mainFormOrganizationCommitTimer = null;
 let recentTicketsDebounceTimer = null;
 let recentTicketsAbortController = null;
-<<<<<<< HEAD
 let authorisedRepsAbortController = null;
 
 /** Matches Autotask Company UDF `name` for key data (same literal as Edge Function `autotask-company-key-data`). */
 const AUTHORISED_REPS_UDF_NAME = '02. Authorised Reps';
-=======
 let recentTicketsSpinnerTimer = null;
 let recentTicketsSpinnerIndex = 0;
 let lastRecentTicketClickKey = '';
 let authorisedRepsDebounceTimer = null;
-let authorisedRepsAbortController = null;
 let authorisedRepsHideTimer = null;
 let recentTicketsHideTimer = null;
 let pendingAuthorisedRepsCompanyId = '';
 const AUTHORISED_REPS_EXIT_MS = 260;
 const RECENT_TICKETS_EXIT_MS = 240;
->>>>>>> e632f09f61900b85962e1267781aea022f499611
 
 function normalizeHexColor(raw) {
     let s = String(raw || '').trim();
@@ -605,22 +601,9 @@ function selectHistoryPanelTab(which) {
     const panelAuth = document.getElementById('historyPanelAuthorisedReps');
     if (!tabRecent || !tabHistory || !panelRecent || !panelHistory) return;
 
-<<<<<<< HEAD
-    const isRecent = which === 'recent';
-    const onRecent = tabRecent.getAttribute('aria-selected') === 'true';
-    const onHistory = tabHistory.getAttribute('aria-selected') === 'true';
-    if (isRecent && onRecent) return;
-    if (!isRecent && onHistory) return;
-
-    tabRecent.setAttribute('aria-selected', isRecent ? 'true' : 'false');
-    tabRecent.tabIndex = isRecent ? 0 : -1;
-    tabHistory.setAttribute('aria-selected', isRecent ? 'false' : 'true');
-    tabHistory.tabIndex = isRecent ? -1 : 0;
-=======
     const authVisible = !!(tabAuth && panelAuth && !tabAuth.hasAttribute('hidden'));
     let sel = which;
     if (sel === 'authorisedReps' && !authVisible) sel = 'history';
->>>>>>> e632f09f61900b85962e1267781aea022f499611
 
     panelRecent.setAttribute('hidden', '');
     panelHistory.setAttribute('hidden', '');
@@ -933,14 +916,8 @@ function commitMainOrganizationResolution(explicitOrg) {
     const orgInput = document.getElementById('organization');
     if (!orgInput) return;
 
-<<<<<<< HEAD
     const prevAutotaskId = String(resolvedMainFormOrganization.autotaskId || '').trim();
     const prevName = String(resolvedMainFormOrganization.name || '').trim();
-
-=======
-    const previousResolvedName = String(resolvedMainFormOrganization.name || '').trim();
-    const previousResolvedAutotaskId = String(resolvedMainFormOrganization.autotaskId || '').trim();
->>>>>>> e632f09f61900b85962e1267781aea022f499611
     let name = String(orgInput.value || '').trim();
     let autotaskId = '';
 
@@ -963,8 +940,8 @@ function commitMainOrganizationResolution(explicitOrg) {
     // #endregion
 
     const hasResolvedChanged =
-        previousResolvedName !== name ||
-        previousResolvedAutotaskId !== autotaskId;
+        prevName !== name ||
+        prevAutotaskId !== autotaskId;
 
     resolvedMainFormOrganization = { autotaskId, name };
 
@@ -999,17 +976,13 @@ function commitMainOrganizationResolution(explicitOrg) {
     setRecentTicketsTabVisible(true);
     if (!hasResolvedChanged) return;
     selectHistoryPanelTab('recent');
-<<<<<<< HEAD
 
     // Blur/input debounce re-runs commit with the same org; avoid abort + clear + reload (flicker).
     if (sameResolvedCompany) {
         return;
     }
-
-=======
     pendingAuthorisedRepsCompanyId = autotaskId;
     setAuthorisedRepsTabVisible(false, { immediate: true });
->>>>>>> e632f09f61900b85962e1267781aea022f499611
     scheduleRecentTicketsFetch(autotaskId);
     void loadAuthorisedRepsForCompanyId(autotaskId);
 }
