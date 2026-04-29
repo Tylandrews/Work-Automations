@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const vm = require('vm');
@@ -45,6 +45,8 @@ if (!gotSingleInstanceLock) {
 
 const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000
 const UPDATE_CHECK_START_DELAY_MS = 8000
+const DEBUG_LOG_ENDPOINT = 'http://127.0.0.1:7442/ingest/de52a58c-6176-4a1a-a3fe-7fb8f60f932e'
+const DEBUG_SESSION_ID = 'a7b3a4'
 
 /** Windows portable builds from electron-builder set this; NSIS installs do not. */
 const isWindowsPortableBuild = () =>
@@ -56,6 +58,27 @@ const isWindowsPortableBuild = () =>
  */
 const shouldRunAutoUpdater = () =>
     app.isPackaged && process.platform === 'win32' && !isWindowsPortableBuild()
+
+const sendDebugLog = (runId, hypothesisId, location, message, data) => {
+    // #region agent log
+    fetch(DEBUG_LOG_ENDPOINT, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Debug-Session-Id': DEBUG_SESSION_ID,
+        },
+        body: JSON.stringify({
+            sessionId: DEBUG_SESSION_ID,
+            runId,
+            hypothesisId,
+            location,
+            message,
+            data,
+            timestamp: Date.now(),
+        }),
+    }).catch(() => {})
+    // #endregion
+}
 
 let updaterPhase = 'idle'
 let updaterAvailableVersion = null
@@ -105,14 +128,30 @@ const setupAutoUpdater = () => {
     if (!shouldRunAutoUpdater()) return
 
     autoUpdater.autoDownload = false
+    sendDebugLog('initial', 'H1', 'main.js:setupAutoUpdater', 'Auto updater setup started', {
+        isPackaged: app.isPackaged,
+        platform: process.platform,
+        version: app.getVersion(),
+        portable: isWindowsPortableBuild(),
+        channel: autoUpdater.channel || null,
+        currentVersion: autoUpdater.currentVersion ? String(autoUpdater.currentVersion.version || '') : null,
+    })
 
     autoUpdater.on('checking-for-update', () => {
+        sendDebugLog('initial', 'H2', 'main.js:checking-for-update', 'Updater entered checking state', {
+            phase: updaterPhase,
+            version: app.getVersion(),
+        })
         updaterPhase = 'checking'
         updaterLastError = null
         emitUpdaterState()
     })
 
     autoUpdater.on('update-available', (info) => {
+        sendDebugLog('initial', 'H4', 'main.js:update-available', 'Update available event received', {
+            infoVersion: info && info.version ? String(info.version) : null,
+            filesCount: info && Array.isArray(info.files) ? info.files.length : null,
+        })
         const ver = info && info.version ? String(info.version) : ''
         updaterPhase = 'available'
         updaterAvailableVersion = ver || null
@@ -121,6 +160,10 @@ const setupAutoUpdater = () => {
     })
 
     autoUpdater.on('update-not-available', () => {
+        sendDebugLog('initial', 'H4', 'main.js:update-not-available', 'No update available event received', {
+            phase: updaterPhase,
+            downloadedVersion: updaterDownloadedVersion,
+        })
         if (updaterPhase === 'downloaded' && updaterDownloadedVersion) {
             emitUpdaterState()
             return
@@ -159,6 +202,11 @@ const setupAutoUpdater = () => {
 
     autoUpdater.on('error', (err) => {
         const msg = err && err.message ? String(err.message) : String(err)
+        sendDebugLog('initial', 'H3', 'main.js:autoUpdater-error', 'Updater error event received', {
+            message: msg,
+            stack: err && err.stack ? String(err.stack).slice(0, 800) : null,
+            phase: updaterPhase,
+        })
         if (isNetworkUpdaterError(msg)) {
             console.warn('autoUpdater (network):', msg)
             if (updaterPhase === 'checking') {
@@ -174,7 +222,14 @@ const setupAutoUpdater = () => {
     })
 
     const runCheck = () => {
+        sendDebugLog('initial', 'H2', 'main.js:runCheck', 'Scheduled updater check started', {
+            phase: updaterPhase,
+            autoDownload: autoUpdater.autoDownload,
+        })
         autoUpdater.checkForUpdates().catch((err) => {
+            sendDebugLog('initial', 'H3', 'main.js:runCheck-catch', 'Scheduled updater check rejected', {
+                message: err && err.message ? String(err.message) : String(err),
+            })
             console.warn('checkForUpdates:', err && err.message ? err.message : err)
         })
     }
@@ -443,6 +498,24 @@ ipcMain.handle('focus-app', () => {
     }
 });
 
+ipcMain.handle('open-external-url', async (_event, rawUrl) => {
+    const value = String(rawUrl || '').trim();
+    if (!value) return false;
+    let parsed = null;
+    try {
+        parsed = new URL(value);
+    } catch (_) {
+        return false;
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    try {
+        await shell.openExternal(parsed.toString());
+        return true;
+    } catch (_) {
+        return false;
+    }
+});
+
 ipcMain.handle('show-tray-notification', (event, { title, body }) => {
     showTrayNotification(title, body);
 });
@@ -501,9 +574,19 @@ ipcMain.handle('updater-check-for-updates', async () => {
     emitUpdaterState();
     try {
         const result = await autoUpdater.checkForUpdates();
+        sendDebugLog('initial', 'H2', 'main.js:ipc-updater-check', 'Manual updater check resolved', {
+            updateInfoVersion:
+                result && result.updateInfo && result.updateInfo.version
+                    ? String(result.updateInfo.version)
+                    : null,
+        })
         return { ok: true, updateInfo: result && result.updateInfo ? result.updateInfo : null };
     } catch (err) {
         const msg = err && err.message ? String(err.message) : String(err);
+        sendDebugLog('initial', 'H3', 'main.js:ipc-updater-check-catch', 'Manual updater check rejected', {
+            message: msg,
+            phase: updaterPhase,
+        })
         if (!isNetworkUpdaterError(msg)) {
             updaterPhase = 'error';
             updaterLastError = msg;

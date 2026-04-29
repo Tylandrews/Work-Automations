@@ -36,15 +36,11 @@
                         <div class="auth-brand-title">BigFish</div>
                         <div class="auth-brand-subtitle">Call Log</div>
                         <div class="auth-brand-copy">
-                            Built to capture. Hard-wired history. Did you get a tag?
+                            Log support calls quickly and keep your history in one place.
                         </div>
                         <div class="auth-brand-cta" aria-hidden="true">
                             <span class="auth-brand-cta-label">
-                                <svg class="auth-cta-hook" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-                                    <path d="M36 6c-6 8-6 16 0 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
-                                    <path d="M36 30v14c0 10-6 16-14 16-7 0-12-5-12-12 0-6 4-10 10-10" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                                <span></span>
+                                <span>Continue to sign in</span>
                             </span>
                             <span class="auth-brand-cta-arrow"></span>
                         </div>
@@ -246,6 +242,7 @@
                 <div class="history-panel-tabs" role="tablist" aria-label="Side panel">
                     <button type="button" class="history-panel-tab" role="tab" id="historyTabRecentTickets" aria-selected="false" aria-controls="historyPanelRecentTickets" tabindex="-1">Recent tickets</button>
                     <button type="button" class="history-panel-tab" role="tab" id="historyTabCallHistory" aria-selected="true" aria-controls="historyPanelCallHistory" tabindex="0">Call history</button>
+                    <button type="button" class="history-panel-tab hidden" role="tab" id="historyTabAuthorisedReps" aria-selected="false" aria-controls="historyPanelAuthorisedReps" tabindex="-1" hidden>Authorised reps</button>
                 </div>
             </div>
             <div class="entries-container entries-container--tabs">
@@ -293,6 +290,11 @@
                     <div id="entriesList" class="entries-list">
                         <!-- Entries will be dynamically inserted here -->
                     </div>
+                </div>
+                <div id="historyPanelAuthorisedReps" class="history-tabpanel" role="tabpanel" aria-labelledby="historyTabAuthorisedReps" tabindex="0" hidden>
+                    <div id="authorisedRepsStatus" class="recent-tickets-status" role="status" aria-live="polite"></div>
+                    <div id="authorisedRepsError" class="recent-tickets-error auth-error" role="alert" aria-live="polite" hidden></div>
+                    <pre id="authorisedRepsContent" class="authorised-reps-content"></pre>
                 </div>
             </div>
         </aside>

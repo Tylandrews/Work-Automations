@@ -283,13 +283,21 @@ textarea {
 
 .auth-brand {
     border-radius: var(--radius-lg);
-    border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--bg-secondary) 72%, transparent);
-    box-shadow: 0 10px 30px var(--shadow-lg);
+    border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+    background:
+        linear-gradient(165deg, color-mix(in srgb, var(--bg-secondary) 84%, transparent) 0%, color-mix(in srgb, var(--bg-secondary) 70%, transparent) 100%);
+    box-shadow:
+        0 20px 40px color-mix(in srgb, var(--shadow-lg) 72%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 16%, transparent);
+    backdrop-filter: blur(12px) saturate(112%);
     overflow: hidden;
     position: relative;
     cursor: pointer;
-    transition: transform 180ms var(--ease-out-quart), opacity 180ms var(--ease-out-quart);
+    transition:
+        transform 200ms var(--ease-out-quart),
+        opacity 180ms var(--ease-out-quart),
+        box-shadow 220ms var(--ease-out-quart),
+        border-color 220ms var(--ease-out-quart);
 }
 
 .auth-brand::before {
@@ -297,33 +305,37 @@ textarea {
     position: absolute;
     inset: 0;
     background:
-        radial-gradient(800px 420px at 18% 18%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 55%),
-        radial-gradient(520px 320px at 84% 30%, rgba(34, 197, 94, 0.07), transparent 60%);
-    opacity: 0.85;
+        radial-gradient(640px 340px at 12% 8%, color-mix(in srgb, var(--primary) 22%, transparent), transparent 58%),
+        radial-gradient(460px 300px at 92% 10%, color-mix(in srgb, #38bdf8 16%, transparent), transparent 62%),
+        linear-gradient(180deg, color-mix(in srgb, white 7%, transparent) 0%, transparent 48%);
+    opacity: 0.95;
     pointer-events: none;
 }
 
 .auth-brand-inner {
     position: relative;
     z-index: 1;
-    padding: 28px;
+    padding: 30px;
     height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     align-items: center;
-    gap: 18px;
+    gap: 16px;
     text-align: center;
 }
 
 .auth-brand-mark {
-    width: 46px;
-    height: 46px;
-    border-radius: 14px;
+    width: 50px;
+    height: 50px;
+    border-radius: 16px;
     display: grid;
     place-items: center;
-    background: color-mix(in srgb, var(--primary) 12%, var(--bg-secondary));
-    border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
+    background: color-mix(in srgb, var(--primary) 16%, var(--bg-secondary));
+    border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
+    box-shadow:
+        inset 0 1px 0 color-mix(in srgb, white 14%, transparent),
+        0 10px 24px color-mix(in srgb, var(--primary) 16%, transparent);
 }
 
 .auth-fish {
@@ -340,42 +352,43 @@ textarea {
 }
 
 .auth-brand-title {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
     color: var(--text-secondary);
 }
 
 .auth-brand-subtitle {
-    font-size: 26px;
+    font-size: 30px;
     font-weight: 700;
-    line-height: 1.1;
+    line-height: 1.08;
     color: var(--text-primary);
-    margin-top: -6px;
+    margin-top: -8px;
+    text-wrap: balance;
 }
 
 .auth-brand-copy {
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: 14px;
+    line-height: 1.55;
     color: var(--text-secondary);
-    max-width: 38ch;
+    max-width: 34ch;
     text-align: center;
     margin: 0 auto;
+    text-wrap: pretty;
 }
 
 .auth-brand-cta {
-    margin-top: 8px;
+    margin-top: 10px;
     display: inline-flex;
-    align-items: baseline;
-    gap: 10px;
+    align-items: center;
+    gap: 0;
     font-weight: 700;
-    color: color-mix(in srgb, var(--primary) 70%, var(--text-secondary));
+    color: color-mix(in srgb, var(--primary) 80%, var(--text-secondary));
 }
 
 .auth-brand-cta-arrow {
-    display: inline-block;
-    transform: translateY(1px);
+    display: none;
 }
 
 .auth-layout.is-form .auth-brand {
@@ -435,15 +448,31 @@ textarea {
 .auth-brand-cta-label {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
+    font-size: 0.88rem;
+    letter-spacing: 0.02em;
 }
 
-.auth-cta-hook {
-    width: 18px;
-    height: 18px;
-    color: currentColor;
-    opacity: 0.95;
-    transform: translateY(1px);
+.auth-brand:hover,
+.auth-brand:focus-visible {
+    border-color: color-mix(in srgb, var(--primary) 36%, var(--border));
+    transform: translate3d(0, -3px, 0) scale(1.008);
+    box-shadow:
+        0 24px 48px color-mix(in srgb, var(--shadow-lg) 80%, transparent),
+        0 0 0 1px color-mix(in srgb, var(--primary) 22%, transparent),
+        inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+}
+
+.auth-brand:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--primary) 55%, #ffffff);
+    outline-offset: 3px;
+}
+
+.auth-brand:hover .auth-brand-cta-arrow,
+.auth-brand:focus-visible .auth-brand-cta-arrow {
+    transform: none;
+    background: none;
+    border-color: transparent;
 }
 
 .auth-subtitle {
@@ -582,6 +611,15 @@ textarea {
 @media (max-width: 520px) {
     .auth-layout {
         min-height: 460px;
+    }
+
+    .auth-brand-subtitle {
+        font-size: 27px;
+    }
+
+    .auth-brand-copy {
+        font-size: 13px;
+        max-width: 32ch;
     }
 }
 
@@ -835,11 +873,12 @@ main .form-container {
 .history-panel-tabs {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 6px;
     width: 100%;
     border-bottom: 1px solid var(--border);
-    padding: 8px 0 0;
+    padding: 8px 0 2px;
     margin: 0;
+    transition: gap 220ms var(--ease-out-quart);
 }
 
 .history-panel-tab {
@@ -847,12 +886,15 @@ main .form-container {
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 500;
-    padding: 10px 12px;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 9px 12px;
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
     cursor: pointer;
     font-family: inherit;
+    transition: color 180ms var(--ease-out-quart), background 180ms var(--ease-out-quart), flex-basis 240ms var(--ease-out-quart), transform 180ms var(--ease-out-quart);
 }
 
 .history-panel-tab:hover {
@@ -863,6 +905,130 @@ main .form-container {
 .history-panel-tab[aria-selected="true"] {
     color: var(--text-primary);
     box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+#historyTabCallHistory {
+    order: 0;
+}
+
+#historyTabRecentTickets {
+    order: 1;
+}
+
+#historyTabAuthorisedReps {
+    order: 2;
+    margin-left: auto;
+}
+
+.history-panel-tabs--history-only #historyTabCallHistory {
+    flex: 1 1 100%;
+}
+
+.history-panel-tabs--history-recent #historyTabCallHistory,
+.history-panel-tabs--history-recent #historyTabRecentTickets {
+    flex: 1 1 0;
+}
+
+.recent-tickets-tab--enter {
+    animation: recentTicketsTabIn 320ms var(--ease-out-quint) both;
+}
+
+.recent-tickets-tab--exit {
+    animation: recentTicketsTabOut 240ms var(--ease-out-quart) both;
+}
+
+.authorised-reps-tab--enter {
+    animation: authorisedRepsTabIn 360ms var(--ease-out-quint) both;
+}
+
+.authorised-reps-tab--exit {
+    animation: authorisedRepsTabOut 260ms var(--ease-out-quart) both;
+}
+
+.authorised-reps-panel--enter:not([hidden]) {
+    animation: authorisedRepsPanelIn 360ms var(--ease-out-quint) both;
+}
+
+.authorised-reps-panel--exit:not([hidden]) {
+    animation: authorisedRepsPanelOut 260ms var(--ease-out-quart) both;
+}
+
+@keyframes authorisedRepsTabIn {
+    from {
+        opacity: 0;
+        transform: translateX(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes recentTicketsTabIn {
+    from {
+        opacity: 0;
+        transform: translateX(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes recentTicketsTabOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(8px);
+    }
+}
+
+@keyframes authorisedRepsTabOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(10px);
+    }
+}
+
+@keyframes authorisedRepsPanelIn {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes authorisedRepsPanelOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .authorised-reps-tab--enter,
+    .recent-tickets-tab--enter,
+    .recent-tickets-tab--exit,
+    .authorised-reps-tab--exit,
+    .authorised-reps-panel--enter,
+    .authorised-reps-panel--exit {
+        animation: none;
+        transform: none;
+    }
 }
 
 .app-panel .entries-container--tabs {
@@ -946,6 +1112,28 @@ main .form-container {
     min-height: 1.2em;
 }
 
+.recent-tickets-status--loading {
+    font-family: "Haffer Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    letter-spacing: 0.02em;
+}
+
+.authorised-reps-content {
+    margin: 0;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
 .recent-tickets-error {
     margin-bottom: 10px;
     font-size: 13px;
@@ -959,8 +1147,42 @@ main .form-container {
     flex: 1 1 0;
 }
 
+.recent-ticket-row-wrap {
+    opacity: 1;
+}
+
+.recent-ticket-row-wrap--enter {
+    opacity: 0;
+    transform: translateY(-10px);
+    animation: recentTicketWaveIn 460ms var(--ease-out-quint) forwards;
+    animation-delay: var(--ticket-cascade-delay, 0ms);
+    will-change: transform, opacity;
+}
+
+@keyframes recentTicketWaveIn {
+    0% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes callHistoryWaveIn {
+    0% {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .recent-tickets-legend {
-    display: flex;
+    display: none !important;
     flex-wrap: wrap;
     gap: 6px 10px;
     align-items: center;
@@ -1066,6 +1288,15 @@ main .form-container {
     font-size: 12px;
     color: var(--text-secondary);
     margin-top: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .recent-ticket-row-wrap--enter {
+        opacity: 1;
+        transform: none;
+        animation: none;
+        will-change: auto;
+    }
 }
 
 .panel-close {
@@ -1669,6 +1900,7 @@ main .form-container {
     .skeleton-line { animation: none; }
     .loading-fish .icon { animation: none; }
     .loading-dots::after { animation: none; content: "..."; }
+    .entry-card--enter { animation: none; opacity: 1; transform: none; }
 }
 
 /* Entry Cards */
@@ -1681,6 +1913,14 @@ main .form-container {
     margin-bottom: 12px;
     transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
     position: relative;
+}
+
+.entry-card--enter {
+    opacity: 0;
+    transform: translateY(-8px);
+    animation: callHistoryWaveIn 420ms var(--ease-out-quint) forwards;
+    animation-delay: var(--entry-cascade-delay, 0ms);
+    will-change: transform, opacity;
 }
 
 .entry-card:hover {
