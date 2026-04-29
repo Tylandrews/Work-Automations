@@ -471,6 +471,10 @@ let resolvedMainFormOrganization = { autotaskId: '', name: '' };
 let mainFormOrganizationCommitTimer = null;
 let recentTicketsDebounceTimer = null;
 let recentTicketsAbortController = null;
+let authorisedRepsAbortController = null;
+
+/** Matches Autotask Company UDF `name` for key data (same literal as Edge Function `autotask-company-key-data`). */
+const AUTHORISED_REPS_UDF_NAME = '02. Authorised Reps';
 
 function normalizeHexColor(raw) {
     let s = String(raw || '').trim();
@@ -561,6 +565,11 @@ function selectHistoryPanelTab(which) {
     if (!tabRecent || !tabHistory || !panelRecent || !panelHistory) return;
 
     const isRecent = which === 'recent';
+    const onRecent = tabRecent.getAttribute('aria-selected') === 'true';
+    const onHistory = tabHistory.getAttribute('aria-selected') === 'true';
+    if (isRecent && onRecent) return;
+    if (!isRecent && onHistory) return;
+
     tabRecent.setAttribute('aria-selected', isRecent ? 'true' : 'false');
     tabRecent.tabIndex = isRecent ? 0 : -1;
     tabHistory.setAttribute('aria-selected', isRecent ? 'false' : 'true');
@@ -632,6 +641,15 @@ function updateRecentTicketsHintVisibility() {
     hint.style.display = show ? '' : 'none';
 }
 
+function clearCompanyAuthorisedRepsUi() {
+    const block = document.getElementById('companyAuthorisedRepsBlock');
+    const statusEl = document.getElementById('companyAuthorisedRepsStatus');
+    const valueEl = document.getElementById('companyAuthorisedRepsValue');
+    if (statusEl) statusEl.textContent = '';
+    if (valueEl) valueEl.textContent = '';
+    if (block) block.setAttribute('hidden', '');
+}
+
 function clearRecentTicketsListUi() {
     const list = document.getElementById('recentTicketsList');
     if (list) list.innerHTML = '';
@@ -642,6 +660,7 @@ function clearRecentTicketsListUi() {
         errEl.textContent = '';
         errEl.setAttribute('hidden', '');
     }
+    clearCompanyAuthorisedRepsUi();
 }
 
 function scheduleMainOrganizationResolution() {
@@ -657,6 +676,9 @@ function scheduleMainOrganizationResolution() {
 function commitMainOrganizationResolution(explicitOrg) {
     const orgInput = document.getElementById('organization');
     if (!orgInput) return;
+
+    const prevAutotaskId = String(resolvedMainFormOrganization.autotaskId || '').trim();
+    const prevName = String(resolvedMainFormOrganization.name || '').trim();
 
     let name = String(orgInput.value || '').trim();
     let autotaskId = '';
@@ -692,9 +714,24 @@ function commitMainOrganizationResolution(explicitOrg) {
         return;
     }
 
+    const nextAutotaskId = String(autotaskId || '').trim();
+    const nameLo = name.toLowerCase();
+    const prevLo = prevName.toLowerCase();
+    const sameResolvedCompany =
+        nextAutotaskId.length > 0 &&
+        prevAutotaskId === nextAutotaskId &&
+        prevLo === nameLo;
+
     updateRecentTicketsHintVisibility();
     selectHistoryPanelTab('recent');
+
+    // Blur/input debounce re-runs commit with the same org; avoid abort + clear + reload (flicker).
+    if (sameResolvedCompany) {
+        return;
+    }
+
     scheduleRecentTicketsFetch(autotaskId);
+    void loadAuthorisedRepsForCompanyId(autotaskId);
 }
 
 function scheduleRecentTicketsFetch(companyId) {
@@ -909,6 +946,123 @@ async function loadRecentTicketsForCompanyId(companyId) {
             errEl.textContent = 'Failed to load tickets. Please try again.';
             errEl.removeAttribute('hidden');
         }
+    }
+}
+
+async function loadAuthorisedRepsForCompanyId(companyId) {
+    const cid = String(companyId || '').trim();
+    if (!cid) return;
+
+    const orgInput = document.getElementById('organization');
+    const currentResolved = String(resolvedMainFormOrganization.autotaskId || '').trim();
+    if (currentResolved !== cid) return;
+
+    if (authorisedRepsAbortController) {
+        authorisedRepsAbortController.abort();
+    }
+    authorisedRepsAbortController = new AbortController();
+    const { signal } = authorisedRepsAbortController;
+
+    const block = document.getElementById('companyAuthorisedRepsBlock');
+    const statusEl = document.getElementById('companyAuthorisedRepsStatus');
+    const valueEl = document.getElementById('companyAuthorisedRepsValue');
+    if (!block || !valueEl) return;
+
+    const hideBlock = () => {
+        if (statusEl) statusEl.textContent = '';
+        valueEl.textContent = '';
+        block.removeAttribute('title');
+        block.setAttribute('hidden', '');
+    };
+
+    block.removeAttribute('title');
+    if (statusEl) statusEl.textContent = 'Loading…';
+    valueEl.textContent = '';
+    block.removeAttribute('hidden');
+
+    if (!useSupabase()) {
+        hideBlock();
+        return;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+        hideBlock();
+        return;
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+        hideBlock();
+        return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+        hideBlock();
+        return;
+    }
+
+    const config = window.supabaseConfig || {};
+    const supabaseUrl = (config.SUPABASE_URL || '').trim();
+    const anonKey = (config.SUPABASE_ANON_KEY || '').trim();
+    if (!supabaseUrl || !anonKey) {
+        hideBlock();
+        return;
+    }
+
+    const baseFunctionsUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1`;
+    const url = `${baseFunctionsUrl}/autotask-company-key-data?companyId=${encodeURIComponent(cid)}`;
+
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                Authorization: `Bearer ${session.access_token}`,
+                apikey: anonKey,
+                'Content-Type': 'application/json',
+            },
+            signal,
+        });
+
+        if (signal.aborted) return;
+
+        if (String(resolvedMainFormOrganization.autotaskId || '').trim() !== cid) return;
+        if (String(orgInput?.value || '').trim() !== resolvedMainFormOrganization.name) return;
+
+        if (response.status === 503) {
+            hideBlock();
+            return;
+        }
+        if (response.status === 401) {
+            hideBlock();
+            return;
+        }
+        if (response.status === 400) {
+            hideBlock();
+            return;
+        }
+        if (!response.ok) {
+            hideBlock();
+            return;
+        }
+
+        const data = await response.json().catch(() => ({}));
+        const raw = data?.authorisedReps;
+        const text = raw != null && raw !== '' ? String(raw).trim() : '';
+
+        if (statusEl) statusEl.textContent = '';
+
+        if (text) {
+            valueEl.textContent = text;
+            block.title = `Autotask field: ${AUTHORISED_REPS_UDF_NAME}`;
+            block.removeAttribute('hidden');
+        } else {
+            hideBlock();
+        }
+    } catch (err) {
+        if (signal.aborted) return;
+        if (String(resolvedMainFormOrganization.autotaskId || '').trim() !== cid) return;
+        hideBlock();
     }
 }
 
