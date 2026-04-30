@@ -32,6 +32,12 @@ function getPasswordRecoveryRedirectUrl() {
     return u || 'calllog://auth/callback';
 }
 
+function getInviteRedirectUrl() {
+    const configuredInviteUrl = String(window.supabaseConfig?.INVITE_REDIRECT_URL || '').trim();
+    if (configuredInviteUrl) return configuredInviteUrl;
+    return getPasswordRecoveryRedirectUrl();
+}
+
 function parseAuthHashParamsFromUrl(url) {
     try {
         const s = String(url);
@@ -6458,9 +6464,11 @@ async function handleAdminInviteSubmit(e) {
         btn.textContent = 'Sending…';
     }
     try {
+        const redirectTo = getInviteRedirectUrl();
         await invokeAccountAdmin({
             action: 'invite',
             email,
+            redirectTo,
         });
         if (emailEl) emailEl.value = '';
         showNotification('Invite sent.');

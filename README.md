@@ -131,6 +131,8 @@ Cloud features require a valid `supabaseConfig.js` (not committed to the reposit
 cp supabaseConfig.example.js supabaseConfig.js
 ```
 
+Admin invitation emails use `INVITE_REDIRECT_URL` when set, otherwise they fall back to `PASSWORD_RESET_REDIRECT_URL`, then `calllog://auth/callback`. Ensure each redirect URL you use is listed in Supabase Dashboard **Authentication → URL Configuration → Redirect URLs** to avoid localhost or invalid redirect links in auth emails.
+
 The build pipeline validates configuration where applicable. Release builds intended for distribution should embed the configuration required for production use.
 
 For organization autocomplete, apply migrations through `008_autotask_org_sync_meta.sql`. Deploy **`autotask-sync-all-companies`** for a weekly read-only full sync of active Autotask companies into `cached_autotask_companies` (see `supabase/functions/autotask-sync-all-companies/README.md`). The app loads org names from Supabase only; it does not call Autotask on each keystroke.
