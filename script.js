@@ -32,6 +32,12 @@ function getPasswordRecoveryRedirectUrl() {
     return u || 'calllog://auth/callback';
 }
 
+function getInviteRedirectUrl() {
+    const configuredInviteUrl = String(window.supabaseConfig?.INVITE_REDIRECT_URL || '').trim();
+    if (configuredInviteUrl) return configuredInviteUrl;
+    return getPasswordRecoveryRedirectUrl();
+}
+
 function parseAuthHashParamsFromUrl(url) {
     try {
         const s = String(url);
@@ -481,7 +487,6 @@ let recentTicketsAbortController = null;
 let authorisedRepsAbortController = null;
 
 /** Matches Autotask Company UDF `name` for key data (same literal as Edge Function `autotask-company-key-data`). */
-const AUTHORISED_REPS_UDF_NAME = '02. Authorised Reps';
 let recentTicketsSpinnerTimer = null;
 let recentTicketsSpinnerIndex = 0;
 let lastRecentTicketClickKey = '';
@@ -701,15 +706,6 @@ function updateRecentTicketsHintVisibility() {
     hint.style.display = show ? '' : 'none';
 }
 
-function clearCompanyAuthorisedRepsUi() {
-    const block = document.getElementById('companyAuthorisedRepsBlock');
-    const statusEl = document.getElementById('companyAuthorisedRepsStatus');
-    const valueEl = document.getElementById('companyAuthorisedRepsValue');
-    if (statusEl) statusEl.textContent = '';
-    if (valueEl) valueEl.textContent = '';
-    if (block) block.setAttribute('hidden', '');
-}
-
 function clearRecentTicketsListUi() {
     stopRecentTicketsLoadingIndicator();
     const list = document.getElementById('recentTicketsList');
@@ -721,7 +717,6 @@ function clearRecentTicketsListUi() {
         errEl.textContent = '';
         errEl.setAttribute('hidden', '');
     }
-    clearCompanyAuthorisedRepsUi();
 }
 
 function clearAuthorisedRepsUi() {
@@ -6341,9 +6336,11 @@ async function handleAdminInviteSubmit(e) {
         btn.textContent = 'Sending…';
     }
     try {
+        const redirectTo = getInviteRedirectUrl();
         await invokeAccountAdmin({
             action: 'invite',
             email,
+            redirectTo,
         });
         if (emailEl) emailEl.value = '';
         showNotification('Invite sent.');

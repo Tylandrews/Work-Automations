@@ -204,7 +204,8 @@ Deno.serve(async (req: Request) => {
     if (action === "invite") {
       const email = (body.email ?? "").trim().toLowerCase();
       if (!email) return json(400, { ok: false, error: "missing_email" }, cors);
-      const redirectTo = (body.redirectTo ?? "").trim() || undefined;
+      const redirectToRaw = typeof body.redirectTo === "string" ? body.redirectTo : "";
+      const redirectTo = redirectToRaw.trim() || undefined;
       const { data: inviteData, error: invErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(
         email,
         redirectTo ? { redirectTo } : {},
