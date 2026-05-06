@@ -184,3 +184,12 @@ describe('auto-update wiring', () => {
         assert.ok(text.includes('autoUpdater') || text.includes('setupAutoUpdater'), 'uses autoUpdater')
     })
 })
+
+describe('authorised reps panel wiring', () => {
+    test('script defines the authorised reps loader once', () => {
+        const scriptPath = path.join(root, 'script.js')
+        const text = fs.readFileSync(scriptPath, 'utf8')
+        const matches = text.match(/async function loadAuthorisedRepsForCompanyId\(companyId\)/g) || []
+        assert.equal(matches.length, 1, 'expected a single authorised reps loader implementation')
+    })
+})
